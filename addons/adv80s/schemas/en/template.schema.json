@@ -1,0 +1,350 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/template.schema.json",
+  "title": "adv80s screen template",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "template_version": {
+      "type": "integer"
+    },
+    "id": {
+      "type": "string",
+      "description": "Template ID"
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name"
+    },
+    "extends": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Parent template ID"
+    },
+    "display": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "description": "Screen preset (machine ID or machine.mode)"
+        },
+        "scale": {
+          "enum": [
+            "integer",
+            "fit",
+            "none"
+          ]
+        },
+        "aspect_correction": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "palette": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "enum": [
+            "preset",
+            "colors"
+          ]
+        },
+        "colors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^#?[0-9a-fA-F]{6}$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "fonts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "asset": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Fonts (main, readable)"
+    },
+    "layout": {
+      "type": "object",
+      "properties": {
+        "background": {
+          "type": "integer",
+          "description": "Background palette index"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Image layers (back to front)"
+        },
+        "regions": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "rect": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "description": "[x, y, width, height] in native pixels"
+                  },
+                  "window": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "Screen regions"
+        },
+        "named": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "regions": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "rect": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          },
+                          "minItems": 4,
+                          "maxItems": 4,
+                          "description": "[x, y, width, height] in native pixels"
+                        },
+                        "window": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "description": "Named layouts"
+        }
+      },
+      "additionalProperties": false
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "select",
+              "parser",
+              "icon",
+              "click"
+            ]
+          }
+        },
+        "parser_profile": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "text": {
+      "type": "object",
+      "properties": {
+        "speed": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Characters per second (0 = instant)"
+        },
+        "markup": {
+          "type": "string"
+        },
+        "ruby": {
+          "enum": [
+            "above",
+            "paren",
+            "none"
+          ]
+        },
+        "emphasis": {
+          "enum": [
+            "above",
+            "paren",
+            "none"
+          ]
+        },
+        "color": {
+          "type": "integer"
+        },
+        "name_color": {
+          "type": "integer"
+        },
+        "denied_tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "filters": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "default",
+            "append",
+            "replace",
+            "none"
+          ]
+        },
+        "list": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": false
+    },
+    "transitions": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string"
+        },
+        "named": {
+          "type": "object"
+        },
+        "replace": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "features": {
+      "type": "object",
+      "description": "Override modern feature defaults"
+    },
+    "assets": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "manifest": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ui": {
+      "type": "object",
+      "properties": {
+        "window_skin": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "box",
+                "nine_patch"
+              ],
+              "description": "box: palette border, nine_patch: 9-slice image"
+            },
+            "border": {
+              "type": "integer"
+            },
+            "pal": {
+              "type": "integer"
+            },
+            "fill": {
+              "type": "integer"
+            },
+            "image": {
+              "type": "string"
+            },
+            "margins": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          },
+          "additionalProperties": false
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "highlight": {
+          "type": "integer"
+        },
+        "ext": {
+          "type": "object",
+          "description": "Extension area. Free-form"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x\\.": {
+          "description": "Custom property (x.name)"
+        }
+      }
+    },
+    "ext": {
+      "type": "object",
+      "description": "Extension area. Free-form"
+    }
+  },
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x\\.": {
+      "description": "Custom property (x.name)"
+    }
+  },
+  "required": [
+    "template_version",
+    "id"
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/effect_def.schema.json",
+  "title": "adv80s 自作のフィルター・切り替え演出・画面効果",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "effect_version": {
+      "type": "integer"
+    },
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "filter",
+        "transition",
+        "effect"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "description": "表示名"
+    },
+    "shader": {
+      "type": "string",
+      "description": "シェーダーのファイルか素材ID"
+    },
+    "handler": {
+      "type": "string",
+      "description": "GDScriptのハンドラー（シェーダーだけで書きにくいとき）"
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "float",
+              "int",
+              "bool",
+              "color",
+              "vec2",
+              "enum",
+              "texture",
+              "string"
+            ]
+          },
+          "default": {},
+          "min": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          },
+          "values": {
+            "type": "array"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ]
+      },
+      "description": "設定項目"
+    },
+    "duration": {
+      "type": "number",
+      "minimum": 0
+    },
+    "era": {
+      "enum": [
+        "common",
+        "80s",
+        "90s",
+        "modern"
+      ]
+    },
+    "ext": {
+      "type": "object",
+      "description": "拡張領域。中身は自由"
+    }
+  },
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x\\.": {
+      "description": "自作の項目（x.名前）"
+    }
+  },
+  "required": [
+    "effect_version",
+    "id",
+    "kind"
+  ]
+}

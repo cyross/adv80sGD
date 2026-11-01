@@ -1,12 +1,116 @@
 @tool
 extends EditorPlugin
 ## adv80s エディタプラグイン。
-## 段階1ではまだ機能を持たない（マニフェスト自動生成などは段階2で追加する）。
+## - 素材フォルダを読んで manifest.auto.json を書き出す（ファイルが変わったとき、書き出しの直前、手動）
+## - 確認の結果をドック「adv80s」に一覧表示する（エラーと警告を区別）
+## - ゲームの書き出しに JSON（シナリオ、マニフェストなど）を必ず含める
+## - VS Code 用の JSON Schema の結び付け設定を書き出す
+
+const DOCK_SCRIPT := preload("res://addons/adv80s/editor/adv_dock.gd")
+const EXPORT_SCRIPT := preload("res://addons/adv80s/editor/adv_export_plugin.gd")
+
+const MENU_GENERATE := "adv80s: マニフェストを生成"
+const MENU_VSCODE := "adv80s: VS Code の設定を書き出す"
+
+var _dock: Control
+var _export: EditorExportPlugin
+var _timer: Timer
+var _busy := false
 
 
 func _enter_tree() -> void:
-	pass
+	_dock = DOCK_SCRIPT.new()
+	_dock.name = "adv80s"
+	_dock.generate_requested.connect(generate)
+	add_control_to_dock(DOCK_SLOT_RIGHT_UL, _dock)
+
+	_export = EXPORT_SCRIPT.new()
+	_export.plugin = self
+	add_export_plugin(_export)
+
+	add_tool_menu_item(MENU_GENERATE, generate)
+	add_tool_menu_item(MENU_VSCODE, write_vscode_settings)
+
+	# ファイルが変わったら、少し待ってから生成する（続けて変わったときにまとめるため）
+	_timer = Timer.new()
+	_timer.one_shot = true
+	_timer.wait_time = 1.0
+	_timer.timeout.connect(generate)
+	add_child(_timer)
+	var fs := EditorInterface.get_resource_filesystem()
+	if fs != null:
+		fs.filesystem_changed.connect(_on_filesystem_changed)
 
 
 func _exit_tree() -> void:
-	pass
+	var fs := EditorInterface.get_resource_filesystem()
+	if fs != null and fs.filesystem_changed.is_connected(_on_filesystem_changed):
+		fs.filesystem_changed.disconnect(_on_filesystem_changed)
+	remove_tool_menu_item(MENU_GENERATE)
+	remove_tool_menu_item(MENU_VSCODE)
+	if _export != null:
+		remove_export_plugin(_export)
+		_export = null
+	if _dock != null:
+		remove_control_from_docks(_dock)
+		_dock.queue_free()
+		_dock = null
+
+
+func _on_filesystem_changed() -> void:
+	if not _busy:
+		_timer.start()
+
+
+## マニフェストを生成して、結果をドックに出す。書き出したファイルがあればエディタに知らせる。
+func generate() -> Dictionary:
+	_busy = true
+	AdvDiag.lang = _editor_lang()
+	var res := AdvManifestGenerator.generate_project()
+	if _dock != null:
+		_dock.show_result(res)
+	if not res["written"].is_empty():
+		var fs := EditorInterface.get_resource_filesystem()
+		for p in res["written"]:
+			fs.update_file(p)
+	_busy = false
+	return res
+
+
+## VS Code の json.schemas 設定（res://.vscode/settings.json）を書き出す。
+## エディタの言語に合わせて schemas/ja か schemas/en を結び付ける。既存の設定は残し、json.schemas だけ置き換える。
+func write_vscode_settings() -> void:
+	var path := "res://.vscode/settings.json"
+	var settings: Dictionary = {}
+	if FileAccess.file_exists(path):
+		var d = AdvJson.load_file(path)
+		if d is Dictionary:
+			settings = d
+	settings["json.schemas"] = vscode_schema_map(_editor_lang())
+	DirAccess.make_dir_recursive_absolute("res://.vscode")
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		push_error("[adv80s] %s を書き出せません" % path)
+		return
+	f.store_string(JSON.stringify(settings, "  ") + "\n")
+	f.close()
+	print("[adv80s] %s を書き出しました（%s）" % [path, _editor_lang()])
+
+
+## ファイル名の決まりとスキーマの対応。
+static func vscode_schema_map(lang: String) -> Array:
+	var dir := "./addons/adv80s/schemas/%s" % lang
+	return [
+		{"fileMatch": ["*.scenario.json"], "url": dir + "/scenario.schema.json"},
+		{"fileMatch": ["template.json", "*.template.json"], "url": dir + "/template.schema.json"},
+		{"fileMatch": ["*.intent_schema.json", "intent_schema.*.json"], "url": dir + "/intent_schema.schema.json"},
+		{"fileMatch": ["manifest.json", "manifest.auto.json"], "url": dir + "/manifest.schema.json"},
+		{"fileMatch": ["adv80s.project.json", "*.project.json"], "url": dir + "/project.schema.json"},
+		{"fileMatch": ["*.effect.json"], "url": dir + "/effect_def.schema.json"},
+	]
+
+
+static func _editor_lang() -> String:
+	var es := EditorInterface.get_editor_settings()
+	var l := String(es.get_setting("interface/editor/editor_language")) if es != null else ""
+	return "ja" if l.begins_with("ja") else "en"

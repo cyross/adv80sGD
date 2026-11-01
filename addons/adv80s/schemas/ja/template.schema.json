@@ -1,0 +1,350 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/template.schema.json",
+  "title": "adv80s 画面テンプレート",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "template_version": {
+      "type": "integer"
+    },
+    "id": {
+      "type": "string",
+      "description": "テンプレートID"
+    },
+    "name": {
+      "type": "string",
+      "description": "表示名"
+    },
+    "extends": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "継承元のテンプレートID"
+    },
+    "display": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "description": "画面プリセット（機種ID または 機種ID.モード名）"
+        },
+        "scale": {
+          "enum": [
+            "integer",
+            "fit",
+            "none"
+          ]
+        },
+        "aspect_correction": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "palette": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "enum": [
+            "preset",
+            "colors"
+          ]
+        },
+        "colors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^#?[0-9a-fA-F]{6}$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "fonts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "asset": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "フォント（main、readable）"
+    },
+    "layout": {
+      "type": "object",
+      "properties": {
+        "background": {
+          "type": "integer",
+          "description": "背景のパレット番号"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "画像の層（奥から順）"
+        },
+        "regions": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "rect": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "description": "[x, y, 幅, 高さ]（元の解像度のピクセル）"
+                  },
+                  "window": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "画面の区割り"
+        },
+        "named": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "regions": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "rect": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          },
+                          "minItems": 4,
+                          "maxItems": 4,
+                          "description": "[x, y, 幅, 高さ]（元の解像度のピクセル）"
+                        },
+                        "window": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "description": "名前付きのレイアウト"
+        }
+      },
+      "additionalProperties": false
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "select",
+              "parser",
+              "icon",
+              "click"
+            ]
+          }
+        },
+        "parser_profile": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "text": {
+      "type": "object",
+      "properties": {
+        "speed": {
+          "type": "number",
+          "minimum": 0,
+          "description": "1秒あたりの文字数（0で一度に表示）"
+        },
+        "markup": {
+          "type": "string"
+        },
+        "ruby": {
+          "enum": [
+            "above",
+            "paren",
+            "none"
+          ]
+        },
+        "emphasis": {
+          "enum": [
+            "above",
+            "paren",
+            "none"
+          ]
+        },
+        "color": {
+          "type": "integer"
+        },
+        "name_color": {
+          "type": "integer"
+        },
+        "denied_tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "filters": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "default",
+            "append",
+            "replace",
+            "none"
+          ]
+        },
+        "list": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": false
+    },
+    "transitions": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string"
+        },
+        "named": {
+          "type": "object"
+        },
+        "replace": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "features": {
+      "type": "object",
+      "description": "モダン機能の既定値の上書き"
+    },
+    "assets": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "manifest": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ui": {
+      "type": "object",
+      "properties": {
+        "window_skin": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "box",
+                "nine_patch"
+              ],
+              "description": "box：パレットの色で枠線、nine_patch：9分割画像"
+            },
+            "border": {
+              "type": "integer"
+            },
+            "pal": {
+              "type": "integer"
+            },
+            "fill": {
+              "type": "integer"
+            },
+            "image": {
+              "type": "string"
+            },
+            "margins": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          },
+          "additionalProperties": false
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "highlight": {
+          "type": "integer"
+        },
+        "ext": {
+          "type": "object",
+          "description": "拡張領域。中身は自由"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x\\.": {
+          "description": "自作の項目（x.名前）"
+        }
+      }
+    },
+    "ext": {
+      "type": "object",
+      "description": "拡張領域。中身は自由"
+    }
+  },
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x\\.": {
+      "description": "自作の項目（x.名前）"
+    }
+  },
+  "required": [
+    "template_version",
+    "id"
+  ]
+}

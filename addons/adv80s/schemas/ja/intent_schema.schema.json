@@ -1,0 +1,128 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/intent_schema.schema.json",
+  "title": "adv80s 意図スキーマ",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer"
+    },
+    "types": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "base": {
+                "type": "string"
+              },
+              "handler": {
+                "type": "string"
+              },
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              },
+              "values": {
+                "type": "array"
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "min_length": {
+                "type": "integer"
+              },
+              "max_length": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "description": "自作の型（base＋制約、または handler）。null で取り除く"
+    },
+    "verbs": {
+      "type": "object",
+      "description": "動詞ID → スロットの定義。null で取り除く",
+      "patternProperties": {
+        "^[A-Z][A-Z0-9_]*$": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "slots": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "particles": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "required": {
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "type"
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "description": "完全形",
+              "required": [
+                "slots"
+              ]
+            },
+            {
+              "type": "object",
+              "description": "省略形（\"target\": \"object\"、\"with\": \"item?\"）",
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[a-z_][a-z0-9_]*\\??$"
+              }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ext": {
+      "type": "object",
+      "description": "拡張領域。中身は自由"
+    }
+  },
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x\\.": {
+      "description": "自作の項目（x.名前）"
+    }
+  },
+  "required": [
+    "schema_version"
+  ]
+}

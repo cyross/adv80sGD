@@ -1,0 +1,586 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/project.schema.json",
+  "title": "adv80s プロジェクト設定",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "project_version": {
+      "type": "integer"
+    },
+    "template": {
+      "type": "string",
+      "description": "使う画面テンプレートのID"
+    },
+    "templates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "登録するテンプレート"
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "シナリオファイル"
+    },
+    "entry": {
+      "type": "string",
+      "description": "開始シーン（空ならシナリオの start）"
+    },
+    "asset_roots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "プロジェクトの素材フォルダ"
+    },
+    "asset_folders": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "image",
+          "bgm",
+          "se",
+          "voice",
+          "font",
+          "shader",
+          null
+        ]
+      },
+      "description": "種類フォルダの対応表への追加・変更（null で削除）"
+    },
+    "missing_asset": {
+      "enum": [
+        "placeholder",
+        "error"
+      ],
+      "description": "見つからない素材の扱い"
+    },
+    "lang": {
+      "enum": [
+        "ja",
+        "en"
+      ]
+    },
+    "dictionaries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "slot_mode": {
+      "enum": [
+        "named",
+        "standard"
+      ]
+    },
+    "intent_schema": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "type": "string"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "when": {
+                "$ref": "#/definitions/condition"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "file"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "event_defaults": {
+      "type": "object",
+      "description": "出力イベントの既定値（wait など）の書き換え",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "wait": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "click",
+                  "end",
+                  "input"
+                ]
+              },
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ],
+            "description": "次に進む条件。none、click、end、input、または秒数"
+          },
+          "log": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "message_log": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "hint": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "objective": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "hotspot": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "tried_marks": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "autosave": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "skip": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "auto_advance": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "rewind": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "flowchart": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "chapter_select": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "notebook": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "era_switch": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "readable_font": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "text_options": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "tts": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "gamepad": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "touch": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "filter_toggle": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "patternProperties": {
+        "^x\\.": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "モダン機能（許可、既定値、細かい設定）"
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "ext": {
+      "type": "object",
+      "description": "拡張領域。中身は自由"
+    }
+  },
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x\\.": {
+      "description": "自作の項目（x.名前）"
+    }
+  },
+  "definitions": {
+    "condition": {
+      "description": "条件式（5.8）。JSONの形か、短い文字列の形（例：\"has_key and money >= 100\"）",
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/condition"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "description": "すべて満たす"
+            },
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "description": "どれかを満たす"
+            },
+            "not": {
+              "$ref": "#/definitions/condition",
+              "description": "満たさない"
+            },
+            "var": {
+              "type": "string",
+              "description": "比べる変数"
+            },
+            "calc": {
+              "type": "string",
+              "description": "比べる計算式"
+            },
+            "count": {
+              "type": "string",
+              "description": "アイテムの個数"
+            },
+            "has": {
+              "type": "string",
+              "description": "アイテムを持っているか"
+            },
+            "scene": {
+              "type": "string",
+              "description": "現在のシーン"
+            },
+            "visited": {
+              "type": "string",
+              "description": "訪れたシーン"
+            },
+            "talked": {
+              "type": "string",
+              "description": "見た会話"
+            },
+            "read": {
+              "type": "string",
+              "description": "読んだ行"
+            },
+            "chosen": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[選択肢ID, 項目ID]"
+            },
+            "preset": {
+              "type": "string",
+              "description": "画面プリセット"
+            },
+            "group": {
+              "type": "string",
+              "description": "プリセットのグループ"
+            },
+            "feature": {
+              "type": "string",
+              "description": "有効なモダン機能"
+            },
+            "eq": {
+              "description": "等しい"
+            },
+            "ne": {
+              "description": "等しくない"
+            },
+            "lt": {
+              "description": "未満"
+            },
+            "le": {
+              "description": "以下"
+            },
+            "gt": {
+              "description": "より大きい"
+            },
+            "ge": {
+              "description": "以上"
+            },
+            "in": {
+              "type": "array",
+              "description": "いずれかと一致"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

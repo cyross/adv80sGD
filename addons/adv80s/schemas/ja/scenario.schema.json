@@ -1,0 +1,965 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/scenario.schema.json",
+  "title": "adv80s シナリオ",
+  "description": "JSONシナリオ（5.2、5.7、5.8）",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "scenario_version": {
+      "type": "integer"
+    },
+    "start": {
+      "type": "string",
+      "description": "開始シーンID"
+    },
+    "scene": {
+      "type": "string",
+      "description": "シーン1つだけのファイルのときのシーンID"
+    },
+    "name": {
+      "type": "string",
+      "description": "表示名"
+    },
+    "image": {
+      "type": "string",
+      "description": "背景の画像ID（またはパス）"
+    },
+    "first": {
+      "$ref": "#/definitions/step",
+      "description": "初めて入ったときの手順"
+    },
+    "enter": {
+      "$ref": "#/definitions/step",
+      "description": "入ったときの手順（first があれば2回目以降）"
+    },
+    "objects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "コマンド入力で認識する呼び名"
+          },
+          "label": {
+            "type": "string",
+            "description": "コマンド選択に出す名前"
+          },
+          "region": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "[x, y, 幅, 高さ]（元の解像度のピクセル）"
+          },
+          "character": {
+            "type": "string",
+            "description": "人物として扱うときの話者ID"
+          },
+          "when": {
+            "$ref": "#/definitions/condition",
+            "description": "表示する条件"
+          },
+          "on": {
+            "type": "object",
+            "description": "動詞ごとの反応。\"USE+door\" のように with の対象を指定できる",
+            "patternProperties": {
+              "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                "$ref": "#/definitions/step"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ext": {
+            "type": "object",
+            "description": "拡張領域。中身は自由"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "自作の項目（x.名前）"
+          }
+        }
+      },
+      "description": "シーンの中の物や人物"
+    },
+    "exits": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "label": {
+                "type": "string"
+              },
+              "when": {
+                "$ref": "#/definitions/condition"
+              },
+              "on": {
+                "type": "object",
+                "description": "動詞ごとの反応。\"USE+door\" のように with の対象を指定できる",
+                "patternProperties": {
+                  "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                    "$ref": "#/definitions/step"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "ext": {
+                "type": "object",
+                "description": "拡張領域。中身は自由"
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x\\.": {
+                "description": "自作の項目（x.名前）"
+              }
+            }
+          }
+        ]
+      },
+      "description": "出口（行き先のシーンID → 設定）"
+    },
+    "on": {
+      "type": "object",
+      "description": "動詞ごとの反応。\"USE+door\" のように with の対象を指定できる",
+      "patternProperties": {
+        "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+          "$ref": "#/definitions/step"
+        }
+      },
+      "additionalProperties": false
+    },
+    "variables": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "bool",
+              "int",
+              "float",
+              "string"
+            ]
+          },
+          "default": {}
+        },
+        "additionalProperties": false
+      },
+      "description": "変数の宣言（任意）"
+    },
+    "characters": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pal": {
+            "type": "integer"
+          },
+          "voice": {
+            "type": "string"
+          },
+          "ext": {
+            "type": "object",
+            "description": "拡張領域。中身は自由"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "自作の項目（x.名前）"
+          }
+        }
+      },
+      "description": "話者"
+    },
+    "items": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "on": {
+            "type": "object",
+            "description": "動詞ごとの反応。\"USE+door\" のように with の対象を指定できる",
+            "patternProperties": {
+              "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                "$ref": "#/definitions/step"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ext": {
+            "type": "object",
+            "description": "拡張領域。中身は自由"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "自作の項目（x.名前）"
+          }
+        }
+      },
+      "description": "アイテム"
+    },
+    "scenes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "表示名"
+          },
+          "image": {
+            "type": "string",
+            "description": "背景の画像ID（またはパス）"
+          },
+          "first": {
+            "$ref": "#/definitions/step",
+            "description": "初めて入ったときの手順"
+          },
+          "enter": {
+            "$ref": "#/definitions/step",
+            "description": "入ったときの手順（first があれば2回目以降）"
+          },
+          "objects": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "names": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "コマンド入力で認識する呼び名"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "コマンド選択に出す名前"
+                },
+                "region": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 4,
+                  "maxItems": 4,
+                  "description": "[x, y, 幅, 高さ]（元の解像度のピクセル）"
+                },
+                "character": {
+                  "type": "string",
+                  "description": "人物として扱うときの話者ID"
+                },
+                "when": {
+                  "$ref": "#/definitions/condition",
+                  "description": "表示する条件"
+                },
+                "on": {
+                  "type": "object",
+                  "description": "動詞ごとの反応。\"USE+door\" のように with の対象を指定できる",
+                  "patternProperties": {
+                    "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                      "$ref": "#/definitions/step"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "ext": {
+                  "type": "object",
+                  "description": "拡張領域。中身は自由"
+                }
+              },
+              "additionalProperties": false,
+              "patternProperties": {
+                "^x\\.": {
+                  "description": "自作の項目（x.名前）"
+                }
+              }
+            },
+            "description": "シーンの中の物や人物"
+          },
+          "exits": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "names": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "when": {
+                      "$ref": "#/definitions/condition"
+                    },
+                    "on": {
+                      "type": "object",
+                      "description": "動詞ごとの反応。\"USE+door\" のように with の対象を指定できる",
+                      "patternProperties": {
+                        "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                          "$ref": "#/definitions/step"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "ext": {
+                      "type": "object",
+                      "description": "拡張領域。中身は自由"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "patternProperties": {
+                    "^x\\.": {
+                      "description": "自作の項目（x.名前）"
+                    }
+                  }
+                }
+              ]
+            },
+            "description": "出口（行き先のシーンID → 設定）"
+          },
+          "on": {
+            "type": "object",
+            "description": "動詞ごとの反応。\"USE+door\" のように with の対象を指定できる",
+            "patternProperties": {
+              "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                "$ref": "#/definitions/step"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ext": {
+            "type": "object",
+            "description": "拡張領域。中身は自由"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "自作の項目（x.名前）"
+          }
+        }
+      },
+      "description": "シーン"
+    },
+    "dialogues": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/step"
+      },
+      "description": "会話（手順の配列）"
+    },
+    "topics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "names": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "dialogue": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            },
+            "ext": {
+              "type": "object",
+              "description": "拡張領域。中身は自由"
+            }
+          },
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x\\.": {
+              "description": "自作の項目（x.名前）"
+            }
+          },
+          "required": [
+            "id",
+            "dialogue"
+          ]
+        }
+      },
+      "description": "話題（話者ID → 話題の一覧）"
+    },
+    "nouns": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "名詞の言い換え"
+    },
+    "replies": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "決まった返事の上書き"
+    },
+    "verbs": {
+      "type": "object",
+      "description": "辞書の動詞の上書き"
+    },
+    "particles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "intent_schema": {
+      "type": "object",
+      "description": "このシナリオの意図スキーマの層"
+    },
+    "event_defaults": {
+      "type": "object",
+      "description": "出力イベントの既定値（wait など）の書き換え",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "wait": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "click",
+                  "end",
+                  "input"
+                ]
+              },
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ],
+            "description": "次に進む条件。none、click、end、input、または秒数"
+          },
+          "log": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "assets": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "manifest": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "シナリオが持つ素材フォルダ"
+    },
+    "ext": {
+      "type": "object",
+      "description": "拡張領域。中身は自由"
+    }
+  },
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x\\.": {
+      "description": "自作の項目（x.名前）"
+    }
+  },
+  "definitions": {
+    "condition": {
+      "description": "条件式（5.8）。JSONの形か、短い文字列の形（例：\"has_key and money >= 100\"）",
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/condition"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "description": "すべて満たす"
+            },
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "description": "どれかを満たす"
+            },
+            "not": {
+              "$ref": "#/definitions/condition",
+              "description": "満たさない"
+            },
+            "var": {
+              "type": "string",
+              "description": "比べる変数"
+            },
+            "calc": {
+              "type": "string",
+              "description": "比べる計算式"
+            },
+            "count": {
+              "type": "string",
+              "description": "アイテムの個数"
+            },
+            "has": {
+              "type": "string",
+              "description": "アイテムを持っているか"
+            },
+            "scene": {
+              "type": "string",
+              "description": "現在のシーン"
+            },
+            "visited": {
+              "type": "string",
+              "description": "訪れたシーン"
+            },
+            "talked": {
+              "type": "string",
+              "description": "見た会話"
+            },
+            "read": {
+              "type": "string",
+              "description": "読んだ行"
+            },
+            "chosen": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[選択肢ID, 項目ID]"
+            },
+            "preset": {
+              "type": "string",
+              "description": "画面プリセット"
+            },
+            "group": {
+              "type": "string",
+              "description": "プリセットのグループ"
+            },
+            "feature": {
+              "type": "string",
+              "description": "有効なモダン機能"
+            },
+            "eq": {
+              "description": "等しい"
+            },
+            "ne": {
+              "description": "等しくない"
+            },
+            "lt": {
+              "description": "未満"
+            },
+            "le": {
+              "description": "以下"
+            },
+            "gt": {
+              "description": "より大きい"
+            },
+            "ge": {
+              "description": "以上"
+            },
+            "in": {
+              "type": "array",
+              "description": "いずれかと一致"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "step": {
+      "description": "手順。文字列（地の文、\"@話者ID 文章\"）、手順の配列、または手順のオブジェクト",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        },
+        {
+          "$ref": "#/definitions/step_object"
+        }
+      ]
+    },
+    "step_object": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "if": {
+              "$ref": "#/definitions/condition"
+            },
+            "then": {
+              "$ref": "#/definitions/step"
+            },
+            "else": {
+              "$ref": "#/definitions/step"
+            }
+          },
+          "additionalProperties": false,
+          "description": "条件分岐",
+          "required": [
+            "if"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "set": {
+              "type": "object",
+              "description": "変数の変更。値が \"=\" で始まる文字列なら計算式"
+            }
+          },
+          "additionalProperties": false,
+          "description": "変数の変更",
+          "required": [
+            "set"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "let": {
+              "type": "string",
+              "description": "\"変数 = 式; …\""
+            }
+          },
+          "additionalProperties": false,
+          "description": "計算式による変更",
+          "required": [
+            "let"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "say": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "voice": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "台詞（IDやボイスを付けられる書き方）",
+          "required": [
+            "say",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "goto": {
+              "type": "string",
+              "description": "移る先（会話ID、またはシーンID）。戻らない"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "goto"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "call": {
+              "type": "string",
+              "description": "呼ぶ会話ID。終わったら戻る"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "call"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "dialogue": {
+              "type": "string",
+              "description": "呼ぶ会話ID"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "dialogue"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ink": {
+              "type": "string",
+              "description": "Inkのノット名"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "ink"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "choice": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "do": {
+                        "$ref": "#/definitions/step"
+                      },
+                      "when": {
+                        "$ref": "#/definitions/condition"
+                      },
+                      "once": {
+                        "type": "boolean"
+                      },
+                      "ext": {
+                        "type": "object",
+                        "description": "拡張領域。中身は自由"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "patternProperties": {
+                      "^x\\.": {
+                        "description": "自作の項目（x.名前）"
+                      }
+                    },
+                    "required": [
+                      "label"
+                    ]
+                  }
+                },
+                "ext": {
+                  "type": "object",
+                  "description": "拡張領域。中身は自由"
+                }
+              },
+              "additionalProperties": false,
+              "patternProperties": {
+                "^x\\.": {
+                  "description": "自作の項目（x.名前）"
+                }
+              },
+              "required": [
+                "options"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "description": "選択肢",
+          "required": [
+            "choice"
+          ]
+        },
+        {
+          "$ref": "#/definitions/event"
+        },
+        {
+          "type": "object",
+          "description": "出力イベントの短い書き方（{\"image.show\": {…}}）",
+          "patternProperties": {
+            "^(x\\.)?[a-z_]+\\.[a-z_]+$": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "イベントの種類（分類.動作）",
+          "anyOf": [
+            {
+              "enum": [
+                "text.show",
+                "text.append",
+                "text.clear",
+                "image.show",
+                "image.hide",
+                "effect.play",
+                "bgm.play",
+                "bgm.stop",
+                "se.play",
+                "voice.play",
+                "state.set",
+                "item.add",
+                "item.remove",
+                "scene.goto",
+                "wait",
+                "group",
+                "choice.show",
+                "input.request",
+                "game.end",
+                "verbs.update",
+                "hotspots.update",
+                "input.mode",
+                "notebook.add",
+                "objective.set",
+                "hint.set",
+                "flow.mark",
+                "checkpoint",
+                "template.switch",
+                "layout.set",
+                "save.request"
+              ]
+            },
+            {
+              "pattern": "^x\\."
+            }
+          ]
+        },
+        "args": {
+          "type": "object"
+        },
+        "wait": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "none",
+                "click",
+                "end",
+                "input"
+              ]
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ],
+          "description": "次に進む条件。none、click、end、input、または秒数"
+        },
+        "id": {
+          "type": "string"
+        },
+        "log": {
+          "type": "boolean"
+        },
+        "ext": {
+          "type": "object",
+          "description": "拡張領域。中身は自由"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x\\.": {
+          "description": "自作の項目（x.名前）"
+        }
+      },
+      "description": "出力イベント（5.4）",
+      "required": [
+        "type"
+      ]
+    }
+  }
+}

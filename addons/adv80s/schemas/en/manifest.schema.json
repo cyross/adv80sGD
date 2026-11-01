@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/manifest.schema.json",
+  "title": "adv80s asset manifest",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "manifest_version": {
+      "type": "integer"
+    },
+    "generated": {
+      "type": "boolean",
+      "description": "true for generated manifests"
+    },
+    "base": {
+      "type": "string",
+      "description": "Base folder (defaults to the manifest folder)"
+    },
+    "assets": {
+      "type": "object",
+      "description": "ID (or kind:ID) -> asset",
+      "patternProperties": {
+        "^[^/]+$": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "image",
+                "bgm",
+                "se",
+                "voice",
+                "font",
+                "shader"
+              ]
+            },
+            "file": {
+              "type": "string",
+              "description": "Default file (relative to base)"
+            },
+            "by_preset": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "file": {
+                        "type": "string"
+                      },
+                      "variants": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "description": "Per-preset overrides (preset, machine or group ID)"
+            },
+            "variants": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Variants (expressions, etc.)"
+            },
+            "pivot": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "region": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 4,
+              "maxItems": 4,
+              "description": "[x, y, width, height] in native pixels"
+            },
+            "loop_start": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Loop start (seconds)"
+            },
+            "volume": {
+              "type": "number"
+            },
+            "ext": {
+              "type": "object",
+              "description": "Extension area. Free-form"
+            }
+          },
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x\\.": {
+              "description": "Custom property (x.name)"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "manifest_version"
+  ]
+}

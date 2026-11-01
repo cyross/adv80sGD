@@ -1,0 +1,14 @@
+{
+  "assets": {
+    "image:hallway": {
+      "file": "bg/hallway.png",
+      "type": "image"
+    },
+    "image:room": {
+      "file": "bg/room.png",
+      "type": "image"
+    }
+  },
+  "generated": true,
+  "manifest_version": 1
+}

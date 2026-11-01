@@ -31,7 +31,10 @@ var topics: Dictionary = {}
 var variables: Dictionary = {}
 var start_scene: String = ""
 var intent_schema_layer: Variant = null
+var event_defaults: Dictionary = {}
+var asset_roots: PackedStringArray = []   ## シナリオが持つ素材フォルダ（"assets": {"root": …}）
 var files: PackedStringArray = []
+var sources: Dictionary = {}              ## ファイル → 読み込んだJSON（validate で使う）
 var diags: Array[Dictionary] = []
 
 const MAX_DEPTH := 64
@@ -54,6 +57,7 @@ func load_sources(paths: PackedStringArray) -> Error:
 			result = ERR_PARSE_ERROR
 			continue
 		files.append(path)
+		sources[path] = d
 		_merge_source(d, path)
 	ctx.state.declared = variables
 	return result
@@ -63,6 +67,7 @@ func _merge_source(d: Dictionary, path: String) -> void:
 	if d.has("scene"):
 		var id := String(d["scene"])
 		_put(scenes, id, d, path, "/scene")
+		_origin["scenes/%s" % id] = path
 		if start_scene == "":
 			start_scene = id
 	for key in ["scenes", "dialogues", "characters", "items", "topics", "variables"]:
@@ -72,6 +77,13 @@ func _merge_source(d: Dictionary, path: String) -> void:
 			_put(table, id, src[id], path, "/%s/%s" % [key, id])
 	if d.has("start"):
 		start_scene = String(d["start"])
+	if d.has("event_defaults"):
+		event_defaults = AdvJson.merge(event_defaults, d["event_defaults"])
+	if d.get("assets") is Dictionary and d["assets"].has("root"):
+		var root := String(d["assets"]["root"])
+		if not root.contains("://"):
+			root = path.get_base_dir() + "/" + root
+		asset_roots.append(root.trim_suffix("/"))
 	if d.has("intent_schema"):
 		intent_schema_layer = d["intent_schema"] if intent_schema_layer == null \
 			else AdvJson.merge(intent_schema_layer, d["intent_schema"])
@@ -88,6 +100,7 @@ func _put(table: Dictionary, id: String, value: Variant, path: String, json_path
 		diags.append(AdvDiag.make("warning", "DUPLICATE_ID", "IDが重複しています: %s" % id,
 			"Duplicate ID: %s" % id, path, json_path))
 	table[id] = value
+	_origin["%s/%s" % [json_path.get_slice("/", 1), id]] = path
 
 
 # ---------------------------------------------------------------- 実行
@@ -283,6 +296,11 @@ func _run_dict(d: Dictionary, path: String) -> void:
 
 
 func _emit(ev: Dictionary) -> void:
+	var def = event_defaults.get(String(ev.get("type", "")))
+	if def is Dictionary:
+		for k in def:
+			if not ev.has(k):
+				ev[k] = def[k]
 	if AdvEvents.is_state_event(ev):
 		_scratch.apply_event(ev)
 	_out.append(ev)
@@ -387,6 +405,10 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 			return list
 		"nouns":
 			return _all_names()
+		"asset_roots":
+			return asset_roots
+		"asset_refs":
+			return _asset_refs()
 		"intent_schema":
 			return intent_schema_layer
 		"start":
@@ -465,72 +487,288 @@ func _all_names() -> Array:
 
 # ---------------------------------------------------------------- 確認
 
+## 出力イベントで参照している素材の種類（イベントの種類 → 素材の種類）
+const _ASSET_EVENTS := {"image.show": "image", "bgm.play": "bgm", "se.play": "se", "voice.play": "voice"}
+
+# validate の作業用
+var _v_reads: Dictionary = {}     ## 読んでいる変数 → 最初に見つかった場所 [file, path]
+var _v_writes: Dictionary = {}    ## 書いている変数
+var _v_targets: Dictionary = {}   ## goto・出口の行き先
+var _v_refs: Array = []           ## 素材の参照 [{kind, id, file, path}]
+var _v_out: Array[Dictionary] = []
+
+
 func validate() -> Array[Dictionary]:
-	var r: Array[Dictionary] = diags.duplicate()
-	var file := files[0] if not files.is_empty() else ""
+	_v_reads = {}
+	_v_writes = {}
+	_v_targets = {}
+	_v_refs = []
+	_v_out = diags.duplicate()
+	for f in sources:
+		for d in AdvSchemaValidator.check(sources[f], "scenario", f):
+			_v_out.append(d)
+	var first_file := files[0] if not files.is_empty() else ""
 	if start_scene == "" or not scenes.has(start_scene):
-		r.append(AdvDiag.make("error", "MISSING_TARGET", "開始シーンが見つかりません: %s" % start_scene,
-			"Start scene not found: %s" % start_scene, file, "/start"))
+		_v_out.append(AdvDiag.make("error", "MISSING_TARGET", "開始シーンが見つかりません: %s" % start_scene,
+			"Start scene not found: %s" % start_scene, first_file, "/start"))
+	_walk_all()
+
+	for ref in _v_refs:
+		if not ctx.has_asset(ref["kind"], ref["id"]):
+			_v_out.append(AdvDiag.make("warning", "ASSET_NOT_FOUND", "素材が見つかりません: %s（%s）" % [ref["id"], ref["kind"]],
+				"Asset not found: %s (%s)" % [ref["id"], ref["kind"]], ref["file"], ref["path"]))
+	for name in _v_reads:
+		if not variables.has(name) and not _v_writes.has(name):
+			var at: Array = _v_reads[name]
+			_v_out.append(AdvDiag.make("warning", "UNKNOWN_VARIABLE", "宣言も変更もされていない変数を参照しています: %s" % name,
+				"Variable is read but never declared or set: %s" % name, at[0], at[1]))
 	for sid in scenes:
-		var sc: Dictionary = scenes[sid]
-		if sc.has("image") and not ctx.has_asset("image", String(sc["image"])):
-			r.append(AdvDiag.make("warning", "ASSET_NOT_FOUND", "画像が見つかりません: %s（代わりの表示を使います）" % sc["image"],
-				"Image not found: %s (placeholder will be used)" % sc["image"], file, "/scenes/%s/image" % sid))
+		if sid != start_scene and not _v_targets.has(sid):
+			_v_out.append(AdvDiag.make("info", "UNREACHABLE", "どこからも移動してこないシーンです: %s" % sid,
+				"No goto or exit leads to this scene: %s" % sid, _file_of("scenes", sid), "/scenes/%s" % sid))
+	return _v_out
+
+
+## シナリオが参照している素材 [{kind, id, file, path}]。
+func _asset_refs() -> Array:
+	validate()
+	return _v_refs
+
+
+var _origin: Dictionary = {}
+
+
+func _file_of(table: String, id: String) -> String:
+	return String(_origin.get("%s/%s" % [table, id], files[0] if not files.is_empty() else ""))
+
+
+func _walk_all() -> void:
+	for sid in scenes:
+		var sc = scenes[sid]
+		if not sc is Dictionary:
+			continue
+		var f := _file_of("scenes", sid)
+		var jp := _scene_pointer(sid, f)
+		if sc.has("image"):
+			_v_refs.append({"kind": "image", "id": String(sc["image"]), "file": f, "path": jp + "/image"})
 		for key in ["first", "enter"]:
 			if sc.has(key):
-				_check_steps(sc[key], "/scenes/%s/%s" % [sid, key], file, r)
-		_check_on(sc.get("on", {}), "/scenes/%s/on" % sid, file, r)
+				_walk_step(sc[key], "%s/%s" % [jp, key], f, false)
+		_walk_on(sc.get("on", {}), jp + "/on", f)
 		for oid in sc.get("objects", {}):
 			var obj = sc["objects"][oid]
 			if obj is Dictionary:
-				_check_cond(obj.get("when"), "/scenes/%s/objects/%s/when" % [sid, oid], file, r)
-				_check_on(obj.get("on", {}), "/scenes/%s/objects/%s/on" % [sid, oid], file, r)
+				_walk_cond(obj.get("when"), "%s/objects/%s/when" % [jp, oid], f)
+				_walk_on(obj.get("on", {}), "%s/objects/%s/on" % [jp, oid], f)
+				if obj.has("character") and not characters.has(String(obj["character"])):
+					_v_out.append(AdvDiag.make("warning", "MISSING_TARGET", "話者が定義されていません: %s" % obj["character"],
+						"Speaker is not defined: %s" % obj["character"], f, "%s/objects/%s/character" % [jp, oid]))
 		for eid in sc.get("exits", {}):
+			_v_targets[eid] = true
 			if not scenes.has(eid):
-				r.append(AdvDiag.make("error", "MISSING_TARGET", "出口の行き先のシーンがありません: %s" % eid,
-					"Exit target scene not found: %s" % eid, file, "/scenes/%s/exits/%s" % [sid, eid]))
+				_v_out.append(AdvDiag.make("error", "MISSING_TARGET", "出口の行き先のシーンがありません: %s" % eid,
+					"Exit target scene not found: %s" % eid, f, "%s/exits/%s" % [jp, eid]))
+			var ex = sc["exits"][eid]
+			if ex is Dictionary:
+				_walk_cond(ex.get("when"), "%s/exits/%s/when" % [jp, eid], f)
+				_walk_on(ex.get("on", {}), "%s/exits/%s/on" % [jp, eid], f)
 	for iid in items:
 		if items[iid] is Dictionary:
-			_check_on(items[iid].get("on", {}), "/items/%s/on" % iid, file, r)
+			_walk_on(items[iid].get("on", {}), "/items/%s/on" % iid, _file_of("items", iid))
 	for did in dialogues:
-		_check_steps(dialogues[did], "/dialogues/%s" % did, file, r)
-	return r
+		_walk_step(dialogues[did], "/dialogues/%s" % did, _file_of("dialogues", did), true)
+	for cid in topics:
+		var f := _file_of("topics", cid)
+		if not characters.has(cid):
+			_v_out.append(AdvDiag.make("warning", "MISSING_TARGET", "話題の話者が定義されていません: %s" % cid,
+				"Topic speaker is not defined: %s" % cid, f, "/topics/%s" % cid))
+		var list = topics[cid]
+		if list is Array:
+			for i in list.size():
+				var tp = list[i]
+				if not tp is Dictionary:
+					continue
+				_walk_cond(tp.get("when"), "/topics/%s/%d/when" % [cid, i], f)
+				if not dialogues.has(String(tp.get("dialogue", ""))):
+					_v_out.append(AdvDiag.make("error", "MISSING_TARGET", "会話が見つかりません: %s" % tp.get("dialogue", ""),
+						"Dialogue not found: %s" % tp.get("dialogue", ""), f, "/topics/%s/%d/dialogue" % [cid, i]))
 
 
-func _check_on(on: Dictionary, jp: String, file: String, r: Array[Dictionary]) -> void:
+## シーン1つだけのファイルでは、JSON Pointer はファイルの直下になる。
+func _scene_pointer(sid: String, f: String) -> String:
+	var src = sources.get(f)
+	if src is Dictionary and String(src.get("scene", "")) == sid:
+		return ""
+	return "/scenes/%s" % sid
+
+
+func _walk_on(on: Variant, jp: String, f: String) -> void:
+	if not on is Dictionary:
+		return
 	for key in on:
 		var verb := String(key).get_slice("+", 0)
 		if not ctx.schema.has_verb(verb):
-			r.append(AdvDiag.make("error", "UNKNOWN_VERB", "知らない動詞です: %s" % verb,
-				"Unknown verb: %s" % verb, file, "%s/%s" % [jp, key]))
-		_check_steps(on[key], "%s/%s" % [jp, key], file, r)
+			_v_out.append(AdvDiag.make("error", "UNKNOWN_VERB", "知らない動詞です: %s" % verb,
+				"Unknown verb: %s" % verb, f, "%s/%s" % [jp, key]))
+		_walk_step(on[key], "%s/%s" % [jp, key], f, false)
 
 
-func _check_steps(step: Variant, jp: String, file: String, r: Array[Dictionary]) -> void:
-	if step is Array:
+func _walk_step(step: Variant, jp: String, f: String, in_dialogue: bool) -> void:
+	if step is String:
+		var s := String(step)
+		if s.begins_with("@") and not s.begins_with("@@"):
+			var speaker := s.substr(1).get_slice(" ", 0).get_slice("　", 0)
+			if not characters.has(speaker):
+				_v_out.append(AdvDiag.make("warning", "MISSING_TARGET", "話者が定義されていません: %s" % speaker,
+					"Speaker is not defined: %s" % speaker, f, jp))
+		_collect_text_vars(s, jp, f)
+	elif step is Array:
 		for i in step.size():
-			_check_steps(step[i], "%s/%d" % [jp, i], file, r)
+			_walk_step(step[i], "%s/%d" % [jp, i], f, in_dialogue)
 	elif step is Dictionary:
-		if step.has("if"):
-			_check_cond(step["if"], jp + "/if", file, r)
+		var d: Dictionary = step
+		if d.has("if"):
+			_walk_cond(d["if"], jp + "/if", f)
 			for k in ["then", "else"]:
-				if step.has(k):
-					_check_steps(step[k], "%s/%s" % [jp, k], file, r)
-		if step.has("goto"):
-			var id := String(step["goto"])
+				if d.has(k):
+					_walk_step(d[k], "%s/%s" % [jp, k], f, in_dialogue)
+		if d.has("set") and d["set"] is Dictionary:
+			for name in d["set"]:
+				_v_writes[name] = true
+				var v = d["set"][name]
+				if v is String and String(v).begins_with("="):
+					_collect_expr(String(v).substr(1), "%s/set/%s" % [jp, name], f)
+		if d.has("let"):
+			var stmts = AdvExpr.parse_let(String(d["let"]))
+			if stmts == null:
+				_v_out.append(AdvDiag.make("error", "COND_SYNTAX", "let を読めません: %s" % d["let"],
+					"Cannot parse let: %s" % d["let"], f, jp + "/let"))
+			else:
+				for st in stmts:
+					_v_writes[st[0]] = true
+					_collect_ast(st[1], jp + "/let", f)
+		if d.has("say"):
+			if not characters.has(String(d["say"])):
+				_v_out.append(AdvDiag.make("warning", "MISSING_TARGET", "話者が定義されていません: %s" % d["say"],
+					"Speaker is not defined: %s" % d["say"], f, jp + "/say"))
+			_collect_text_vars(String(d.get("text", "")), jp + "/text", f)
+		if d.has("goto"):
+			var id := String(d["goto"])
+			_v_targets[id] = true
 			if not scenes.has(id) and not dialogues.has(id):
-				r.append(AdvDiag.make("error", "MISSING_TARGET", "移動先が見つかりません: %s" % id,
-					"goto target not found: %s" % id, file, jp + "/goto"))
+				_v_out.append(AdvDiag.make("error", "MISSING_TARGET", "移動先が見つかりません: %s" % id,
+					"goto target not found: %s" % id, f, jp + "/goto"))
 		for k in ["call", "dialogue"]:
-			if step.has(k) and not dialogues.has(String(step[k])):
-				r.append(AdvDiag.make("error", "MISSING_TARGET", "会話が見つかりません: %s" % step[k],
-					"Dialogue not found: %s" % step[k], file, "%s/%s" % [jp, k]))
+			if d.has(k) and not dialogues.has(String(d[k])):
+				_v_out.append(AdvDiag.make("error", "MISSING_TARGET", "会話が見つかりません: %s" % d[k],
+					"Dialogue not found: %s" % d[k], f, "%s/%s" % [jp, k]))
+		if d.has("choice") and d["choice"] is Dictionary:
+			var opts = d["choice"].get("options", [])
+			if opts is Array:
+				for i in opts.size():
+					if opts[i] is Dictionary:
+						_walk_cond(opts[i].get("when"), "%s/choice/options/%d/when" % [jp, i], f)
+						if opts[i].has("do"):
+							_walk_step(opts[i]["do"], "%s/choice/options/%d/do" % [jp, i], f, in_dialogue)
+		# 出力イベント（完全形と短い書き方）
+		var type := ""
+		var args = null
+		var ap := ""
+		if d.has("type"):
+			type = String(d["type"])
+			args = d.get("args", {})
+			ap = jp + "/args"
+		elif d.size() == 1 and String(d.keys()[0]).contains("."):
+			type = String(d.keys()[0])
+			args = d[type]
+			ap = "%s/%s" % [jp, _ptr(type)]
+		if type == "state.set" and args is Dictionary:
+			_v_writes[String(args.get("var", args.get("flag", args.get("name", ""))))] = true
+		if _ASSET_EVENTS.has(type) and args is Dictionary and args.has("id"):
+			_v_refs.append({"kind": _ASSET_EVENTS[type], "id": String(args["id"]), "file": f, "path": ap + "/id"})
+		if type == "scene.goto" and args is Dictionary:
+			_v_targets[String(args.get("id", ""))] = true
 
 
-func _check_cond(cond: Variant, jp: String, file: String, r: Array[Dictionary]) -> void:
+func _walk_cond(cond: Variant, jp: String, f: String) -> void:
 	if cond == null:
 		return
 	var err := AdvCondition.check(cond)
 	if err != "":
-		r.append(AdvDiag.make("error", "COND_SYNTAX", "条件式の誤り: %s" % err,
-			"Condition syntax error: %s" % err, file, jp))
+		_v_out.append(AdvDiag.make("error", "COND_SYNTAX", "条件式の誤り: %s" % err,
+			"Condition syntax error: %s" % err, f, jp))
+		return
+	_collect_cond(cond, jp, f)
+
+
+## 条件の中で読んでいる変数を集める。
+func _collect_cond(cond: Variant, jp: String, f: String) -> void:
+	if cond is String:
+		if AdvCondition.is_identifier(cond):
+			_read(cond, jp, f)
+		else:
+			_collect_cond(AdvCondition.compile(cond), jp, f)
+	elif cond is Array:
+		for c in cond:
+			_collect_cond(c, jp, f)
+	elif cond is Dictionary:
+		for k in ["all", "any"]:
+			if cond.has(k):
+				_collect_cond(cond[k], jp, f)
+		if cond.has("not"):
+			_collect_cond(cond["not"], jp, f)
+		if cond.has("var"):
+			_read(String(cond["var"]), jp, f)
+		if cond.has("calc"):
+			_collect_expr(String(cond["calc"]), jp, f)
+		for op in ["eq", "ne", "lt", "le", "gt", "ge"]:
+			var v = cond.get(op)
+			if v is Dictionary:
+				if v.has("var"):
+					_read(String(v["var"]), jp, f)
+				if v.has("calc"):
+					_collect_expr(String(v["calc"]), jp, f)
+
+
+func _collect_expr(text: String, jp: String, f: String) -> void:
+	var ast = AdvExpr.parse(text)
+	if ast == null:
+		_v_out.append(AdvDiag.make("error", "COND_SYNTAX", "計算式を読めません: %s" % text,
+			"Cannot parse expression: %s" % text, f, jp))
+		return
+	_collect_ast(ast, jp, f)
+
+
+func _collect_ast(ast: Array, jp: String, f: String) -> void:
+	match ast[0]:
+		"id":
+			_read(ast[1], jp, f)
+		"bin":
+			_collect_ast(ast[2], jp, f)
+			_collect_ast(ast[3], jp, f)
+		"neg", "not":
+			_collect_ast(ast[1], jp, f)
+		"and", "or":
+			for a in ast[1]:
+				_collect_ast(a, jp, f)
+
+
+static var _re_text_var: RegEx
+
+
+## 本文の {変数} と [var=変数]。
+func _collect_text_vars(s: String, jp: String, f: String) -> void:
+	if _re_text_var == null:
+		_re_text_var = RegEx.create_from_string("(?<!\\{)\\{([A-Za-z_][A-Za-z0-9_]*)\\}|\\[var=([^\\]]+)\\]")
+	for m in _re_text_var.search_all(s):
+		var name := m.get_string(1) if m.get_string(1) != "" else m.get_string(2)
+		_read(name, jp, f)
+
+
+func _read(name: String, jp: String, f: String) -> void:
+	if not _v_reads.has(name):
+		_v_reads[name] = [f, jp]
+
+
+static func _ptr(k: String) -> String:
+	return k.replace("~", "~0").replace("/", "~1")

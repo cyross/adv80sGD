@@ -6,6 +6,7 @@ extends RefCounted
 const SEARCH_DIRS := ["res://game/templates", "res://addons/adv80s/templates"]
 
 var data: Dictionary = {}
+var path: String = ""         ## 読み込んだ template.json のパス
 var preset: Dictionary = {}   ## AdvPresets.resolve の結果
 var _layout_name: String = ""
 
@@ -17,6 +18,7 @@ static func load_template(id_or_path: String, diags: Array = []) -> AdvTemplate:
 		return null
 	var t := AdvTemplate.new()
 	t.data = d
+	t.path = find_path(id_or_path)
 	t.preset = AdvPresets.resolve(String(d.get("display", {}).get("preset", "98")))
 	if t.preset.is_empty():
 		diags.append(AdvDiag.make("error", "MISSING_TARGET", "プリセットが見つかりません: %s" % d.get("display", {}).get("preset"),
@@ -94,6 +96,16 @@ func region_rect(name: String) -> Rect2i:
 
 func region(name: String) -> Dictionary:
 	return data.get("layout", {}).get("regions", {}).get(name, {})
+
+
+## テンプレートが持つ素材フォルダ（assets.root、template.json のフォルダからの相対）。なければ空文字。
+func asset_root() -> String:
+	var root := String(get_section("assets").get("root", ""))
+	if root == "" or path == "":
+		return ""
+	var dir := root if root.contains("://") else path.get_base_dir() + "/" + root
+	dir = dir.trim_suffix("/")
+	return dir if DirAccess.dir_exists_absolute(dir) else ""
 
 
 func get_section(key: String) -> Dictionary:

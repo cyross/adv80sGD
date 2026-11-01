@@ -1,0 +1,965 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/scenario.schema.json",
+  "title": "adv80s scenario",
+  "description": "JSON scenario (5.2, 5.7, 5.8)",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "scenario_version": {
+      "type": "integer"
+    },
+    "start": {
+      "type": "string",
+      "description": "Start scene ID"
+    },
+    "scene": {
+      "type": "string",
+      "description": "Scene ID for a single-scene file"
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name"
+    },
+    "image": {
+      "type": "string",
+      "description": "Background image ID (or path)"
+    },
+    "first": {
+      "$ref": "#/definitions/step",
+      "description": "Steps on first visit"
+    },
+    "enter": {
+      "$ref": "#/definitions/step",
+      "description": "Steps on entering (after the first visit if first exists)"
+    },
+    "objects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names recognized by the parser"
+          },
+          "label": {
+            "type": "string",
+            "description": "Label shown in command select"
+          },
+          "region": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "[x, y, width, height] in native pixels"
+          },
+          "character": {
+            "type": "string",
+            "description": "Speaker ID when this is a character"
+          },
+          "when": {
+            "$ref": "#/definitions/condition",
+            "description": "Visible when"
+          },
+          "on": {
+            "type": "object",
+            "description": "Reaction per verb. \"USE+door\" narrows by the with target",
+            "patternProperties": {
+              "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                "$ref": "#/definitions/step"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ext": {
+            "type": "object",
+            "description": "Extension area. Free-form"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "Custom property (x.name)"
+          }
+        }
+      },
+      "description": "Objects and characters in the scene"
+    },
+    "exits": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "label": {
+                "type": "string"
+              },
+              "when": {
+                "$ref": "#/definitions/condition"
+              },
+              "on": {
+                "type": "object",
+                "description": "Reaction per verb. \"USE+door\" narrows by the with target",
+                "patternProperties": {
+                  "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                    "$ref": "#/definitions/step"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "ext": {
+                "type": "object",
+                "description": "Extension area. Free-form"
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x\\.": {
+                "description": "Custom property (x.name)"
+              }
+            }
+          }
+        ]
+      },
+      "description": "Exits (target scene ID -> settings)"
+    },
+    "on": {
+      "type": "object",
+      "description": "Reaction per verb. \"USE+door\" narrows by the with target",
+      "patternProperties": {
+        "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+          "$ref": "#/definitions/step"
+        }
+      },
+      "additionalProperties": false
+    },
+    "variables": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "bool",
+              "int",
+              "float",
+              "string"
+            ]
+          },
+          "default": {}
+        },
+        "additionalProperties": false
+      },
+      "description": "Variable declarations (optional)"
+    },
+    "characters": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pal": {
+            "type": "integer"
+          },
+          "voice": {
+            "type": "string"
+          },
+          "ext": {
+            "type": "object",
+            "description": "Extension area. Free-form"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "Custom property (x.name)"
+          }
+        }
+      },
+      "description": "Speakers"
+    },
+    "items": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "on": {
+            "type": "object",
+            "description": "Reaction per verb. \"USE+door\" narrows by the with target",
+            "patternProperties": {
+              "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                "$ref": "#/definitions/step"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ext": {
+            "type": "object",
+            "description": "Extension area. Free-form"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "Custom property (x.name)"
+          }
+        }
+      },
+      "description": "Items"
+    },
+    "scenes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Display name"
+          },
+          "image": {
+            "type": "string",
+            "description": "Background image ID (or path)"
+          },
+          "first": {
+            "$ref": "#/definitions/step",
+            "description": "Steps on first visit"
+          },
+          "enter": {
+            "$ref": "#/definitions/step",
+            "description": "Steps on entering (after the first visit if first exists)"
+          },
+          "objects": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "names": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Names recognized by the parser"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Label shown in command select"
+                },
+                "region": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 4,
+                  "maxItems": 4,
+                  "description": "[x, y, width, height] in native pixels"
+                },
+                "character": {
+                  "type": "string",
+                  "description": "Speaker ID when this is a character"
+                },
+                "when": {
+                  "$ref": "#/definitions/condition",
+                  "description": "Visible when"
+                },
+                "on": {
+                  "type": "object",
+                  "description": "Reaction per verb. \"USE+door\" narrows by the with target",
+                  "patternProperties": {
+                    "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                      "$ref": "#/definitions/step"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "ext": {
+                  "type": "object",
+                  "description": "Extension area. Free-form"
+                }
+              },
+              "additionalProperties": false,
+              "patternProperties": {
+                "^x\\.": {
+                  "description": "Custom property (x.name)"
+                }
+              }
+            },
+            "description": "Objects and characters in the scene"
+          },
+          "exits": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "names": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "when": {
+                      "$ref": "#/definitions/condition"
+                    },
+                    "on": {
+                      "type": "object",
+                      "description": "Reaction per verb. \"USE+door\" narrows by the with target",
+                      "patternProperties": {
+                        "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                          "$ref": "#/definitions/step"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "ext": {
+                      "type": "object",
+                      "description": "Extension area. Free-form"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "patternProperties": {
+                    "^x\\.": {
+                      "description": "Custom property (x.name)"
+                    }
+                  }
+                }
+              ]
+            },
+            "description": "Exits (target scene ID -> settings)"
+          },
+          "on": {
+            "type": "object",
+            "description": "Reaction per verb. \"USE+door\" narrows by the with target",
+            "patternProperties": {
+              "^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {
+                "$ref": "#/definitions/step"
+              }
+            },
+            "additionalProperties": false
+          },
+          "ext": {
+            "type": "object",
+            "description": "Extension area. Free-form"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "Custom property (x.name)"
+          }
+        }
+      },
+      "description": "Scenes"
+    },
+    "dialogues": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/step"
+      },
+      "description": "Dialogues (arrays of steps)"
+    },
+    "topics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "names": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "dialogue": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            },
+            "ext": {
+              "type": "object",
+              "description": "Extension area. Free-form"
+            }
+          },
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x\\.": {
+              "description": "Custom property (x.name)"
+            }
+          },
+          "required": [
+            "id",
+            "dialogue"
+          ]
+        }
+      },
+      "description": "Topics (speaker ID -> topics)"
+    },
+    "nouns": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "Noun synonyms"
+    },
+    "replies": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Override fixed replies"
+    },
+    "verbs": {
+      "type": "object",
+      "description": "Override dictionary verbs"
+    },
+    "particles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "intent_schema": {
+      "type": "object",
+      "description": "Intent schema layer of this scenario"
+    },
+    "event_defaults": {
+      "type": "object",
+      "description": "Overrides for output event defaults (wait, etc.)",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "wait": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "click",
+                  "end",
+                  "input"
+                ]
+              },
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ],
+            "description": "When to continue: none, click, end, input, or seconds"
+          },
+          "log": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "assets": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "manifest": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Asset folder of this scenario"
+    },
+    "ext": {
+      "type": "object",
+      "description": "Extension area. Free-form"
+    }
+  },
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x\\.": {
+      "description": "Custom property (x.name)"
+    }
+  },
+  "definitions": {
+    "condition": {
+      "description": "Condition (5.8). JSON form or short string form (e.g. \"has_key and money >= 100\")",
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/condition"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "description": "All must hold"
+            },
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "description": "Any must hold"
+            },
+            "not": {
+              "$ref": "#/definitions/condition",
+              "description": "Must not hold"
+            },
+            "var": {
+              "type": "string",
+              "description": "Variable to compare"
+            },
+            "calc": {
+              "type": "string",
+              "description": "Expression to compare"
+            },
+            "count": {
+              "type": "string",
+              "description": "Item count"
+            },
+            "has": {
+              "type": "string",
+              "description": "Has the item"
+            },
+            "scene": {
+              "type": "string",
+              "description": "Current scene"
+            },
+            "visited": {
+              "type": "string",
+              "description": "Visited scene"
+            },
+            "talked": {
+              "type": "string",
+              "description": "Seen dialogue"
+            },
+            "read": {
+              "type": "string",
+              "description": "Read line"
+            },
+            "chosen": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[choice ID, option ID]"
+            },
+            "preset": {
+              "type": "string",
+              "description": "Screen preset"
+            },
+            "group": {
+              "type": "string",
+              "description": "Preset group"
+            },
+            "feature": {
+              "type": "string",
+              "description": "Enabled modern feature"
+            },
+            "eq": {
+              "description": "Equal"
+            },
+            "ne": {
+              "description": "Not equal"
+            },
+            "lt": {
+              "description": "Less than"
+            },
+            "le": {
+              "description": "Less or equal"
+            },
+            "gt": {
+              "description": "Greater than"
+            },
+            "ge": {
+              "description": "Greater or equal"
+            },
+            "in": {
+              "type": "array",
+              "description": "Equals one of"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "step": {
+      "description": "Step. A string (narration or \"@speaker text\"), an array of steps, or a step object",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        },
+        {
+          "$ref": "#/definitions/step_object"
+        }
+      ]
+    },
+    "step_object": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "if": {
+              "$ref": "#/definitions/condition"
+            },
+            "then": {
+              "$ref": "#/definitions/step"
+            },
+            "else": {
+              "$ref": "#/definitions/step"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Conditional",
+          "required": [
+            "if"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "set": {
+              "type": "object",
+              "description": "Variable changes. A string value starting with \"=\" is an expression"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Set variables",
+          "required": [
+            "set"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "let": {
+              "type": "string",
+              "description": "\"var = expr; ...\""
+            }
+          },
+          "additionalProperties": false,
+          "description": "Assign by expressions",
+          "required": [
+            "let"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "say": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "voice": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Line of dialogue with ID or voice",
+          "required": [
+            "say",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "goto": {
+              "type": "string",
+              "description": "Jump target (dialogue or scene). Does not return"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "goto"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "call": {
+              "type": "string",
+              "description": "Dialogue to call. Returns afterwards"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "call"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "dialogue": {
+              "type": "string",
+              "description": "Dialogue to run"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "dialogue"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ink": {
+              "type": "string",
+              "description": "Ink knot name"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "ink"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "choice": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "do": {
+                        "$ref": "#/definitions/step"
+                      },
+                      "when": {
+                        "$ref": "#/definitions/condition"
+                      },
+                      "once": {
+                        "type": "boolean"
+                      },
+                      "ext": {
+                        "type": "object",
+                        "description": "Extension area. Free-form"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "patternProperties": {
+                      "^x\\.": {
+                        "description": "Custom property (x.name)"
+                      }
+                    },
+                    "required": [
+                      "label"
+                    ]
+                  }
+                },
+                "ext": {
+                  "type": "object",
+                  "description": "Extension area. Free-form"
+                }
+              },
+              "additionalProperties": false,
+              "patternProperties": {
+                "^x\\.": {
+                  "description": "Custom property (x.name)"
+                }
+              },
+              "required": [
+                "options"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "description": "Choice",
+          "required": [
+            "choice"
+          ]
+        },
+        {
+          "$ref": "#/definitions/event"
+        },
+        {
+          "type": "object",
+          "description": "Output event shorthand ({\"image.show\": {...}})",
+          "patternProperties": {
+            "^(x\\.)?[a-z_]+\\.[a-z_]+$": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Event type (category.action)",
+          "anyOf": [
+            {
+              "enum": [
+                "text.show",
+                "text.append",
+                "text.clear",
+                "image.show",
+                "image.hide",
+                "effect.play",
+                "bgm.play",
+                "bgm.stop",
+                "se.play",
+                "voice.play",
+                "state.set",
+                "item.add",
+                "item.remove",
+                "scene.goto",
+                "wait",
+                "group",
+                "choice.show",
+                "input.request",
+                "game.end",
+                "verbs.update",
+                "hotspots.update",
+                "input.mode",
+                "notebook.add",
+                "objective.set",
+                "hint.set",
+                "flow.mark",
+                "checkpoint",
+                "template.switch",
+                "layout.set",
+                "save.request"
+              ]
+            },
+            {
+              "pattern": "^x\\."
+            }
+          ]
+        },
+        "args": {
+          "type": "object"
+        },
+        "wait": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "none",
+                "click",
+                "end",
+                "input"
+              ]
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ],
+          "description": "When to continue: none, click, end, input, or seconds"
+        },
+        "id": {
+          "type": "string"
+        },
+        "log": {
+          "type": "boolean"
+        },
+        "ext": {
+          "type": "object",
+          "description": "Extension area. Free-form"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x\\.": {
+          "description": "Custom property (x.name)"
+        }
+      },
+      "description": "Output event (5.4)",
+      "required": [
+        "type"
+      ]
+    }
+  }
+}

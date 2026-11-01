@@ -8,6 +8,3 @@ anchors_preset = 0
 offset_right = 640.0
 offset_bottom = 400.0
 script = ExtResource("1_player")
-template_id = "pc98_classic"
-scenario_paths = PackedStringArray("res://tests/stage1/scenario/stage1.json")
-assets_root = "res://tests/stage1/assets"

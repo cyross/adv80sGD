@@ -12,6 +12,9 @@ func _initialize() -> void:
 	_test_condition()
 	_test_dictionary()
 	_test_markup()
+	_test_manifest()
+	_test_schema()
+	_test_features()
 	_test_stage1_scenario()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
@@ -88,6 +91,107 @@ func _test_markup() -> void:
 	eq(AdvTextMarkup.to_bbcode("a[b", s, tpl), "a[lb]b", "markup escape")
 
 
+# ---------------------------------------------------------------- マニフェスト
+
+func _touch(root: String, rel: String) -> void:
+	DirAccess.make_dir_recursive_absolute((root + "/" + rel).get_base_dir())
+	var f := FileAccess.open(root + "/" + rel, FileAccess.WRITE)
+	f.store_string("x")
+	f.close()
+
+
+func _codes(diags: Array) -> Array:
+	return diags.map(func(d): return d["code"])
+
+
+func _test_manifest() -> void:
+	var root := "user://test_assets"
+	_rmdir(root)
+	for rel in ["bg/hallway.png", "bg/town/street.png", "bg/door.png", "chara/ayumi.png", "chara/ayumi@smile.png",
+			"presets/88/bg/hallway.png", "presets/pc80/chara/ayumi@smile.png", "presets/98.640x400/bg/hallway.png",
+			"cg/hallway.png", "se/door.wav", "misc/x.png", "_work/x.png", "bg/.hidden.png", "bg/Bad Name.png",
+			"bg/notes.txt"]:
+		_touch(root, rel)
+	var res := AdvManifestGenerator.scan(root)
+	var m: Dictionary = res["manifest"]["assets"]
+	var codes := _codes(res["diags"])
+	check(m.has("image:hallway") and m.has("image:town.street") and m.has("image:door") and m.has("se:door"), "manifest ids: %s" % str(m.keys()))
+	eq(m["image:ayumi"].get("variants", {}).get("smile"), "chara/ayumi@smile.png", "variant")
+	eq(m["image:hallway"]["by_preset"]["88"], "presets/88/bg/hallway.png", "by_preset machine")
+	eq(m["image:ayumi"]["by_preset"]["pc80"]["variants"]["smile"], "presets/pc80/chara/ayumi@smile.png", "by_preset variant")
+	check(codes.has("DUPLICATE_ID"), "duplicate bg/hallway and cg/hallway: %s" % str(codes))
+	check(codes.has("UNKNOWN_FOLDER"), "unknown folder misc")
+	check(codes.has("NAMING"), "naming warning")
+	check(not m.has("image:x") and not m.has("image:.hidden") and not m.has("image:notes"), "ignored files")
+	# 書き出しと最新かの確認
+	eq(AdvManifestGenerator.write(root, res["manifest"]), OK, "write auto manifest")
+	eq(AdvManifestGenerator.write(root, res["manifest"]), ERR_ALREADY_EXISTS, "write unchanged")
+	check(AdvManifestGenerator.is_up_to_date(root, res["manifest"]), "up to date")
+	# 手書きのマニフェストを重ねる
+	var f := FileAccess.open(root + "/manifest.json", FileAccess.WRITE)
+	f.store_string(JSON.stringify({"manifest_version": 1, "assets": {
+		"theme1": {"type": "bgm", "file": "bgm/theme1.ogg", "loop_start": 12.5},
+		"hallway": {"type": "image", "by_preset": {"pc80": "bg/door.png"}}}}))
+	f.close()
+	var manual := AdvManifestGenerator.check_manual(root)
+	check(_codes(manual).has("ASSET_NOT_FOUND"), "manual manifest missing file")
+	# 解決の順番：完全一致 → 機種 → グループ → file
+	var a := AdvAssets.new()
+	a.add_root(root)
+	a.set_preset("98.640x400", "pc80")
+	eq(a.resolve("image", "hallway"), root + "/presets/98.640x400/bg/hallway.png", "resolve exact preset")
+	a.set_preset("88.640x200", "pc80")
+	eq(a.resolve("image", "hallway"), root + "/presets/88/bg/hallway.png", "resolve machine")
+	a.set_preset("SX1.640x200", "pc80")
+	eq(a.resolve("image", "hallway"), root + "/bg/door.png", "resolve group (manual overrides)")
+	eq(a.resolve("image", "ayumi", "smile"), root + "/presets/pc80/chara/ayumi@smile.png", "resolve variant by group")
+	a.set_preset("FC.256x240", "console")
+	eq(a.resolve("image", "hallway"), root + "/bg/hallway.png", "resolve default file")
+	eq(a.resolve("image", "ayumi", "smile"), root + "/chara/ayumi@smile.png", "resolve variant")
+	eq(a.resolve("se", "door"), root + "/se/door.wav", "resolve se namespace")
+	check(a.has("bgm", "theme1") and not a.has("image", "theme1"), "namespaces separate")
+	_rmdir(root)
+
+
+func _rmdir(path: String) -> void:
+	var d := DirAccess.open(path)
+	if d == null:
+		return
+	d.include_hidden = true
+	for sub in d.get_directories():
+		_rmdir(path + "/" + sub)
+	for file in d.get_files():
+		d.remove(file)
+	DirAccess.remove_absolute(path)
+
+
+# ---------------------------------------------------------------- スキーマと機能
+
+func _test_schema() -> void:
+	var good := {"start": "a", "scenes": {"a": {"objects": {"door": {"names": ["ドア"], "on": {
+		"LOOK": "x", "OPEN": {"if": "k", "then": [{"goto": "a"}], "else": "y"}, "USE+key": [{"set": {"k": true}}, {"image.show": {"id": "a"}}]}}}}}}
+	var d := AdvSchemaValidator.check(good, "scenario")
+	eq(d.size(), 0, "valid scenario: %s" % str(d))
+	var bad := {"start": 1, "scenes": {"a": {"objectz": {}, "objects": {"door": {"region": [1, 2], "on": {"look": "x"}}}}}}
+	var codes := _codes(AdvSchemaValidator.check(bad, "scenario"))
+	check(codes.has("SCHEMA_VIOLATION") and codes.has("UNKNOWN_KEY"), "invalid scenario: %s" % str(codes))
+	var t = AdvJson.load_file("res://addons/adv80s/templates/pc98_classic/template.json")
+	eq(AdvSchemaValidator.check(t, "template").size(), 0, "bundled template matches schema")
+	var p = AdvJson.load_file("res://adv80s.project.json")
+	eq(AdvSchemaValidator.check(p, "project").size(), 0, "project matches schema")
+	var i = AdvJson.load_file("res://addons/adv80s/data/intent_schema.standard.json")
+	eq(AdvSchemaValidator.check(i, "intent_schema").size(), 0, "intent schema matches schema")
+
+
+func _test_features() -> void:
+	var diags := []
+	var f := AdvFeatures.resolve({"rewind": {"default": true}, "hint": {"allow": false}},
+		{"hint": true, "message_log": false}, {"templates": 1}, {}, diags)
+	check(not f.is_on("hint"), "project deny wins over template")
+	check(not f.is_on("rewind") and _codes(diags).has("FEATURE_DEPENDENCY"), "rewind needs message_log")
+	check(f.is_on("skip") and not f.is_on("era_switch"), "defaults")
+
+
 # ---------------------------------------------------------------- 段階1のシナリオ
 
 var core: AdvCore
@@ -111,11 +215,12 @@ func _bodies(events: Array) -> String:
 func _test_stage1_scenario() -> void:
 	core = AdvCore.new()
 	core.setup({"seed": 1})
-	core.assets.scan("res://tests/stage1/assets")
+	core.add_asset_roots(["res://tests/stage1/assets"])
 	core.use_adapter(AdvJsonAdapter.new())
-	eq(core.load_scenario(["res://tests/stage1/scenario/stage1.json"]), OK, "load scenario")
-	var errors := core.validate().filter(func(d): return d["severity"] == "error")
-	eq(errors.size(), 0, "validate has no errors: %s" % str(errors))
+	eq(core.load_scenario(["res://tests/stage1/scenario/stage1.scenario.json"]), OK, "load scenario")
+	var all := core.validate()
+	var errors := all.filter(func(d): return d["severity"] != "info")
+	eq(errors.size(), 0, "validate has no errors or warnings: %s" % str(errors))
 
 	var ev := core.start()
 	eq(ev[0]["type"], "scene.goto", "start: scene.goto")

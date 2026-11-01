@@ -33,9 +33,12 @@ var diagnostics: Array = []
 ##   intent_schema: {entry, layers: [{file, when}]}
 ##   slot_mode: "named" / "standard"
 ##   seed: 乱数の種（省略するとランダム）
+##   event_defaults: 出力イベントの既定値の書き換え（プロジェクト設定）
+##   missing_asset: "placeholder" / "error"
 func setup(cfg: Dictionary = {}) -> Error:
 	config = cfg
 	ctx = AdvContext.new(self)
+	assets.missing_asset = String(cfg.get("missing_asset", "placeholder"))
 	if cfg.has("seed"):
 		rng = AdvRng.new(int(cfg["seed"]))
 	var lang := String(cfg.get("lang", "ja"))
@@ -70,6 +73,12 @@ func use_adapter(adapter: AdvScenarioAdapter) -> Error:
 var adapter: AdvScenarioAdapter:
 	get:
 		return null if _adapters.is_empty() else _adapters.back()
+
+
+## 素材フォルダを重ねる（プロジェクト → テンプレート → シナリオ の順に呼ぶ）。
+func add_asset_roots(roots: Array) -> void:
+	for r in roots:
+		assets.add_root(String(r), diagnostics)
 
 
 func load_scenario(paths: PackedStringArray) -> Error:
@@ -141,8 +150,14 @@ static func slot_key(v: Variant) -> String:
 ## 出力イベントのうち、状態を変えるものを適用する。シーン移動では意図スキーマを読み直す。
 func _commit(events: Array) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
+	var defaults: Dictionary = config.get("event_defaults", {})
 	for ev in events:
 		var e: Dictionary = ev
+		var def = defaults.get(String(e.get("type", "")))
+		if def is Dictionary:
+			for k in def:
+				if not e.has(k):
+					e[k] = def[k]
 		if AdvEvents.is_state_event(e):
 			state.apply_event(e)
 			if e["type"] == "scene.goto":

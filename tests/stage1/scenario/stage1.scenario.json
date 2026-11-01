@@ -29,7 +29,7 @@
   "scenes": {
     "hallway": {
       "name": "ろうか",
-      "image": "bg.hallway",
+      "image": "hallway",
       "first": [
         "うすぐらい ろうかに いる。",
         "おくに ふるびた ドアが ある。 あしもとには うえきばちが おいてある。"
@@ -79,7 +79,7 @@
     },
     "room": {
       "name": "へや",
-      "image": "bg.room",
+      "image": "room",
       "first": [
         "ほこりっぽい へやだ。 まどべに しょうじょが たっている。"
       ],

@@ -7,18 +7,24 @@ extends Control
 signal game_ended
 signal idle   ## 出力イベントを実行し終えて、入力を待つ状態になった
 
-@export var template_id: String = "pc98_classic"
+## プロジェクト設定（adv80s.project.json）。下の項目を空にしておくと、ここに書いた値を使う
+@export_file("*.json") var project_path: String = AdvProject.DEFAULT_PATH
+## 画面テンプレートのID（空ならプロジェクト設定の template）
+@export var template_id: String = ""
+## シナリオファイル（空ならプロジェクト設定の scenarios）
 @export var scenario_paths: PackedStringArray = []
-## 素材フォルダ（フォルダの決まりに従って自動でIDを付ける）
+## 追加の素材フォルダ（プロジェクト設定の asset_roots の後に重ねる）
 @export var assets_root: String = ""
-## 開始シーン（空ならシナリオの start）
+## 開始シーン（空ならプロジェクト設定の entry、それも空ならシナリオの start）
 @export var entry: String = ""
 ## テスト用：クリック待ちを自動で進める
 @export var auto_click: bool = false
 
+var project: AdvProject
 var core: AdvCore
 var screen: AdvScreen
 var template: AdvTemplate
+var features: AdvFeatures
 var busy: bool = false
 var ended: bool = false
 
@@ -26,27 +32,48 @@ var _click_pending: bool = false
 
 
 func _ready() -> void:
+	var diags: Array = []
+	project = AdvProject.load_project(project_path, diags)
 	core = AdvCore.new()
-	core.setup({})
-	if assets_root != "":
-		core.assets.scan(assets_root)
-	core.use_adapter(AdvJsonAdapter.new())
-	core.load_scenario(scenario_paths)
-	for d in core.validate():
-		var line := "[adv80s] %s %s: %s (%s %s)" % [d["severity"], d["code"], d["message"], d["file"], d["path"]]
-		if d["severity"] == "error":
-			push_error(line)
-		elif d["severity"] == "warning":
-			push_warning(line)
+	core.setup(project.core_config())
+	core.assets.folders = project.asset_folders()
 
-	var diags := []
-	template = AdvTemplate.load_template(template_id, diags)
-	for d in diags:
-		push_error("[adv80s] %s: %s" % [d["code"], d["message"]])
+	var tid := template_id if template_id != "" else String(project.get_value("template", "pc98_classic"))
+	template = AdvTemplate.load_template(tid, diags)
 	if template == null:
+		_report(diags)
 		return
 	core.preset = String(template.preset.get("id", "98"))
 	core.group = String(template.preset.get("group", ""))
+	core.assets.set_preset(core.preset, core.group)
+
+	# 素材フォルダ：プロジェクト → テンプレート → シナリオ
+	var roots: Array = project.get_value("asset_roots", []).duplicate()
+	if assets_root != "":
+		roots.append(assets_root)
+	var troot := template.asset_root()
+	if troot != "":
+		roots.append(troot)
+	core.add_asset_roots(roots)
+
+	core.use_adapter(AdvJsonAdapter.new())
+	var paths := scenario_paths if not scenario_paths.is_empty() else PackedStringArray(project.get_value("scenarios", []))
+	core.load_scenario(paths)
+	var sroots = core.query("asset_roots")
+	if sroots is PackedStringArray or sroots is Array:
+		core.add_asset_roots(Array(sroots))
+
+	var env := {
+		"templates": max(1, project.get_value("templates", []).size()),
+		"readable_font": template.get_section("fonts").has("readable"),
+		"tts": _tts_available(),
+		"touch": DisplayServer.is_touchscreen_available(),
+	}
+	features = AdvFeatures.resolve(project.get_value("features", {}), template.get_section("features"), env, {}, diags)
+	core.features = features.enabled
+
+	diags.append_array(core.validate())
+	_report(diags)
 
 	screen = AdvScreen.new()
 	screen.name = "Screen"
@@ -56,7 +83,23 @@ func _ready() -> void:
 		screen.command_select.intent_selected.connect(submit_intent)
 	if screen.command_line != null:
 		screen.command_line.command_entered.connect(submit_text)
-	_run(core.start(entry))
+	var start_at := entry if entry != "" else String(project.get_value("entry", ""))
+	_run(core.start(start_at))
+
+
+func _report(diags: Array) -> void:
+	for d in diags:
+		var line := "[adv80s] %s %s: %s (%s %s)" % [d["severity"], d["code"], d["message"], d.get("file", ""), d.get("path", "")]
+		match String(d["severity"]):
+			"error": push_error(line)
+			"warning": push_warning(line)
+
+
+static func _tts_available() -> bool:
+	# 読み上げはプロジェクト設定 audio/general/text_to_speech が有効なときだけ使える
+	if DisplayServer.get_name() == "headless" or not ProjectSettings.get_setting("audio/general/text_to_speech", false):
+		return false
+	return not DisplayServer.tts_get_voices().is_empty()
 
 
 ## 意図を送る（入力UIから呼ぶ）。
@@ -115,7 +158,11 @@ func _play(ev: Dictionary) -> void:
 			screen.clear_text()
 		"image.show":
 			var id := String(args.get("id", ""))
-			screen.show_image(String(args.get("layer", "bg")), id, core.assets.resolve("image", id))
+			var path := core.assets.resolve("image", id, String(args.get("variant", "")))
+			if path == "" and core.assets.report_missing("image", id):
+				ended = true
+				return
+			screen.show_image(String(args.get("layer", "bg")), id, path)
 		"image.hide":
 			screen.hide_image(String(args.get("layer", "bg")))
 		"group":

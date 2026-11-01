@@ -1,0 +1,586 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/project.schema.json",
+  "title": "adv80s project settings",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "project_version": {
+      "type": "integer"
+    },
+    "template": {
+      "type": "string",
+      "description": "Screen template ID"
+    },
+    "templates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Registered templates"
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Scenario files"
+    },
+    "entry": {
+      "type": "string",
+      "description": "Entry scene (empty = scenario start)"
+    },
+    "asset_roots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Project asset folders"
+    },
+    "asset_folders": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "image",
+          "bgm",
+          "se",
+          "voice",
+          "font",
+          "shader",
+          null
+        ]
+      },
+      "description": "Kind folder table changes (null removes)"
+    },
+    "missing_asset": {
+      "enum": [
+        "placeholder",
+        "error"
+      ],
+      "description": "How to treat missing assets"
+    },
+    "lang": {
+      "enum": [
+        "ja",
+        "en"
+      ]
+    },
+    "dictionaries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "slot_mode": {
+      "enum": [
+        "named",
+        "standard"
+      ]
+    },
+    "intent_schema": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "type": "string"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "when": {
+                "$ref": "#/definitions/condition"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "file"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "event_defaults": {
+      "type": "object",
+      "description": "Overrides for output event defaults (wait, etc.)",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "wait": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "click",
+                  "end",
+                  "input"
+                ]
+              },
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ],
+            "description": "When to continue: none, click, end, input, or seconds"
+          },
+          "log": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "message_log": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "hint": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "objective": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "hotspot": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "tried_marks": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "autosave": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "skip": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "auto_advance": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "rewind": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "flowchart": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "chapter_select": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "notebook": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "era_switch": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "readable_font": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "text_options": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "tts": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "gamepad": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "touch": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "filter_toggle": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "patternProperties": {
+        "^x\\.": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "Modern features (allow, default, options)"
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "ext": {
+      "type": "object",
+      "description": "Extension area. Free-form"
+    }
+  },
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x\\.": {
+      "description": "Custom property (x.name)"
+    }
+  },
+  "definitions": {
+    "condition": {
+      "description": "Condition (5.8). JSON form or short string form (e.g. \"has_key and money >= 100\")",
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/condition"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "description": "All must hold"
+            },
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/condition"
+              },
+              "description": "Any must hold"
+            },
+            "not": {
+              "$ref": "#/definitions/condition",
+              "description": "Must not hold"
+            },
+            "var": {
+              "type": "string",
+              "description": "Variable to compare"
+            },
+            "calc": {
+              "type": "string",
+              "description": "Expression to compare"
+            },
+            "count": {
+              "type": "string",
+              "description": "Item count"
+            },
+            "has": {
+              "type": "string",
+              "description": "Has the item"
+            },
+            "scene": {
+              "type": "string",
+              "description": "Current scene"
+            },
+            "visited": {
+              "type": "string",
+              "description": "Visited scene"
+            },
+            "talked": {
+              "type": "string",
+              "description": "Seen dialogue"
+            },
+            "read": {
+              "type": "string",
+              "description": "Read line"
+            },
+            "chosen": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[choice ID, option ID]"
+            },
+            "preset": {
+              "type": "string",
+              "description": "Screen preset"
+            },
+            "group": {
+              "type": "string",
+              "description": "Preset group"
+            },
+            "feature": {
+              "type": "string",
+              "description": "Enabled modern feature"
+            },
+            "eq": {
+              "description": "Equal"
+            },
+            "ne": {
+              "description": "Not equal"
+            },
+            "lt": {
+              "description": "Less than"
+            },
+            "le": {
+              "description": "Less or equal"
+            },
+            "gt": {
+              "description": "Greater than"
+            },
+            "ge": {
+              "description": "Greater or equal"
+            },
+            "in": {
+              "type": "array",
+              "description": "Equals one of"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

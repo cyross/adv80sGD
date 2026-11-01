@@ -1,0 +1,128 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/intent_schema.schema.json",
+  "title": "adv80s intent schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer"
+    },
+    "types": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "base": {
+                "type": "string"
+              },
+              "handler": {
+                "type": "string"
+              },
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              },
+              "values": {
+                "type": "array"
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "min_length": {
+                "type": "integer"
+              },
+              "max_length": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "description": "Custom types (base + constraints, or handler). null removes"
+    },
+    "verbs": {
+      "type": "object",
+      "description": "Verb ID -> slot definitions. null removes",
+      "patternProperties": {
+        "^[A-Z][A-Z0-9_]*$": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "slots": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "particles": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "required": {
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "type"
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "description": "Full form",
+              "required": [
+                "slots"
+              ]
+            },
+            {
+              "type": "object",
+              "description": "Shorthand (\"target\": \"object\", \"with\": \"item?\")",
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[a-z_][a-z0-9_]*\\??$"
+              }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ext": {
+      "type": "object",
+      "description": "Extension area. Free-form"
+    }
+  },
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x\\.": {
+      "description": "Custom property (x.name)"
+    }
+  },
+  "required": [
+    "schema_version"
+  ]
+}

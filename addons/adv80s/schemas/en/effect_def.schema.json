@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adv80s/effect_def.schema.json",
+  "title": "adv80s custom filter / transition / effect",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "effect_version": {
+      "type": "integer"
+    },
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "filter",
+        "transition",
+        "effect"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name"
+    },
+    "shader": {
+      "type": "string",
+      "description": "Shader file or asset ID"
+    },
+    "handler": {
+      "type": "string",
+      "description": "GDScript handler"
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "float",
+              "int",
+              "bool",
+              "color",
+              "vec2",
+              "enum",
+              "texture",
+              "string"
+            ]
+          },
+          "default": {},
+          "min": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          },
+          "values": {
+            "type": "array"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ]
+      },
+      "description": "Parameters"
+    },
+    "duration": {
+      "type": "number",
+      "minimum": 0
+    },
+    "era": {
+      "enum": [
+        "common",
+        "80s",
+        "90s",
+        "modern"
+      ]
+    },
+    "ext": {
+      "type": "object",
+      "description": "Extension area. Free-form"
+    }
+  },
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x\\.": {
+      "description": "Custom property (x.name)"
+    }
+  },
+  "required": [
+    "effect_version",
+    "id",
+    "kind"
+  ]
+}

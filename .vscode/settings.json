@@ -1,0 +1,44 @@
+{
+  "json.schemas": [
+    {
+      "fileMatch": [
+        "*.scenario.json"
+      ],
+      "url": "./addons/adv80s/schemas/ja/scenario.schema.json"
+    },
+    {
+      "fileMatch": [
+        "template.json",
+        "*.template.json"
+      ],
+      "url": "./addons/adv80s/schemas/ja/template.schema.json"
+    },
+    {
+      "fileMatch": [
+        "*.intent_schema.json",
+        "intent_schema.*.json"
+      ],
+      "url": "./addons/adv80s/schemas/ja/intent_schema.schema.json"
+    },
+    {
+      "fileMatch": [
+        "manifest.json",
+        "manifest.auto.json"
+      ],
+      "url": "./addons/adv80s/schemas/ja/manifest.schema.json"
+    },
+    {
+      "fileMatch": [
+        "adv80s.project.json",
+        "*.project.json"
+      ],
+      "url": "./addons/adv80s/schemas/ja/project.schema.json"
+    },
+    {
+      "fileMatch": [
+        "*.effect.json"
+      ],
+      "url": "./addons/adv80s/schemas/ja/effect_def.schema.json"
+    }
+  ]
+}
