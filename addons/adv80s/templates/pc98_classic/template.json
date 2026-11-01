@@ -1,0 +1,47 @@
+{
+  "template_version": 1,
+  "id": "pc98_classic",
+  "name": "98 クラシック",
+  "extends": null,
+
+  "display": { "preset": "98", "scale": "integer", "aspect_correction": false },
+  "palette": { "source": "preset" },
+
+  "fonts": {
+    "main":     { "asset": "font.dot16", "size": 16 },
+    "readable": { "asset": "font.ud",    "size": 16 }
+  },
+
+  "layout": {
+    "background": 0,
+    "layers": ["bg", "char", "fg", "effect"],
+    "regions": {
+      "picture":  { "rect": [16, 8, 608, 248] },
+      "message":  { "rect": [16, 264, 416, 96], "window": "main" },
+      "input":    { "rect": [16, 364, 416, 28] },
+      "commands": { "rect": [440, 264, 184, 128], "window": "main" }
+    },
+    "named": {
+      "fullscreen_cg": { "regions": { "picture": { "rect": [0, 0, 640, 400] } } }
+    }
+  },
+
+  "inputs": { "enabled": ["select", "parser"], "parser_profile": "ja" },
+
+  "text": {
+    "speed": 40, "markup": "bbcode_ext",
+    "ruby": "paren", "emphasis": "paren",
+    "color": 7, "name_color": 6,
+    "denied_tags": []
+  },
+
+  "filters":     { "mode": "default", "list": [] },
+  "transitions": { "default": "line_draw", "named": {}, "replace": {} },
+  "features":    {},
+  "assets":      { "root": "assets/", "manifest": "manifest.json" },
+  "ui": {
+    "window_skin": { "type": "box", "border": 1, "pal": 7, "fill": 0 },
+    "highlight": 1,
+    "cursor": "ui.cursor"
+  }
+}

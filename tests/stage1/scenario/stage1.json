@@ -1,0 +1,119 @@
+{
+  "start": "hallway",
+  "variables": {
+    "door_unlocked": { "type": "bool", "default": false },
+    "got_key":       { "type": "bool", "default": false },
+    "knocks":        { "type": "int",  "default": 0 }
+  },
+  "characters": {
+    "ayumi": { "name": "あゆみ", "names": ["しょうじょ", "少女"], "pal": 13 }
+  },
+  "items": {
+    "key": {
+      "name": "かぎ",
+      "names": ["鍵", "カギ"],
+      "on": {
+        "LOOK": "ふるびた しんちゅうの かぎだ。",
+        "USE+door": [
+          { "set": { "door_unlocked": true } },
+          "かぎを まわした。 カチリと おとが した。"
+        ],
+        "USE": {
+          "if": "scene == hallway and not door_unlocked",
+          "then": [ { "set": { "door_unlocked": true } }, "ドアの かぎあなに さしこんで まわした。 カチリと おとが した。" ],
+          "else": "ここでは つかえない。"
+        }
+      }
+    }
+  },
+  "scenes": {
+    "hallway": {
+      "name": "ろうか",
+      "image": "bg.hallway",
+      "first": [
+        "うすぐらい ろうかに いる。",
+        "おくに ふるびた ドアが ある。 あしもとには うえきばちが おいてある。"
+      ],
+      "enter": "ろうかに もどってきた。",
+      "objects": {
+        "door": {
+          "names": ["ドア", "とびら", "扉"],
+          "region": [260, 90, 88, 110],
+          "on": {
+            "LOOK": "ふるびた 木の ドアだ。",
+            "EXAMINE": {
+              "if": "door_unlocked",
+              "then": "かぎは もう あいている。",
+              "else": "かぎあなが ある。 かぎが かかっているようだ。"
+            },
+            "OPEN": {
+              "if": "door_unlocked",
+              "then": [ "ドアを あけた。", { "goto": "room" } ],
+              "else": [ { "set": { "knocks": "= knocks + 1" } }, "かぎが かかっている。" ]
+            },
+            "OPEN+key": [
+              { "if": "not door_unlocked", "then": [ { "set": { "door_unlocked": true } }, "かぎで あけた。" ] },
+              { "goto": "room" }
+            ]
+          }
+        },
+        "plant": {
+          "names": ["うえきばち", "植木鉢", "はち"],
+          "region": [60, 130, 50, 110],
+          "on": {
+            "LOOK": "かれかけた うえきばちだ。",
+            "EXAMINE": {
+              "if": "got_key",
+              "then": "もう なにも ない。",
+              "else": [
+                "うえきばちの したに なにか ある……",
+                "かぎを みつけた！",
+                { "set": { "got_key": true } },
+                { "item.add": { "id": "key" } }
+              ]
+            },
+            "TAKE": "おもくて もてない。"
+          }
+        }
+      }
+    },
+    "room": {
+      "name": "へや",
+      "image": "bg.room",
+      "first": [
+        "ほこりっぽい へやだ。 まどべに しょうじょが たっている。"
+      ],
+      "enter": "へやに はいった。",
+      "exits": {
+        "hallway": { "names": ["ろうか", "そと"] }
+      },
+      "objects": {
+        "girl": {
+          "character": "ayumi",
+          "region": [280, 56, 60, 154],
+          "on": {
+            "LOOK": "ながい かみの しょうじょだ。 こちらを じっと みている。",
+            "TALK": { "dialogue": "ayumi_first" }
+          }
+        }
+      }
+    }
+  },
+  "dialogues": {
+    "ayumi_first": [
+      "@ayumi ……だれ？",
+      { "if": "knocks > 0",
+        "then": "@ayumi さっき ドアを たたいていたのは あなたね。" },
+      "@ayumi ここから でる ほうほうを さがしているの。",
+      "@@マークの ついた メモが かべに はってある。"
+    ],
+    "ayumi_case": [
+      "@ayumi きのうの よるから ずっと ここに いるの。"
+    ]
+  },
+  "topics": {
+    "ayumi": [
+      { "id": "case", "label": "じけんについて", "dialogue": "ayumi_case" }
+    ]
+  }
+}

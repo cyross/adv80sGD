@@ -1,0 +1,40 @@
+{
+  "dictionary_version": 1,
+  "lang": "ja",
+  "normalize": { "kana": true, "width": true },
+  "particles": ["を", "に", "で", "へ", "と", "から", "について", "のことを", "のこと"],
+  "verbs": {
+    "LOOK":    { "label": "みる",     "words": ["みる", "見る", "ながめる", "眺める"], "stems": ["ながめ", "眺め"],
+                 "default_reply": "とくに かわった ところは ない。" },
+    "EXAMINE": { "label": "しらべる", "words": ["しらべる", "調べる", "さがす", "探す"], "stems": ["しらべ", "調べ", "さが", "探し"],
+                 "default_reply": "とくに かわった ところは ない。" },
+    "TAKE":    { "label": "とる",     "words": ["とる", "取る", "ひろう", "拾う"], "stems": ["ひろ", "拾"],
+                 "default_reply": "とれない。" },
+    "USE":     { "label": "つかう",   "words": ["つかう", "使う"], "stems": ["つか", "使"],
+                 "default_reply": "ここでは つかえない。" },
+    "TALK":    { "label": "はなす",   "words": ["はなす", "話す", "はなしかける", "話しかける"], "stems": ["はなし", "話し"],
+                 "default_reply": "へんじが ない。" },
+    "ASK":     { "label": "きく",     "words": ["きく", "聞く", "たずねる", "尋ねる"], "stems": ["たずね", "尋ね"],
+                 "default_reply": "なにも こたえない。" },
+    "MOVE":    { "label": "いく",     "words": ["いく", "行く", "いどう", "移動", "いどうする", "移動する"], "stems": ["いどう", "移動"],
+                 "default_reply": "そこへは いけない。" },
+    "OPEN":    { "label": "あける",   "words": ["あける", "開ける", "ひらく", "開く"], "stems": ["あけ", "開け"],
+                 "default_reply": "あかない。" },
+    "CLOSE":   { "label": "しめる",   "words": ["しめる", "閉める", "とじる", "閉じる"], "stems": ["しめ", "閉め"],
+                 "default_reply": "しめられない。" },
+    "ITEMS":   { "label": "アイテム", "words": ["アイテム", "もちもの", "持ち物", "しょじひん", "所持品"], "stems": [] }
+  },
+  "nouns": {},
+  "replies": {
+    "unknown_word": "その ことばは わからない。",
+    "no_verb": "どう するのか わからない。",
+    "no_target": "そんな ものは ない。",
+    "missing_slot": "なにを {verb}？",
+    "cannot": "そうは できない。",
+    "nothing_happens": "なにも おこらない。",
+    "items_header": "もちもの：",
+    "items_none": "なにも もっていない。",
+    "select_none": "まわり",
+    "select_back": "もどる"
+  }
+}

@@ -1,0 +1,31 @@
+; Engine configuration file.
+; adv80sGD 開発用プロジェクト（アドオン本体は addons/adv80s/）
+
+config_version=5
+
+[application]
+
+config/name="adv80sGD"
+config/description="80年代風アドベンチャーゲーム制作フレームワーク（開発・テスト用プロジェクト）"
+run/main_scene="res://tests/stage1/stage1_main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[display]
+
+window/size/viewport_width=640
+window/size/viewport_height=400
+window/size/window_width_override=1280
+window/size/window_height_override=800
+window/stretch/mode="viewport"
+window/stretch/aspect="keep"
+window/stretch/scale_mode="integer"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/adv80s/plugin.cfg")
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0

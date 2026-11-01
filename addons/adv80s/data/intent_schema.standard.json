@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "types": {},
+  "verbs": {
+    "LOOK":    { "slots": [ { "name": "target", "type": "object", "particles": ["を"], "required": false } ] },
+    "EXAMINE": { "slots": [ { "name": "target", "type": "object", "particles": ["を"], "required": false } ] },
+    "TAKE":    { "slots": [ { "name": "target", "type": "object", "particles": ["を"] } ] },
+    "USE":     { "slots": [
+                   { "name": "target", "type": "item",   "particles": ["を"] },
+                   { "name": "with",   "type": "object", "particles": ["に", "で", "へ"], "required": false } ] },
+    "TALK":    { "slots": [ { "name": "target", "type": "character", "particles": ["と", "に"] } ] },
+    "ASK":     { "slots": [
+                   { "name": "target", "type": "character", "particles": ["に"] },
+                   { "name": "topic",  "type": "topic",     "particles": ["を", "について", "のことを", "のこと"] } ] },
+    "MOVE":    { "slots": [ { "name": "target", "type": "scene", "particles": ["へ", "に"] } ] },
+    "OPEN":    { "slots": [ { "name": "target", "type": "object", "particles": ["を"] },
+                            { "name": "with",   "type": "item",   "particles": ["で"], "required": false } ] },
+    "CLOSE":   { "slots": [ { "name": "target", "type": "object", "particles": ["を"] } ] },
+    "ITEMS":   { "slots": [] }
+  }
+}

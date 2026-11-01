@@ -1,0 +1,40 @@
+{
+  "dictionary_version": 1,
+  "lang": "en",
+  "normalize": { "kana": false, "width": true },
+  "particles": ["with", "on", "to", "at", "in", "about"],
+  "verbs": {
+    "LOOK":    { "label": "LOOK",    "words": ["look", "l", "see"], "stems": [],
+                 "default_reply": "You see nothing special." },
+    "EXAMINE": { "label": "EXAMINE", "words": ["examine", "x", "search", "check", "inspect"], "stems": [],
+                 "default_reply": "You find nothing unusual." },
+    "TAKE":    { "label": "TAKE",    "words": ["take", "get", "pick", "grab"], "stems": [],
+                 "default_reply": "You can't take that." },
+    "USE":     { "label": "USE",     "words": ["use"], "stems": [],
+                 "default_reply": "You can't use that here." },
+    "TALK":    { "label": "TALK",    "words": ["talk", "speak"], "stems": [],
+                 "default_reply": "There is no answer." },
+    "ASK":     { "label": "ASK",     "words": ["ask"], "stems": [],
+                 "default_reply": "No reply." },
+    "MOVE":    { "label": "GO",      "words": ["go", "move", "walk", "enter"], "stems": [],
+                 "default_reply": "You can't go there." },
+    "OPEN":    { "label": "OPEN",    "words": ["open"], "stems": [],
+                 "default_reply": "It won't open." },
+    "CLOSE":   { "label": "CLOSE",   "words": ["close", "shut"], "stems": [],
+                 "default_reply": "You can't close that." },
+    "ITEMS":   { "label": "INVENTORY", "words": ["inventory", "inv", "i", "items"], "stems": [] }
+  },
+  "nouns": {},
+  "replies": {
+    "unknown_word": "I don't know that word.",
+    "no_verb": "What do you want to do?",
+    "no_target": "You don't see that here.",
+    "missing_slot": "{verb} what?",
+    "cannot": "You can't do that.",
+    "nothing_happens": "Nothing happens.",
+    "items_header": "You are carrying:",
+    "items_none": "You are empty-handed.",
+    "select_none": "AROUND",
+    "select_back": "BACK"
+  }
+}

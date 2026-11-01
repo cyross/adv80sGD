@@ -1,0 +1,27 @@
+{
+  "presets_version": 1,
+  "groups": {
+    "pc80": { "name": "80年代パソコン", "ruby": "paren" }
+  },
+  "machines": {
+    "98": {
+      "group": "pc80",
+      "default_mode": "640x400",
+      "modes": {
+        "640x400": {
+          "size": [640, 400], "colors": "4096色中16色", "pixel_aspect": 0.83,
+          "palette": ["#000000", "#0000ff", "#ff0000", "#ff00ff", "#00ff00", "#00ffff", "#ffff00", "#ffffff",
+                      "#777777", "#000077", "#770000", "#770077", "#007700", "#007777", "#777700", "#aaaaaa"]
+        },
+        "640x400_8": {
+          "size": [640, 400], "colors": "デジタル8色", "pixel_aspect": 0.83,
+          "palette": ["#000000", "#0000ff", "#ff0000", "#ff00ff", "#00ff00", "#00ffff", "#ffff00", "#ffffff"]
+        },
+        "640x200": {
+          "size": [640, 200], "colors": "8色", "pixel_aspect": 0.83, "line_double": true,
+          "palette": ["#000000", "#0000ff", "#ff0000", "#ff00ff", "#00ff00", "#00ffff", "#ffff00", "#ffffff"]
+        }
+      }
+    }
+  }
+}
