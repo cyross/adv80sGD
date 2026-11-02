@@ -51,6 +51,7 @@ var _occurrence: Dictionary = {}
 
 var _stack: Array = []        ## 実行中の手順 [{steps, i, path, kind}]。入力待ちで止まっても残る
 var _choice: Dictionary = {}  ## 選択肢の入力待ち {id, path, options: {項目ID: 手順}, args}
+var _suspended: bool = false  ## ほかのアダプタ（Ink）に処理を渡して止まっている
 
 
 # ---------------------------------------------------------------- 読み込み
@@ -120,6 +121,7 @@ func start(entry: String) -> Array[Dictionary]:
 	_begin()
 	_stack.clear()
 	_choice = {}
+	_suspended = false
 	var id := entry if entry != "" else start_scene
 	_goto_scene(id)
 	_resume()
@@ -179,6 +181,14 @@ func handle_intent(intent: Dictionary) -> Array[Dictionary]:
 		reaction = r if r != "" else ctx.reply("nothing_happens")
 	_stack.clear()
 	_push(reaction, path, "reaction")
+	_resume()
+	return _out
+
+
+## Ink などから戻ってきたら、止めていた手順の続きを実行する。
+func resume(_result: Dictionary = {}) -> Array[Dictionary]:
+	_begin()
+	_suspended = false
 	_resume()
 	return _out
 
@@ -247,7 +257,7 @@ func _push(step: Variant, path: String, kind: String = "block") -> void:
 
 
 func _resume() -> void:
-	while not _stack.is_empty() and _choice.is_empty():
+	while not _stack.is_empty() and _choice.is_empty() and not _suspended:
 		_steps_run += 1
 		if _steps_run > MAX_STEPS:
 			ctx.warn("UNREACHABLE", "手順が多すぎます（循環していませんか）")
@@ -312,7 +322,9 @@ func _exec_dict(d: Dictionary, path: String) -> void:
 			_show_choice(d["choice"], path)
 		return
 	if d.has("ink"):
-		ctx.warn("UNSUPPORTED", "Ink アダプタはまだ使えません: %s" % path)
+		# Ink に処理を渡す。Core が Ink のアダプタを積み、終わったら resume で続きに戻る
+		_emit(AdvEvents.make("adapter.enter", {"adapter": "ink", "entry": String(d["ink"])}))
+		_suspended = true
 		return
 	if d.has("type"):
 		_emit(d.duplicate(true))
@@ -507,6 +519,12 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 			return intent_schema_layer
 		"start":
 			return start_scene
+		"character":
+			var c = characters.get(String(args.get("id", "")))
+			return c.duplicate() if c is Dictionary else null
+		"ink_refs":
+			validate()
+			return _v_ink_refs.duplicate(true)
 		"pending_choice":
 			return _choice.get("args") if not _choice.is_empty() else null
 	return null
@@ -595,12 +613,13 @@ func _all_names() -> Array:
 # ---------------------------------------------------------------- セーブ
 
 func save_state() -> Dictionary:
-	return {"stack": _stack.duplicate(true), "choice": _choice.duplicate(true)}
+	return {"stack": _stack.duplicate(true), "choice": _choice.duplicate(true), "suspended": _suspended}
 
 
 func load_state(data: Dictionary) -> Error:
 	_stack = data.get("stack", []).duplicate(true)
 	_choice = data.get("choice", {}).duplicate(true)
+	_suspended = bool(data.get("suspended", false))
 	for f in _stack:
 		f["i"] = int(f.get("i", 0))
 	return OK
@@ -616,6 +635,7 @@ var _v_reads: Dictionary = {}     ## 読んでいる変数 → 最初に見つ�
 var _v_writes: Dictionary = {}    ## 書いている変数
 var _v_targets: Dictionary = {}   ## goto・出口の行き先
 var _v_refs: Array = []           ## 素材の参照 [{kind, id, file, path}]
+var _v_ink_refs: Array = []       ## Ink への受け渡し [{entry, file, path}]
 var _v_out: Array[Dictionary] = []
 
 
@@ -624,6 +644,7 @@ func validate() -> Array[Dictionary]:
 	_v_writes = {}
 	_v_targets = {}
 	_v_refs = []
+	_v_ink_refs = []
 	_v_out = diags.duplicate()
 	for f in sources:
 		for d in AdvSchemaValidator.check(sources[f], "scenario", f):
@@ -783,6 +804,8 @@ func _walk_step(step: Variant, jp: String, f: String, in_dialogue: bool) -> void
 			if d.has(k) and not dialogues.has(String(d[k])):
 				_v_out.append(AdvDiag.make("error", "MISSING_TARGET", "会話が見つかりません: %s" % d[k],
 					"Dialogue not found: %s" % d[k], f, "%s/%s" % [jp, k]))
+		if d.has("ink"):
+			_v_ink_refs.append({"entry": String(d["ink"]), "file": f, "path": jp + "/ink"})
 		if d.has("choice") and d["choice"] is Dictionary:
 			var opts = d["choice"].get("options", [])
 			if opts is Array:

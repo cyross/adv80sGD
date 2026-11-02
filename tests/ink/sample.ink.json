@@ -1,0 +1,372 @@
+{
+ "inkVersion": 21,
+ "root": [
+  [
+   "^Hello ",
+   "<>",
+   "\n",
+   "^world! ",
+   "#",
+   "^greeting",
+   "/#",
+   "\n",
+   {
+    "->": "start"
+   },
+   [
+    "done",
+    {
+     "#n": "g-0"
+    }
+   ],
+   null
+  ],
+  "done",
+  {
+   "start": [
+    [
+     "ev",
+     {
+      "VAR?": "met"
+     },
+     "/ev",
+     [
+      {
+       "->": ".^.b",
+       "c": true
+      },
+      {
+       "b": [
+        "^Again.",
+        {
+         "->": ".^.^.^.5"
+        },
+        null
+       ]
+      }
+     ],
+     [
+      {
+       "->": ".^.b"
+      },
+      {
+       "b": [
+        "^First time.",
+        {
+         "->": ".^.^.^.5"
+        },
+        null
+       ]
+      }
+     ],
+     "nop",
+     "\n",
+     "ev",
+     true,
+     "/ev",
+     {
+      "VAR=": "met",
+      "re": true
+     },
+     "ev",
+     "str",
+     "^Ask about the key ",
+     "#",
+     "^intent:ASK:ayumi",
+     "/#",
+     "/str",
+     "/ev",
+     {
+      "*": ".^.c-0",
+      "flg": 20
+     },
+     "ev",
+     {
+      "^->": "start.0.$r1"
+     },
+     {
+      "temp=": "$r"
+     },
+     "str",
+     {
+      "->": ".^.s"
+     },
+     [
+      {
+       "#n": "$r1"
+      }
+     ],
+     "/str",
+     "/ev",
+     {
+      "*": ".^.c-1",
+      "flg": 18
+     },
+     {
+      "c-0": [
+       "^\"The key?\" ",
+       "#",
+       "^intent:ASK",
+       "/#",
+       "\n",
+       "^She nods.",
+       "\n",
+       {
+        "->": "start"
+       },
+       {
+        "#f": 5
+       }
+      ],
+      "c-1": [
+       "ev",
+       {
+        "^->": "start.0.c-1.$r2"
+       },
+       "/ev",
+       {
+        "temp=": "$r"
+       },
+       {
+        "->": ".^.^.s"
+       },
+       [
+        {
+         "#n": "$r2"
+        }
+       ],
+       "\n",
+       "^Quietly.",
+       "\n",
+       "end",
+       {
+        "#f": 5
+       }
+      ],
+      "s": [
+       "^Leave ",
+       {
+        "->": "$r",
+        "var": true
+       },
+       null
+      ]
+     }
+    ],
+    {
+     "#f": 5
+    }
+   ],
+   "shop": [
+    "#",
+    "^shop_tag",
+    "/#",
+    "ev",
+    {
+     "VAR?": "coins"
+    },
+    2,
+    {
+     "f()": "add"
+    },
+    "/ev",
+    {
+     "VAR=": "coins",
+     "re": true
+    },
+    "^Coins: ",
+    "ev",
+    {
+     "VAR?": "coins"
+    },
+    "out",
+    "/ev",
+    "\n",
+    "ev",
+    "^se.play",
+    "^{\"id\":\"knock\"}",
+    {
+     "x()": "event",
+     "exArgs": 2
+    },
+    "pop",
+    "/ev",
+    "^Visited start ",
+    "ev",
+    {
+     "CNT?": "start"
+    },
+    "out",
+    "/ev",
+    "^ times.",
+    "\n",
+    "ev",
+    {
+     "VAR?": "coins"
+    },
+    5,
+    ">",
+    "/ev",
+    {
+     "->": ".^.rich",
+     "c": true
+    },
+    "^Poor.",
+    "\n",
+    "done",
+    {
+     "rich": [
+      "^Rich.",
+      "\n",
+      "done",
+      null
+     ],
+     "#f": 5
+    }
+   ],
+   "add": [
+    {
+     "temp=": "b"
+    },
+    {
+     "temp=": "a"
+    },
+    "ev",
+    {
+     "VAR?": "a"
+    },
+    {
+     "VAR?": "b"
+    },
+    "+",
+    "/ev",
+    "~ret",
+    {
+     "#f": 1
+    }
+   ],
+   "auto": [
+    [
+     {
+      "*": ".^.c-0",
+      "flg": 8
+     },
+     {
+      "c-0": [
+       "^Auto.",
+       "\n",
+       "done",
+       {
+        "#f": 5
+       }
+      ]
+     }
+    ],
+    {
+     "#f": 5
+    }
+   ],
+   "tun": [
+    {
+     "->t->": "inner"
+    },
+    "^Back.",
+    "\n",
+    "done",
+    {
+     "#f": 5
+    }
+   ],
+   "inner": [
+    "^Inside.",
+    "\n",
+    "ev",
+    "void",
+    "/ev",
+    "->->",
+    {
+     "#f": 5
+    }
+   ],
+   "global decl": [
+    "ev",
+    false,
+    {
+     "VAR=": "met"
+    },
+    3,
+    {
+     "VAR=": "coins"
+    },
+    "/ev",
+    "end",
+    null
+   ],
+   "check": [
+    "ev",
+    "^key",
+    {
+     "x()": "has_item",
+     "exArgs": 1
+    },
+    "/ev",
+    [
+     {
+      "->": ".^.b",
+      "c": true
+     },
+     {
+      "b": [
+       "^Have key.",
+       "\n",
+       "ev",
+       "^coin",
+       {
+        "x()": "item_add",
+        "exArgs": 1
+       },
+       "pop",
+       "/ev",
+       "done",
+       null
+      ]
+     }
+    ],
+    "^No key.",
+    "\n",
+    "done",
+    {
+     "#f": 5
+    }
+   ],
+   "talk": [
+    "#",
+    "^voice:ayumi_key_01",
+    "/#",
+    "^@ayumi Hi there.",
+    "\n",
+    "^Narration.",
+    "#",
+    "^speaker:ayumi",
+    "/#",
+    "\n",
+    "#",
+    "^bg:hallway",
+    "/#",
+    "#",
+    "^{\"bgm.play\": {\"id\": \"theme\"}}",
+    "/#",
+    "^Mood.",
+    "#",
+    "^custom",
+    "/#",
+    "\n",
+    "end",
+    {
+     "#f": 5
+    }
+   ]
+  }
+ ],
+ "listDefs": {}
+}

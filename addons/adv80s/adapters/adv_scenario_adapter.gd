@@ -23,6 +23,12 @@ func handle_intent(_intent: Dictionary) -> Array[Dictionary]:
 	return []
 
 
+## 上に積んだアダプタ（Ink など）の処理が終わり、このアダプタに戻ってきたときに呼ばれる。
+## 止めていた手順の続きを実行し、出力イベントを返す。result は戻ってきたアダプタからの値。
+func resume(_result: Dictionary = {}) -> Array[Dictionary]:
+	return []
+
+
 ## 問い合わせ。知らない問い合わせには null を返す。
 func query(_what: String, _args: Dictionary = {}) -> Variant:
 	return null

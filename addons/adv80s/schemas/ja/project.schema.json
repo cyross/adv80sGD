@@ -26,7 +26,17 @@
       "items": {
         "type": "string"
       },
-      "description": "シナリオファイル"
+      "description": "シナリオファイル（.ink.json は Ink のアダプタが読む）"
+    },
+    "ink": {
+      "type": "object",
+      "properties": {
+        "sync_variables": {
+          "type": "boolean",
+          "description": "Ink の中で変わったグローバル変数を Core の状態に返す（既定 true）"
+        }
+      },
+      "additionalProperties": false
     },
     "entry": {
       "type": "string",

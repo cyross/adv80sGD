@@ -26,7 +26,8 @@ var preset: String = "98"
 var group: String = "pc80"
 var features: Dictionary = {}
 
-var _adapters: Array[AdvScenarioAdapter] = []
+var _adapters: Array[AdvScenarioAdapter] = []   ## 積み上げているアダプタ（最後が処理中のもの）
+var adapters_by_name: Dictionary = {}            ## 名前 → アダプタ（積んでいないものも含む）
 var diagnostics: Array = []
 
 
@@ -68,9 +69,24 @@ func _reload_schema() -> void:
 	schema = s
 
 
-func use_adapter(adapter: AdvScenarioAdapter) -> Error:
+## 主となるアダプタを決める（それまでのアダプタはすべて外す）。
+func use_adapter(adapter: AdvScenarioAdapter, name: String = "main") -> Error:
 	_adapters = [adapter]
+	adapters_by_name = {name: adapter}
 	return adapter.setup(ctx)
+
+
+## 受け渡し先のアダプタを足す（{"ink": …} の手順で積まれる）。
+func add_adapter(name: String, a: AdvScenarioAdapter) -> Error:
+	adapters_by_name[name] = a
+	return a.setup(ctx)
+
+
+func adapter_name(a: AdvScenarioAdapter) -> String:
+	for k in adapters_by_name:
+		if adapters_by_name[k] == a:
+			return k
+	return ""
 
 
 var adapter: AdvScenarioAdapter:
@@ -84,23 +100,47 @@ func add_asset_roots(roots: Array) -> void:
 		assets.add_root(String(r), diagnostics)
 
 
+## シナリオを読む。.ink.json は Ink のアダプタに、それ以外は主のアダプタに渡す。
+## .ink.json だけなら Ink のアダプタを主にする。
 func load_scenario(paths: PackedStringArray) -> Error:
-	var err := adapter.load_sources(paths)
+	var main := PackedStringArray()
+	var ink := PackedStringArray()
+	for p in paths:
+		if String(p).ends_with(".ink.json"):
+			ink.append(p)
+		else:
+			main.append(p)
+	var err := OK
+	if not ink.is_empty():
+		var ia: AdvScenarioAdapter = adapters_by_name.get("ink")
+		if ia == null:
+			ia = AdvInkAdapter.new()
+			if main.is_empty():
+				use_adapter(ia, "ink")
+			else:
+				add_adapter("ink", ia)
+		err = ia.load_sources(ink)
+	if not main.is_empty() or ink.is_empty():
+		var e2 := _adapters[0].load_sources(main)
+		if err == OK:
+			err = e2
 	_reload_schema()
 	return err
 
 
 ## 始める。entry を省略するとシナリオの開始位置から。
 func start(entry: String = "") -> Array[Dictionary]:
-	return _commit(adapter.start(entry))
+	_adapters = [_adapters[0]]
+	return _drive(_adapters[0].start(entry))
 
 
 ## 意図を受け取る。省略形の意図も受け付け、slots の形にそろえてから渡す。
 func submit(intent: Dictionary) -> Array[Dictionary]:
 	var it := normalize_intent(intent)
 	var verb := String(it.get("verb", ""))
-	if verb != "CHOOSE" and query("pending_choice") != null:
-		return []  # 選択肢を選ぶまでは、ほかの意図を受け付けない
+	var pending = query("pending_choice")
+	if verb != "CHOOSE" and pending != null and not (pending is Dictionary and pending.get("accepts_intents", false)):
+		return []  # 選択肢を選ぶまでは、ほかの意図を受け付けない（Ink の intent タグつきの選択肢は除く）
 	if not schema.has_verb(verb):
 		return _commit([AdvEvents.text(dictionary.reply("cannot"))])
 	for s in schema.slots(verb):
@@ -118,7 +158,7 @@ func submit(intent: Dictionary) -> Array[Dictionary]:
 			key += ":" + slot_key(it["slots"]["target"])
 		events.append(AdvEvents.make("state.mark", {"kind": "tried", "id": key}))
 	events.append_array(adapter.handle_intent(it))
-	return _commit(events)
+	return _drive(events)
 
 
 ## 意図を正式な形 {verb, slots, source, ext} にそろえる。
@@ -157,6 +197,44 @@ static func slot_key(v: Variant) -> String:
 	if v is Dictionary:
 		return str(v.get("id", v.get("value", "")))
 	return str(v)
+
+
+## アダプタから届いた出力イベントを順に処理する。adapter.enter でアダプタを積んで start を、
+## adapter.exit で積んだアダプタを外して下のアダプタの resume を呼び、その出力を続けて処理する。
+## この2つのイベントは表示側へは渡さない。
+func _drive(events: Array) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var queue: Array = events.duplicate()
+	var switches := 0
+	while not queue.is_empty():
+		var e: Dictionary = queue.pop_front()
+		var t := String(e.get("type", ""))
+		if t == "adapter.enter" or t == "adapter.exit":
+			switches += 1
+			if switches > 1000:
+				AdvDiag.debug_warn("UNREACHABLE", "アダプタの受け渡しが多すぎます", "Too many adapter switches")
+				break
+			var more: Array = _switch_adapter(e)
+			queue = more + queue
+			continue
+		out.append_array(_commit([e]))
+	return out
+
+
+func _switch_adapter(e: Dictionary) -> Array:
+	var args: Dictionary = e.get("args", {})
+	if e["type"] == "adapter.enter":
+		var name := String(args.get("adapter", ""))
+		var a: AdvScenarioAdapter = adapters_by_name.get(name)
+		if a == null:
+			AdvDiag.debug_warn("UNSUPPORTED", "アダプタがありません: %s" % name, "Adapter not found: %s" % name)
+			return adapter.resume({"error": "no_adapter"})
+		_adapters.append(a)
+		return a.start(String(args.get("entry", "")))
+	if _adapters.size() <= 1:
+		return []  # 主のアダプタが終わった
+	_adapters.pop_back()
+	return adapter.resume(args)
 
 
 ## 出力イベントのうち、状態を変えるものを適用する。シーン移動では意図スキーマを読み直す。
@@ -263,6 +341,11 @@ func _adapter_query(what: String, args: Dictionary) -> Variant:
 		var r = _adapters[i].query(what, args)
 		if r != null:
 			return r
+	for a in adapters_by_name.values():
+		if not a in _adapters:
+			var r = a.query(what, args)
+			if r != null:
+				return r
 	return null
 
 
@@ -307,17 +390,42 @@ func validate() -> Array[Dictionary]:
 	var r: Array[Dictionary] = []
 	for d in diagnostics:
 		r.append(d)
-	for a in _adapters:
+	for a in adapters_by_name.values():
 		r.append_array(a.validate())
 	return r
 
 
+## セーブ：状態、乱数、すべてのアダプタの状態、積み上げの順番。
 func save_state() -> Dictionary:
-	return {"state": state.to_dict(), "rng": rng.save_state(), "adapter": adapter.save_state()}
+	var ad := {}
+	for k in adapters_by_name:
+		ad[k] = adapters_by_name[k].save_state()
+	var active := []
+	for a in _adapters:
+		active.append(adapter_name(a))
+	return {"state": state.to_dict(), "rng": rng.save_state(), "adapters": ad, "active": active}
 
 
 func load_state(data: Dictionary) -> Error:
 	state.from_dict(data.get("state", {}))
 	rng.load_state(data.get("rng", {}))
 	_reload_schema()
-	return adapter.load_state(data.get("adapter", {}))
+	if not data.has("adapters"):
+		# 段階6までの形（主のアダプタだけ）
+		_adapters = [_adapters[0]]
+		return _adapters[0].load_state(data.get("adapter", {}))
+	var err := OK
+	var ad: Dictionary = data["adapters"]
+	for k in ad:
+		if adapters_by_name.has(k):
+			var e: Error = adapters_by_name[k].load_state(ad[k])
+			if e != OK:
+				err = e
+	var stack: Array[AdvScenarioAdapter] = []
+	for n in data.get("active", []):
+		if adapters_by_name.has(String(n)):
+			stack.append(adapters_by_name[String(n)])
+	if stack.is_empty():
+		stack = [_adapters[0]]
+	_adapters = stack
+	return err

@@ -1,0 +1,13 @@
+{
+ "start": "room",
+ "scenes": {
+  "room": {
+   "name": "へや",
+   "enter": [
+    {
+     "ink": "nowhere"
+    }
+   ]
+  }
+ }
+}

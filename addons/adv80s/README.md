@@ -2,7 +2,7 @@
 
 80年代風アドベンチャーゲームを作るための Godot 4 アドオン。仕様はリポジトリ直下の `SPEC.md` を参照。
 
-## 現在の段階：段階6「音、聞き返し、英語式パーサー」まで
+## 現在の段階：段階7「Ink アダプタ」まで
 
 | 範囲 | 内容 |
 | --- | --- |
@@ -12,6 +12,7 @@
 | 辞書 | 日本語・英語の同梱辞書、ひらがな/カタカナ・全角/半角の同一視、完全一致→語幹の照合 |
 | JSONアダプタ | シーン、物、出口、アイテム、会話（地の文、`@話者`、`say`、`if`、`set`、`let`、`call`、`goto`、出力イベントの直接記述）、話題、行IDの自動付与、`validate` |
 | 入力 | 日本式パーサー（空白なし入力・助詞による振り分け）、コマンド選択、コマンド入力欄 |
+| Inkアダプタ（段階7） | 変換済みの Ink（`.ink.json`）の再生、JSON との受け渡し、変数の同期、外部関数、タグ、選択肢と意図、セーブ、`validate` |
 | 表示 | 98 プリセット（640x400、16色）、テンプレート（継承、区割り、枠の窓）、`text.show`（文字送り・クリック待ち）、`image.show`/`image.hide`（素材がなければ代わりの表示）、装飾記法の一部 |
 
 段階2で加えたもの：
@@ -121,6 +122,21 @@ godot --headless --path . --script res://addons/adv80s/tools/manifest_cli.gd -- 
 
 - 一度も読み込んでいないプロジェクト（CI で取り出した直後など）では、先に自動でインポートしてから実行する。
 - 仕様の引数に加えて `--project <ファイル>` でプロジェクト設定のファイルを指定できる。
+
+## 段階7の決めごと（Ink アダプタ）
+
+- Ink の実行部分は GDScript で一から書いた（`adapters/ink/adv_ink_story.gd`、inkle 社の C# 版の動きにそろえた）。inklecate は制作時だけ使い、ゲームには含めない。対応する inkVersion は 19〜21。
+- 未対応：`LIST`（使うと validate が `INK_LIST` を出す）。`RANDOM` とシャッフルのシーケンスは乱数の作り方が C# 版と違うので、同じ種でも結果は一致しない。
+- シナリオの一覧の `.ink.json` は Ink のアダプタが読む。`.ink.json` だけなら Ink が主のアダプタになる。複数の `.ink.json` を並べると、ノットを持つ最初のファイルを使う。
+- 受け渡し：JSON の `{"ink": "ノット"}` は出力イベント `adapter.enter` を出して止まる。Core が Ink を積んで `start`、Ink が選択肢なしで止まる（DONE、END、終わり）と `adapter.exit` を出し、Core が Ink を外して JSON の `resume` を呼ぶ。この2つのイベントは表示側へは渡さない。アダプタの基底クラスに `resume(result)` を足した。
+- セーブは、すべてのアダプタの状態と積み上げの順番を持つ（`adapters`、`active`）。段階6までの形（`adapter`）も読める。
+- 変数：Ink に入るとき、Ink のグローバル変数と同じ名前の Core の変数の値を Ink に写す。Ink の中で変わったグローバル変数は `state.set` で返す（プロジェクト設定 `ink.sync_variables: false` で止める）。
+- 行：1行ごとに `text.show`。`@話者ID 文章` か `# speaker:ID` で台詞。行IDは `# id:…`、省略すると `ink:ノット#本文のハッシュ`。タグ `# voice:`、`# bg:`、`# bgm:`、`# se:`、`# {"image.show": {…}}`（JSONの手順と同じ書き方）で出力イベントを出す。そのほかのタグは `ext.tags`。
+- 選択肢：項目の ID は `c0`、`c1`…。タグ `# intent:動詞[:対象[:with]]`（`*` は何でも）をつけると、コマンド入力の意図でも選べる。`# hidden` は一覧に出さない（全部 hidden なら選択肢の一覧を出さず、コマンド入力だけで進む会話になる）。intent タグがあるときは、選択肢を出していてもコマンド入力を受け付ける（`pending_choice` の `accepts_intents`）。合う選択肢がない意図には、辞書の既定の返事を出して待ち続ける。
+- 外部関数：`has_item`、`item_count`、`item_add`、`item_remove`、`get_var`、`set_var`、`visited`、`talked`、`cond`（条件式）、`event`（種類, 引数のJSON）、`goto_scene`。これ以外は Ink 側に同じ名前の関数があればそれを使い、なければ validate が `INK_EXTERNAL` を出す。
+- Ink に入るとき `state.mark`（talked、`ink:ノット`）を出す。選んだ選択肢は `chosen` に `ink:ノット#c…/c番号` で残す。
+- validate のコード：`INK_LOAD`、`INK_VERSION`、`INK_UNSUPPORTED`、`INK_LIST`、`INK_EXTERNAL`、`INK_MISSING_KNOT`（JSON の `{"ink"}` の行き先）、タグの素材は `ASSET_NOT_FOUND`。
+- テスト用の `tests/ink/*.ink.json` は inklecate の出力の形に合わせて手で書いた。実際の inklecate の出力での確認はまだ。
 
 ## 段階6の決めごと
 

@@ -65,6 +65,11 @@ func config(scope: String, key: String, default: Variant = null) -> Variant:
 	return _core.config.get(scope, {}).get(key, default)
 
 
+## Core への問い合わせ（Core が答えるもの、積み上げているアダプタが答えるもの）。
+func query(what: String, args: Dictionary = {}) -> Variant:
+	return _core.query(what, args)
+
+
 func verb_label(id: String) -> String:
 	return _core.dictionary.verb_label(id)
 

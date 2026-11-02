@@ -26,7 +26,17 @@
       "items": {
         "type": "string"
       },
-      "description": "Scenario files"
+      "description": "Scenario files (.ink.json files go to the Ink adapter)"
+    },
+    "ink": {
+      "type": "object",
+      "properties": {
+        "sync_variables": {
+          "type": "boolean",
+          "description": "Write ink global variable changes back to Core state (default true)"
+        }
+      },
+      "additionalProperties": false
     },
     "entry": {
       "type": "string",

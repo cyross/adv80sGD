@@ -287,7 +287,8 @@ func parse_text(text: String) -> Dictionary:
 func submit_text(text: String) -> void:
 	if busy or ended or _overlay != null:
 		return
-	if core.query("pending_choice") != null:
+	var pc = core.query("pending_choice")
+	if pc != null and not (pc is Dictionary and pc.get("accepts_intents", false)):
 		return
 	_push_history()
 	message_log.add_input(text)
@@ -343,11 +344,15 @@ func _enter_idle() -> void:
 	var choice = core.query("pending_choice")
 	_apply_input_modes()
 	_set_inputs_enabled(true)
-	if choice is Dictionary:
+	var intents: bool = choice is Dictionary and choice.get("accepts_intents", false)
+	if choice is Dictionary and not (intents and choice.get("choices", []).is_empty()):
 		if screen.command_select != null:
 			screen.command_select.show_choices(choice.get("choices", []))
 		if screen.command_line != null:
-			screen.command_line.set_enabled(false)
+			# Ink の intent タグつきの選択肢は、コマンド入力でも選べる
+			screen.command_line.set_enabled(intents)
+			if intents and screen.command_line.visible and not auto_click:
+				screen.command_line.grab_focus()
 	else:
 		if screen.command_select != null:
 			screen.command_select.refresh(core)

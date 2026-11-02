@@ -1,0 +1,75 @@
+{
+ "start": "room",
+ "variables": {
+  "met": {
+   "type": "bool",
+   "default": false
+  },
+  "coins": {
+   "type": "int",
+   "default": 3
+  }
+ },
+ "characters": {
+  "ayumi": {
+   "name": "あゆみ",
+   "names": [
+    "しょうじょ",
+    "少女",
+    "ayumi"
+   ],
+   "pal": 13
+  }
+ },
+ "scenes": {
+  "room": {
+   "name": "へや",
+   "enter": [
+    "へやだ。"
+   ],
+   "objects": {
+    "girl": {
+     "name": "しょうじょ",
+     "character": "ayumi",
+     "on": {
+      "TALK": [
+       "まえおき。",
+       {
+        "ink": "start"
+       },
+       "はなしおえた。"
+      ]
+     }
+    },
+    "register": {
+     "name": "レジ",
+     "names": [
+      "れじ"
+     ],
+     "on": {
+      "LOOK": [
+       {
+        "set": {
+         "coins": 10
+        }
+       },
+       {
+        "ink": "shop"
+       },
+       "レジを はなれた。"
+      ],
+      "OPEN": [
+       {
+        "ink": "talk"
+       },
+       {
+        "ink": "check"
+       },
+       "おわり。"
+      ]
+     }
+    }
+   }
+  }
+ }
+}
