@@ -105,7 +105,12 @@ func submit(intent: Dictionary) -> Array[Dictionary]:
 		return _commit([AdvEvents.text(dictionary.reply("cannot"))])
 	for s in schema.slots(verb):
 		if s["required"] and not it["slots"].has(s["name"]):
-			return _commit([AdvEvents.text(dictionary.reply("missing_slot", {"verb": dictionary.verb_label(verb)}))])
+			# 足りないスロットを聞き返す（入力UIが候補を出し、埋めてからもう一度送る）
+			return _commit([AdvEvents.make("input.request", {
+				"slot": s["name"], "type": s["type"], "verb": verb,
+				"prompt": dictionary.reply("missing_slot", {"verb": dictionary.verb_label(verb)}),
+				"intent": it,
+			})])
 	var events: Array[Dictionary] = []
 	if verb != "CHOOSE":
 		var key := verb

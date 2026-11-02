@@ -5,6 +5,7 @@ extends Panel
 
 signal closed
 signal rewind_requested(index: int)   ## 入力の行を押した（その入力の前まで巻き戻す）
+signal voice_requested(id: String)    ## ボイスの印を押した（もう一度鳴らす）
 
 var _text: RichTextLabel
 
@@ -41,15 +42,22 @@ func open(entries_log: AdvMessageLog, tpl: AdvTemplate, screen_size: Vector2, ca
 				lines.append("[url=%d][color=#%s]> %s[/color][/url]" % [int(e["rewind"]), input_c, body])
 			else:
 				lines.append("[color=#%s]> %s[/color]" % [input_c, body])
-		elif e.has("name"):
-			lines.append("[color=#%s]%s[/color]「%s」" % [name_c, AdvTextMarkup._escape(String(e["name"])), body])
 		else:
-			lines.append(body)
+			var voice := "[url=v:%s]♪[/url] " % String(e["voice"]) if String(e.get("voice", "")) != "" else ""
+			if e.has("name"):
+				lines.append("%s[color=#%s]%s[/color]「%s」" % [voice, name_c, AdvTextMarkup._escape(String(e["name"])), body])
+			else:
+				lines.append(voice + body)
 	if can_rewind:
 		lines.append("")
 		lines.append("（入力の行を えらぶと、その まえに もどる）")
 	_text.text = "\n".join(lines)
-	_text.meta_clicked.connect(func(meta): rewind_requested.emit(int(str(meta))))
+	_text.meta_clicked.connect(func(meta):
+		var m := str(meta)
+		if m.begins_with("v:"):
+			voice_requested.emit(m.substr(2))
+		else:
+			rewind_requested.emit(int(m)))
 
 
 func _gui_input(event: InputEvent) -> void:

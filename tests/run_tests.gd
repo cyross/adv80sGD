@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_visuals()
 	_test_save()
 	_test_stage1_scenario()
+	_test_english()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -406,8 +407,8 @@ func _test_stage1_scenario() -> void:
 	# 省略形の意図（コマンド選択などから）
 	t = _bodies(core.submit({"verb": "LOOK", "target": "door", "source": "select"}))
 	check(t.contains("木の ドア"), "shorthand intent → %s" % t)
-	t = _bodies(core.submit({"verb": "OPEN", "source": "select"}))
-	check(t.contains("なにを"), "missing slot → %s" % t)
+	var req := core.submit({"verb": "OPEN", "source": "select"})
+	check(req.size() == 1 and req[0]["type"] == "input.request" and req[0]["args"]["slot"] == "target" and String(req[0]["args"]["prompt"]).contains("なにを"), "missing slot → input.request: %s" % str(req))
 	check(core.state.tried.has("LOOK:door"), "tried mark")
 
 	# セーブとロード
@@ -415,3 +416,36 @@ func _test_stage1_scenario() -> void:
 	_say("ドアを あける")
 	core.load_state(saved)
 	eq(core.state.scene, "hallway", "load_state restores scene")
+
+
+# ---------------------------------------------------------------- 英語式パーサー
+
+func _en(text: String) -> String:
+	var r := AdvParsers.parse("en", text, core)
+	if r.has("reply"):
+		return String(r["reply"])
+	return _bodies(core.submit(r["intent"]))
+
+
+func _test_english() -> void:
+	core = AdvCore.new()
+	core.setup({"seed": 1, "lang": "en", "verbs": ["GIVE"]})
+	core.use_adapter(AdvJsonAdapter.new())
+	core.load_scenario(["res://tests/stage1/scenario/stage1.scenario.json"])
+	core.start()
+	var r := AdvParsers.parse("en", "Open the door", core)
+	check(r.has("intent") and r["intent"]["verb"] == "OPEN" and r["intent"]["slots"]["target"]["id"] == "door", "en: open the door")
+	check(_en("x door").contains("かぎが かかっている"), "en: x door (scenario text)")
+	check(_en("look at the door").contains("木の ドア"), "en: look at")
+	eq(_en("frobnicate door"), "I don't know that word.", "en: unknown verb")
+	eq(_en("open the key"), "You don't see that here.", "en: noun not here")
+	check(_en("search flower pot").contains("かぎを みつけた"), "en: multiword noun")
+	check(_en("use key on door").contains("カチリ"), "en: use key on door")
+	check(_en("open door").contains("ほこりっぽい"), "en: open door → room")
+	check(_en("give brass key to girl").contains("これは"), "en: give key to girl")
+	var t := _en("talk to ayumi")
+	check(t.contains("だれ"), "en: talk to (two-word verb)")
+	core.submit({"verb": "CHOOSE", "target": "detective"})
+	check(_en("ask ayumi about case").contains("きのうの よる"), "en: ask about topic")
+	check(_en("i").contains("You are carrying"), "en: inventory abbreviation")
+	check(_en("go to hallway").contains("もどってきた"), "en: go to")

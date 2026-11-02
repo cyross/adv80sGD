@@ -98,6 +98,27 @@ func _on_verb(v: Dictionary) -> void:
 	_next_slot()
 
 
+## 聞き返し（input.request）：動詞と埋まっているスロットはそのままで、足りないスロットの候補を出す。
+func start_request(verb_id: String, filled: Dictionary, slot: String) -> void:
+	choosing = false
+	var v: Dictionary = {}
+	for x in _core.query("verbs"):
+		if x["id"] == verb_id:
+			v = x
+	if v.is_empty():
+		v = {"id": verb_id, "label": _core.dictionary.verb_label(verb_id), "slots": _core.schema.slots(verb_id)}
+	_verb = v
+	_filled = filled.duplicate(true)
+	_labels = PackedStringArray([String(v["label"])])
+	_slot_index = 0
+	var slots: Array = v.get("slots", [])
+	for i in slots.size():
+		if slots[i]["name"] == slot:
+			_slot_index = i
+			break
+	_next_slot()
+
+
 ## 選択肢を出す（choice.show）。選ぶと CHOOSE の意図を出す。
 func show_choices(choices: Array) -> void:
 	choosing = true

@@ -7,11 +7,15 @@
   },
   "particles": [
     "with",
+    "using",
     "on",
+    "onto",
     "to",
     "at",
     "in",
-    "about"
+    "into",
+    "about",
+    "from"
   ],
   "verbs": {
     "LOOK": {
@@ -19,7 +23,9 @@
       "words": [
         "look",
         "l",
-        "see"
+        "see",
+        "look at",
+        "l at"
       ],
       "stems": [],
       "default_reply": "You see nothing special."
@@ -42,7 +48,8 @@
         "take",
         "get",
         "pick",
-        "grab"
+        "grab",
+        "pick up"
       ],
       "stems": [],
       "default_reply": "You can't take that."
@@ -59,7 +66,11 @@
       "label": "TALK",
       "words": [
         "talk",
-        "speak"
+        "speak",
+        "talk to",
+        "speak to",
+        "speak with",
+        "talk with"
       ],
       "stems": [],
       "default_reply": "There is no answer."
@@ -67,7 +78,8 @@
     "ASK": {
       "label": "ASK",
       "words": [
-        "ask"
+        "ask",
+        "ask about"
       ],
       "stems": [],
       "default_reply": "No reply."
@@ -78,7 +90,9 @@
         "go",
         "move",
         "walk",
-        "enter"
+        "enter",
+        "go to",
+        "walk to"
       ],
       "stems": [],
       "default_reply": "You can't go there."

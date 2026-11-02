@@ -23,7 +23,9 @@
       "name": "あゆみ",
       "names": [
         "しょうじょ",
-        "少女"
+        "少女",
+        "girl",
+        "ayumi"
       ],
       "pal": 13
     }
@@ -33,7 +35,9 @@
       "name": "かぎ",
       "names": [
         "鍵",
-        "カギ"
+        "カギ",
+        "key",
+        "brass key"
       ],
       "on": {
         "LOOK": "ふるびた しんちゅうの かぎだ。",
@@ -65,6 +69,12 @@
       "name": "ろうか",
       "image": "hallway",
       "first": [
+        {
+          "bgm.play": {
+            "id": "theme",
+            "fade": 0.5
+          }
+        },
         {
           "flow.mark": {
             "node": "start"
@@ -100,7 +110,8 @@
           "names": [
             "ドア",
             "とびら",
-            "扉"
+            "扉",
+            "door"
           ],
           "region": [
             260,
@@ -124,6 +135,11 @@
                 }
               ],
               "else": [
+                {
+                  "se.play": {
+                    "id": "knock"
+                  }
+                },
                 {
                   "set": {
                     "knocks": "= knocks + 1"
@@ -154,7 +170,10 @@
           "names": [
             "うえきばち",
             "植木鉢",
-            "はち"
+            "はち",
+            "plant",
+            "pot",
+            "flower pot"
           ],
           "region": [
             60,
@@ -228,7 +247,9 @@
         "hallway": {
           "names": [
             "ろうか",
-            "そと"
+            "そと",
+            "hallway",
+            "corridor"
           ]
         }
       },
@@ -258,6 +279,17 @@
       {
         "if": "knocks > 0",
         "then": "@ayumi さっき ドアを たたいていたのは あなたね。"
+      },
+      {
+        "if": "has(key)",
+        "then": [
+          {
+            "say": "ayumi",
+            "text": "その かぎ……！",
+            "id": "ayumi_key_01",
+            "voice": "ayumi_key_01"
+          }
+        ]
       },
       {
         "choice": {
@@ -327,7 +359,11 @@
       {
         "id": "case",
         "label": "じけんについて",
-        "dialogue": "ayumi_case"
+        "dialogue": "ayumi_case",
+        "names": [
+          "case",
+          "incident"
+        ]
       },
       {
         "id": "memo",

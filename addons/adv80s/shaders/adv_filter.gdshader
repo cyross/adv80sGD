@@ -17,6 +17,10 @@ uniform int mono = 0;                           // 0 なし、1 グリーン、2
 uniform float rgb_mask : hint_range(0.0, 1.0) = 0.0;
 uniform float curvature : hint_range(0.0, 0.2) = 0.0;
 uniform float vignette : hint_range(0.0, 1.0) = 0.0;
+// パレットの色を順に回す（画面効果 palette_cycle）。減色でパレットを使っているときだけ効く
+uniform int cycle_start = 0;
+uniform int cycle_len = 0;
+uniform int cycle_offset = 0;
 
 const float BAYER[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 
@@ -31,7 +35,7 @@ vec3 quantize(vec3 c, vec2 px) {
 	if (palette_size > 0) {
 		vec3 q = clamp(c + vec3(d) * 0.35, 0.0, 1.0);
 		float best = 1e9;
-		vec3 out_c = c;
+		int best_i = 0;
 		for (int i = 0; i < 64; i++) {
 			if (i >= palette_size) {
 				break;
@@ -41,10 +45,13 @@ vec3 quantize(vec3 c, vec2 px) {
 			float dist = dot(diff, diff) + dot(q - p, q - p) * 0.1;
 			if (dist < best) {
 				best = dist;
-				out_c = p;
+				best_i = i;
 			}
 		}
-		return out_c;
+		if (cycle_len > 0 && best_i >= cycle_start && best_i < cycle_start + cycle_len) {
+			best_i = cycle_start + int(mod(float(best_i - cycle_start + cycle_offset), float(cycle_len)));
+		}
+		return palette[best_i].rgb;
 	}
 	if (levels.x > 0.0) {
 		return clamp(floor(c * levels + 0.5 + vec3(d)) / levels, 0.0, 1.0);

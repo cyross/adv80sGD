@@ -168,6 +168,15 @@ func _fill_settings(m: AdvMenuPanel) -> void:
 		m.add_button("よみあげ：%s" % _onoff(_on("tts")), func():
 			player.set_feature("tts", not _on("tts"))
 			refill.call())
+	for vk in [["bgm_volume", "おんがく"], ["se_volume", "こうかおん"], ["voice_volume", "こえ"]]:
+		var key: String = vk[0]
+		var levels := [0.0, 0.25, 0.5, 0.75, 1.0]
+		var cur := float(s.get_value(key, 1.0))
+		m.add_button("%sの おおきさ：%d%%" % [vk[1], int(round(cur * 100))], func():
+			s.set_value(key, _next(levels, cur))
+			player.save_settings()
+			player.apply_volumes()
+			refill.call())
 	for key in ["hotspot", "tried_marks"]:
 		if player.features.allowed.get(key, true):
 			var k: String = key

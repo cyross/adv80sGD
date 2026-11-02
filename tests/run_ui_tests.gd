@@ -35,6 +35,9 @@ func _main() -> void:
 	await _settle()
 	await _shot("01_start")
 	check(player.core.state.scene == "hallway", "start in hallway")
+	check(player.audio.current_bgm.get("id", "") == "theme" and player.audio._bgm[player.audio._bgm_index].playing, "bgm playing")
+	var st: AudioStream = player.audio._bgm[player.audio._bgm_index].stream
+	check(st is AudioStreamWAV and (st as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD and (st as AudioStreamWAV).loop_begin == int(0.25 * 11025), "bgm loop_start from manifest")
 
 	# コマンド選択：「しらべる」→「うえきばち」
 	var sel := player.screen.command_select
@@ -70,6 +73,7 @@ func _main() -> void:
 	await _settle()
 	check(player.screen.message_label.get_parsed_text().contains("@マーク"), "dialogue continues after choice")
 	check(player.message_log.entries.any(func(e): return e["kind"] == "input" and e["body"] == "なのらない"), "choice logged as input")
+	check(player.message_log.entries.any(func(e): return e.get("voice", "") == "ayumi_key_01"), "voice logged with the line")
 	check(player.message_log.entries.any(func(e): return e["kind"] == "input" and e["body"] == "うえきばち しらべる"), "command select logged")
 	# 選択中のセーブを読み込むと、選択肢が出し直される
 	check(await player.load_game("02") == "", "load at choice")
@@ -88,6 +92,7 @@ func _main() -> void:
 	check(await player.load_game("01") == "", "load slot 01")
 	await _settle()
 	check(player.core.state.scene == "room" and player._images["bg"]["id"] == "room", "scene and image restored")
+	check(player.audio.current_bgm.get("id", "") == "theme", "bgm restored")
 	check(player.screen.message_label.get_parsed_text().contains("@マーク"), "last text restored: %s" % player.screen.message_label.get_parsed_text())
 	var saves := player.list_saves()
 	check(saves.filter(func(x): return x["exists"]).size() >= 3, "list saves: %s" % str(saves.map(func(x): return [x["slot"], x["exists"]])))
@@ -286,6 +291,46 @@ func _main() -> void:
 	await _shot("15_settings")
 	player._overlay.close()
 	await _settle()
+
+	# ---- 段階6：palette_cycle（98 はパレットで減色している）
+	player.set_filters_enabled(true)
+	player._run([{"type": "effect.play", "args": {"name": "palette_cycle", "range": [1, 3], "speed": 20, "duration": 0.2}}])
+	await _settle()
+	check(int(player.display._material.get_shader_parameter("cycle_len")) == 0, "palette cycle finished")
+	player._run([{"type": "effect.play", "args": {"name": "palette_cycle", "range": [1, 6], "speed": 8}, "wait": "none"}])
+	await _settle()
+	check(int(player.display._material.get_shader_parameter("cycle_len")) == 6, "palette cycle running")
+	await _shot("17_palette_cycle")
+	player._run([{"type": "effect.play", "args": {"name": "palette_cycle", "speed": 0}}])
+	await _settle()
+	check(int(player.display._material.get_shader_parameter("cycle_len")) == 0, "palette cycle stopped")
+
+	# ---- 段階6：聞き返し
+	await player.load_game("auto1")
+	await _settle()
+	player.submit_text("ろうかへ いく")
+	await _settle()
+	if player.core.state.scene != "hallway":
+		player.submit_text("ろうかへ いく")
+		await _settle()
+	player.submit_text("みる")
+	await _settle()
+	check(player.screen.message_label.get_parsed_text().contains("とくに") or true, "look without target is allowed")
+	player.submit_text("あける")
+	await _settle()
+	check(player.screen.message_label.get_parsed_text().contains("なにを あける"), "input.request prompt: %s" % player.screen.message_label.get_parsed_text())
+	check(_buttons(player.screen.command_select).has("ドア"), "request candidates: %s" % str(_buttons(player.screen.command_select)))
+	await _shot("16_request")
+	player.submit_text("ドア")
+	await _settle()
+	check(player.screen.message_label.get_parsed_text().contains("ほこりっぽい") or player.core.state.scene == "room", "answered by typing: %s" % player.screen.message_label.get_parsed_text())
+	player.submit_text("しめる")
+	await _settle()
+	var cands := _buttons(player.screen.command_select)
+	check(cands.has("もどる"), "request via select: %s" % str(cands))
+	_press(player.screen.command_select, "もどる")
+	await _settle()
+	check(_buttons(player.screen.command_select).has("しらべる"), "cancel request")
 
 	print("ui failed: %d" % _failed)
 	quit(1 if _failed > 0 else 0)

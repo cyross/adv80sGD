@@ -1,5 +1,9 @@
 {
   "assets": {
+    "bgm:theme": {
+      "file": "bgm/theme.wav",
+      "type": "bgm"
+    },
     "image:hallway": {
       "by_preset": {
         "88": "presets/88/bg/hallway.png"
@@ -13,6 +17,14 @@
       },
       "file": "bg/room.png",
       "type": "image"
+    },
+    "se:knock": {
+      "file": "se/knock.wav",
+      "type": "se"
+    },
+    "voice:ayumi_key_01": {
+      "file": "voice/ayumi_key_01.wav",
+      "type": "voice"
     }
   },
   "generated": true,

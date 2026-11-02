@@ -45,6 +45,7 @@ var message_log: AdvMessageLog = AdvMessageLog.new()
 var key_provider: AdvKeyProvider
 var progress: AdvProgress
 var modern: AdvModernUI
+var audio: AdvAudio
 
 var busy: bool = false
 var ended: bool = false
@@ -61,6 +62,8 @@ var _autosave_pending: bool = false
 var _flow_pending: PackedStringArray = []  ## flow.mark で到達した点（ひとまとまり実行し終えたら記録する）
 var _history: Array = []                   ## 巻き戻し用の記録 [{data, log_size}]
 var _show_all_hotspots: bool = false
+var _last_voice: String = ""            ## 直前の voice.play（次の text.show のログに付ける）
+var _request: Dictionary = {}          ## 聞き返し中（input.request）の引数
 
 
 func _ready() -> void:
@@ -105,6 +108,10 @@ func _ready() -> void:
 	diags.append_array(core.validate())
 	_report(diags)
 
+	audio = AdvAudio.new()
+	audio.name = "Audio"
+	add_child(audio)
+	apply_volumes()
 	display = AdvDisplay.new()
 	display.name = "Display"
 	add_child(display)
@@ -201,6 +208,14 @@ func save_settings() -> void:
 	_save_settings()
 
 
+## 音量（プレイヤー設定）を反映する。
+func apply_volumes() -> void:
+	audio.bgm_volume = float(settings.get_value("bgm_volume", 1.0))
+	audio.se_volume = float(settings.get_value("se_volume", 1.0))
+	audio.voice_volume = float(settings.get_value("voice_volume", 1.0))
+	audio.apply_volumes()
+
+
 ## モダン機能を実行時に切り替える（プロジェクトで禁止したものは変えられない）。
 func set_feature(key: String, on: bool) -> void:
 	if not features.allowed.get(key, true):
@@ -254,12 +269,18 @@ static func _tts_available() -> bool:
 func submit_intent(intent: Dictionary) -> void:
 	if busy or ended or _overlay != null:
 		return
+	_request = {}
 	_push_history()
 	var label := String(intent.get("ext", {}).get("label", ""))
 	if label != "":
 		message_log.add_input(label)
 		message_log.entries.back()["rewind"] = _history.size() - 1
 	_run(core.submit(intent))
+
+
+## コマンド入力の文字列を読む（テンプレートの inputs.parser_profile："ja"、"en"、またはスクリプトのパス）。
+func parse_text(text: String) -> Dictionary:
+	return AdvParsers.parse(String(template.get_section("inputs").get("parser_profile", "ja")), text, core)
 
 
 ## コマンド入力の文字列を送る。
@@ -271,7 +292,20 @@ func submit_text(text: String) -> void:
 	_push_history()
 	message_log.add_input(text)
 	message_log.entries.back()["rewind"] = _history.size() - 1
-	var r := AdvParserJa.parse(text, core)
+	if not _request.is_empty():
+		# 聞き返しへの答え：動詞を足して読み、埋まっていたスロットと合わせる
+		var req := _request
+		_request = {}
+		var r2 := parse_text("%s %s" % [text, core.dictionary.verb_label(String(req["verb"]))])
+		if r2.has("intent") and String(r2["intent"]["verb"]) == String(req["verb"]):
+			var it: Dictionary = r2["intent"]
+			var filled: Dictionary = req.get("intent", {}).get("slots", {})
+			for k in filled:
+				if not it["slots"].has(k):
+					it["slots"][k] = filled[k]
+			_run(core.submit(it))
+			return
+	var r := parse_text(text)
 	if r.has("reply"):
 		_run([AdvEvents.text(String(r["reply"]))])
 	else:
@@ -317,6 +351,8 @@ func _enter_idle() -> void:
 	else:
 		if screen.command_select != null:
 			screen.command_select.refresh(core)
+			if not _request.is_empty():
+				screen.command_select.start_request(String(_request["verb"]), _request.get("intent", {}).get("slots", {}), String(_request["slot"]))
 		if screen.command_line != null and screen.command_line.visible and not auto_click:
 			screen.command_line.grab_focus()
 	_refresh_hotspots()
@@ -386,10 +422,14 @@ func _play(ev: Dictionary) -> void:
 				skipping = _skip_held()
 			var raw := String(args.get("body", ""))
 			var who := String(args.get("name", args.get("speaker", "")))
+			var voice := String(args.get("voice", _last_voice))
+			_last_voice = ""
+			if args.has("voice") and not skipping:
+				_play_voice(voice)
 			_last_text = {"body": raw, "name": who}
-			message_log.add_text(AdvTextMarkup.to_plain(raw, core.state, template), who, String(ev.get("id", "")), String(args.get("voice", "")))
+			message_log.add_text(AdvTextMarkup.to_plain(raw, core.state, template), who, String(ev.get("id", "")), voice)
 			screen.show_text(AdvTextMarkup.to_bbcode(raw, core.state, template), who, skipping)
-			if features.is_on("tts") and not skipping:
+			if features.is_on("tts") and not skipping and not audio.is_voice_playing():
 				_speak(raw, who)
 			if skipping and wait is String and wait == "click":
 				wait = "none"
@@ -428,6 +468,14 @@ func _play(ev: Dictionary) -> void:
 			var name := String(args.get("name", args.get("effect", "")))
 			if skipping:
 				return
+			if name == "palette_cycle":
+				var dur := float(args.get("duration", 0.0))
+				var job := display.palette_cycle.bind(args.get("range", []), float(args.get("speed", 4.0)), dur)
+				if dur > 0.0 and wait is String and wait == "end":
+					await job.call()
+				else:
+					job.call()
+				return
 			if wait is String and wait == "end":
 				await screen.play_effect(name, args)
 				wait = "none"
@@ -440,6 +488,33 @@ func _play(ev: Dictionary) -> void:
 			wait = "none"
 		"flow.mark":
 			_flow_pending.append(String(args.get("node", "")))
+		"bgm.play":
+			var id := String(args.get("id", ""))
+			var path := core.assets.resolve("bgm", id)
+			if path == "" and core.assets.report_missing("bgm", id):
+				ended = true
+				return
+			var e := core.assets.entry("bgm", id)
+			audio.play_bgm(id, path, bool(args.get("loop", true)), float(args.get("fade", 0.0)),
+				float(args.get("volume", 1.0)) * float(e.get("volume", 1.0)), float(e.get("loop_start", 0.0)))
+		"bgm.stop":
+			audio.stop_bgm(float(args.get("fade", 0.0)))
+		"se.play":
+			if not skipping:
+				var id := String(args.get("id", ""))
+				var path := core.assets.resolve("se", id)
+				if path == "" and core.assets.report_missing("se", id):
+					ended = true
+					return
+				if path != "":
+					audio.play_se(path, float(args.get("volume", 1.0)) * float(core.assets.entry("se", id).get("volume", 1.0)))
+				if wait is String and wait == "end":
+					await get_tree().create_timer((load(path) as AudioStream).get_length() if path != "" else 0.0).timeout
+					wait = "none"
+		"voice.play":
+			_last_voice = String(args.get("id", ""))
+			if not skipping:
+				_play_voice(_last_voice)
 		"checkpoint":
 			if features.is_on("autosave") and bool(args.get("autosave", true)) and "checkpoint" in _autosave_on():
 				_autosave_pending = true
@@ -453,6 +528,14 @@ func _play(ev: Dictionary) -> void:
 				screen.show_text(AdvTextMarkup.to_bbcode(prompt, core.state, template), "", skipping)
 			skip_mode = false
 			wait = "none"   # 選択肢は _enter_idle で出す（入力待ちでは必ず止まる）
+		"input.request":
+			_request = args.duplicate(true)
+			var prompt := String(args.get("prompt", ""))
+			if prompt != "":
+				_last_text = {"body": prompt, "name": ""}
+				message_log.add_text(AdvTextMarkup.to_plain(prompt, core.state, template))
+				screen.show_text(AdvTextMarkup.to_bbcode(prompt, core.state, template), "", true)
+			wait = "none"   # 候補は _enter_idle で出す
 		"save.request":
 			await open_save_menu("save")
 			wait = "none"
@@ -470,7 +553,7 @@ func _play(ev: Dictionary) -> void:
 			ended = true
 			return
 		_:
-			if not AdvEvents.is_state_event(ev) and not type in ["wait", "voice.play", "flow.mark"]:
+			if not AdvEvents.is_state_event(ev) and not type in ["wait", "flow.mark"]:
 				AdvDiag.debug_warn("UNSUPPORTED", "まだ実行できない出力イベントです: %s" % type,
 					"Output event not supported yet: %s" % type)
 	if skipping and type == "wait":
@@ -528,6 +611,8 @@ func _wait_click() -> void:
 				break
 	_click_pending = false
 	screen.set_wait_mark(false)
+	if bool(settings.get_value("voice_stop_on_advance", true)):
+		audio.stop_voice()
 
 
 func _skip_held() -> bool:
@@ -624,6 +709,7 @@ func open_log() -> void:
 	var v := AdvLogView.new()
 	v.open(message_log, template, Vector2(template.screen_size), features.is_on("rewind") and not busy)
 	v.rewind_requested.connect(func(i: int): v.close(); rewind_to(i))
+	v.voice_requested.connect(_play_voice)
 	await show_overlay(v)
 
 
@@ -714,7 +800,7 @@ func _make_save_data() -> Dictionary:
 		"core": core.save_state(),
 		"log": message_log.to_array(),
 		"view": {"template": template.id, "layout": template._layout_name, "images": _images.duplicate(true),
-			"text": _last_text.duplicate()},
+			"text": _last_text.duplicate(), "bgm": audio.current_bgm.duplicate()},
 	}
 
 
@@ -779,6 +865,14 @@ func _apply_save_data(data: Dictionary) -> void:
 	template.set_layout(String(view.get("layout", "")))
 	screen.apply_layout()
 	_redraw_view()
+	var bgm: Dictionary = view.get("bgm", {})
+	if bgm.is_empty():
+		audio.stop_bgm()
+	else:
+		var bid := String(bgm["id"])
+		var e := core.assets.entry("bgm", bid)
+		audio.play_bgm(bid, core.assets.resolve("bgm", bid), bool(bgm.get("loop", true)), 0.0,
+			float(bgm.get("volume", 1.0)), float(e.get("loop_start", 0.0)))
 	ended = false
 	_enter_idle()
 
@@ -824,6 +918,16 @@ func jump_to_node(node: String) -> void:
 		return
 	_history.clear()
 	await _apply_save_data(progress.snapshots[node])
+
+
+func _play_voice(id: String) -> void:
+	if id == "":
+		return
+	var path := core.assets.resolve("voice", id)
+	if path == "":
+		core.assets.report_missing("voice", id)
+		return
+	audio.play_voice(path, float(core.assets.entry("voice", id).get("volume", 1.0)))
 
 
 ## 文章を読み上げる（モダン機能 tts）。ルビのある語はルビで読む。

@@ -90,6 +90,38 @@ func set_filters_enabled(on: bool) -> void:
 			p.visible = on
 
 
+## パレットの色を順に回す（画面効果 palette_cycle）。range は [最初の番号, 最後の番号]、speed は1秒あたりの段数。
+## duration が 0 なら止めるまで続ける。speed を 0 にすると止める。減色でパレットを使っていないときは何もしない。
+func palette_cycle(range_: Array, speed: float, duration: float) -> void:
+	_cycle_id += 1
+	var my_id := _cycle_id
+	if _material == null or int(_material.get_shader_parameter("palette_size")) == 0:
+		AdvDiag.debug_warn("UNSUPPORTED", "palette_cycle はパレットで減色しているときだけ使えます",
+			"palette_cycle needs a palette-based reduce filter")
+		return
+	if speed <= 0.0 or range_.size() < 2:
+		_material.set_shader_parameter("cycle_len", 0)
+		return
+	var a := int(range_[0])
+	var b := int(range_[1])
+	_material.set_shader_parameter("cycle_start", mini(a, b))
+	_material.set_shader_parameter("cycle_len", absi(b - a) + 1)
+	var t := 0.0
+	var step := 0
+	while my_id == _cycle_id and (duration <= 0.0 or t < duration):
+		await get_tree().create_timer(1.0 / speed).timeout
+		if my_id != _cycle_id:
+			return
+		t += 1.0 / speed
+		step += 1
+		_material.set_shader_parameter("cycle_offset", step)
+	if my_id == _cycle_id:
+		_material.set_shader_parameter("cycle_len", 0)
+
+
+var _cycle_id := 0
+
+
 ## 表示の倍率（横, 縦）。
 func display_scale() -> Vector2:
 	if tpl == null:

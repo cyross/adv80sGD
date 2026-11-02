@@ -10,6 +10,10 @@ var data: Dictionary = {
 	"auto_per_char": 0.04,
 	"skip_unread": false,   ## 未読の文章もスキップする
 	"filters": true,        ## フィルターを使う
+	"bgm_volume": 1.0,      ## 音量（0〜1）
+	"se_volume": 1.0,
+	"voice_volume": 1.0,
+	"voice_stop_on_advance": true,  ## 次の文章に進んだらボイスを止める
 	"features": {},         ## モダン機能の実行時の切り替え（キー → bool）
 }
 

@@ -130,6 +130,12 @@ func resolve(kind: String, id: String, variant: String = "") -> String:
 	return String(e.get("file", ""))
 
 
+## マニフェストに書いた属性（loop_start、volume、pivot など）。なければ空。
+func entry(kind: String, id: String) -> Dictionary:
+	var e = _entries.get(kind, {}).get(id)
+	return e if e is Dictionary else {}
+
+
 func has(kind: String, id: String) -> bool:
 	if id.begins_with("res://") or id.begins_with("user://") or id.contains("/"):
 		return resolve(kind, id) != ""
