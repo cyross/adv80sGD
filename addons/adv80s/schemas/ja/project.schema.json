@@ -42,6 +42,37 @@
       "type": "string",
       "description": "開始シーン（空ならシナリオの start）"
     },
+    "variables": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "bool",
+              "int",
+              "float",
+              "string"
+            ]
+          },
+          "default": {}
+        },
+        "additionalProperties": false
+      },
+      "description": "全シナリオで共通の変数（名前 → {type, default}）"
+    },
+    "constants": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "boolean",
+          "integer",
+          "number",
+          "string"
+        ]
+      },
+      "description": "全シナリオで共通の定数（名前 → 値。書き換えられない）"
+    },
     "asset_roots": {
       "type": "array",
       "items": {
@@ -63,6 +94,7 @@
           "voice",
           "font",
           "shader",
+          "video",
           null
         ]
       },

@@ -442,8 +442,66 @@ func _main() -> void:
 	await player.switch_template("pc98_classic")
 	await _settle()
 
+	# ---- 段階10：ページめくり
+	player.auto_click = false
+	var long := ""
+	for i in 12:
+		long += "これは ながい ぶんしょうの %d ぎょうめ です。\n" % (i + 1)
+	_run_ev([AdvEvents.make("text.show", {"body": long})])
+	await _settle_frames(3)
+	player._click_pending = true
+	await _settle_frames(3)
+	check(player.screen.halt == "page" and player.screen.page_mark.visible, "page full: page mark shown (halt=%s)" % player.screen.halt)
+	await _shot("21_page_full")
+	var y0 := player.screen.message_label.position.y
+	player._click_pending = true
+	await _settle_frames(3)
+	check(player.screen.message_label.position.y < y0, "next page scrolls the text: %f" % player.screen.message_label.position.y)
+	for i in 10:
+		player._click_pending = true
+		await _settle_frames(3)
+		if player.screen.halt == "end" and player.screen.wait_mark.visible:
+			break
+	check(player.screen.halt == "end" and player.screen.wait_mark.visible, "last page ends with the click mark")
+	player._click_pending = true
+	await _settle()
+	# [p] と [page=秒]
+	_run_ev([AdvEvents.make("text.show", {"body": "あいう[p]えお[page=0.2]つぎの ページ"})])
+	await _until_halt("stop")
+	check(player.screen.halt == "stop" and player.screen.wait_mark.visible and player.screen.message_label.visible_characters == 3, "[p] waits for a click")
+	player._click_pending = true
+	await _settle_frames(2)
+	await _until_halt("stop")
+	check(player.screen.page_mark.visible, "[page=0.2] shows the page mark")
+	await create_timer(0.4).timeout
+	check(not player.screen.page_mark.visible and player.screen.message_label.get_parsed_text().contains("つぎの"), "[page=0.2] turns the page by itself")
+	player.auto_click = true
+	await _settle()
+	# オート送り：クリックしなくても進む
+	player.auto_click = false
+	player.auto_mode = true
+	player.settings.set_value("auto_delay", 0.1)
+	player.settings.set_value("auto_per_char", 0.0)
+	_run_ev([AdvEvents.make("text.show", {"body": "オート[p]おくり"}), AdvEvents.make("text.show", {"body": "おわり"})])
+	await create_timer(4.0).timeout
+	check(not player.busy and player.screen.message_label.get_parsed_text().contains("おわり"), "auto mode advances [p] and clicks: %s" % player.screen.message_label.get_parsed_text())
+	player.auto_mode = false
+	player.auto_click = true
+
 	print("ui failed: %d" % _failed)
 	quit(1 if _failed > 0 else 0)
+
+
+## 文字送りが止まるまで待つ（送りの途中ならクリックして早める）。
+func _until_halt(h: String) -> void:
+	for i in 300:
+		if player.screen.halt == h and not player.screen.is_typing():
+			for j in 3:
+				await process_frame
+			return
+		if player.screen.is_typing():
+			player._click_pending = true
+		await process_frame
 
 
 func _run_ev(events: Array) -> void:

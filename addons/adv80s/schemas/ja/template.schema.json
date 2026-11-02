@@ -393,6 +393,94 @@
           },
           "description": "マウスカーソルの形（種類 → OS標準の形か {image, hotspot}）"
         },
+        "wait_mark": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "anim": {
+                  "type": "string"
+                },
+                "blink": {
+                  "type": "boolean"
+                },
+                "color_key": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "offset": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "description": "クリック待ちの印（文字か {text|image, anim, blink, offset}。既定は「▼」の点滅）"
+        },
+        "page_mark": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "anim": {
+                  "type": "string"
+                },
+                "blink": {
+                  "type": "boolean"
+                },
+                "color_key": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "offset": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "description": "ページ送り待ちの印（書き方は wait_mark と同じ。省略すると wait_mark）"
+        },
         "window_padding": {
           "type": "array",
           "items": {

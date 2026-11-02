@@ -124,8 +124,24 @@ func load_scenario(paths: PackedStringArray) -> Error:
 		var e2 := _adapters[0].load_sources(main)
 		if err == OK:
 			err = e2
+	_apply_globals()
 	_reload_schema()
 	return err
+
+
+## 全シナリオで共通の変数と定数（プロジェクト設定の variables・constants）を、シナリオの宣言と合わせる。
+## 同じ名前があればシナリオの宣言を使う（validate が警告する）。
+func _apply_globals() -> void:
+	var decl: Dictionary = config.get("variables", {}).duplicate(true)
+	for n in state.declared:
+		decl[n] = state.declared[n]
+	state.declared = decl
+	var consts: Dictionary = config.get("constants", {}).duplicate(true)
+	for a in _adapters + adapters_by_name.values():
+		if a != null and a.get("constants") is Dictionary:
+			for n in a.constants:
+				consts[n] = a.constants[n]
+	state.constants = consts
 
 
 ## 始める。entry を省略するとシナリオの開始位置から。

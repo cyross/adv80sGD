@@ -22,9 +22,13 @@ var ui: Dictionary = {}          ## 入力UIの上書き {verbs: [動詞ID…] |
 
 ## 宣言された変数（名前 → {type, default}）。未定義の変数の判定に使う。
 var declared: Dictionary = {}
+## 定数（名前 → 値）。プロジェクト設定とシナリオの constants。書き換えられない（セーブにも入れない）
+var constants: Dictionary = {}
 
 
 func get_var(name: String) -> Variant:
+	if constants.has(name):
+		return constants[name]
 	if vars.has(name):
 		return vars[name]
 	if declared.has(name):
@@ -33,11 +37,20 @@ func get_var(name: String) -> Variant:
 
 
 func has_var(name: String) -> bool:
-	return vars.has(name) or declared.has(name)
+	return vars.has(name) or declared.has(name) or constants.has(name)
 
 
 func set_var(name: String, value: Variant) -> void:
+	if _is_constant(name):
+		return
 	vars[name] = value
+
+
+func _is_constant(name: String) -> bool:
+	if constants.has(name):
+		AdvDiag.debug_warn("CONST_WRITE", "定数は書き換えられません: %s" % name, "Constants cannot be changed: %s" % name)
+		return true
+	return false
 
 
 func item_count(id: String) -> int:
@@ -173,7 +186,7 @@ func reveal_hint(topic: String) -> bool:
 
 func _apply_set(args: Dictionary) -> void:
 	var name := String(args.get("name", args.get("var", args.get("flag", ""))))
-	if name == "":
+	if name == "" or _is_constant(name):
 		return
 	var op := String(args.get("op", "set"))
 	var value = args.get("value", true)
@@ -227,6 +240,7 @@ func duplicate_state() -> AdvState:
 	var s := AdvState.new()
 	s.from_dict(to_dict())
 	s.declared = declared
+	s.constants = constants
 	return s
 
 

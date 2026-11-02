@@ -393,6 +393,94 @@
           },
           "description": "Mouse cursor shapes (kind -> OS shape or {image, hotspot})"
         },
+        "wait_mark": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "anim": {
+                  "type": "string"
+                },
+                "blink": {
+                  "type": "boolean"
+                },
+                "color_key": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "offset": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "description": "Click-wait marker (text or {text|image, anim, blink, offset}; default blinking ▼)"
+        },
+        "page_mark": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "anim": {
+                  "type": "string"
+                },
+                "blink": {
+                  "type": "boolean"
+                },
+                "color_key": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "offset": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "description": "Page-turn marker (same format as wait_mark; defaults to wait_mark)"
+        },
         "window_padding": {
           "type": "array",
           "items": {

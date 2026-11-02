@@ -24,8 +24,49 @@
       "description": "表示名"
     },
     "image": {
-      "type": "string",
-      "description": "背景の画像ID（またはパス）"
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "variant": {
+                    "type": "string"
+                  },
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "when": {
+                    "$ref": "#/definitions/condition"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "description": "背景の画像ID（またはパス）。配列なら when に合う画像を順に重ねる"
+    },
+    "image_transition": {
+      "description": "配列の image が条件で変わったときの切り替え演出（既定 cut）"
     },
     "first": {
       "$ref": "#/definitions/step",
@@ -290,6 +331,18 @@
       },
       "description": "変数の宣言（任意）"
     },
+    "constants": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "boolean",
+          "integer",
+          "number",
+          "string"
+        ]
+      },
+      "description": "定数（名前 → 値。書き換えられない）"
+    },
     "characters": {
       "type": "object",
       "additionalProperties": {
@@ -372,8 +425,49 @@
             "description": "表示名"
           },
           "image": {
-            "type": "string",
-            "description": "背景の画像ID（またはパス）"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "variant": {
+                          "type": "string"
+                        },
+                        "x": {
+                          "type": "integer"
+                        },
+                        "y": {
+                          "type": "integer"
+                        },
+                        "when": {
+                          "$ref": "#/definitions/condition"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "description": "背景の画像ID（またはパス）。配列なら when に合う画像を順に重ねる"
+          },
+          "image_transition": {
+            "description": "配列の image が条件で変わったときの切り替え演出（既定 cut）"
           },
           "first": {
             "$ref": "#/definitions/step",

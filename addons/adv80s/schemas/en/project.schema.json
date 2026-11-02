@@ -42,6 +42,37 @@
       "type": "string",
       "description": "Entry scene (empty = scenario start)"
     },
+    "variables": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "bool",
+              "int",
+              "float",
+              "string"
+            ]
+          },
+          "default": {}
+        },
+        "additionalProperties": false
+      },
+      "description": "Variables shared by all scenarios (name -> {type, default})"
+    },
+    "constants": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "boolean",
+          "integer",
+          "number",
+          "string"
+        ]
+      },
+      "description": "Constants shared by all scenarios (name -> value; read-only)"
+    },
     "asset_roots": {
       "type": "array",
       "items": {
@@ -63,6 +94,7 @@
           "voice",
           "font",
           "shader",
+          "video",
           null
         ]
       },

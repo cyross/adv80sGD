@@ -25,6 +25,8 @@ func _initialize() -> void:
 	_test_editor_form()
 	_test_templates()
 	_test_media()
+	_test_layers_and_globals()
+	_test_text_stops()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -794,3 +796,63 @@ func _test_media() -> void:
 	check("ogv" in AdvManifestGenerator.ASSET_EXT and "gif" in AdvManifestGenerator.ASSET_EXT, "manifest generator knows gif/ogv")
 	eq(preload("res://addons/adv80s/editor/adv_editor_screen.gd").entry_for_file("res://x/movie/op.ogv", "res://x", AdvAssets.DEFAULT_FOLDERS)["key"], "video:op", "editor entry for video")
 	eq(preload("res://addons/adv80s/editor/adv_editor_screen.gd").entry_for_file("res://x/a.gif", "res://x", {})["key"], "image:a", "editor entry for gif outside folders")
+
+
+# ---------------------------------------------------------------- 背景の重ね合わせと共通の変数・定数（段階10）
+
+func _test_layers_and_globals() -> void:
+	var sc := {
+		"start": "a",
+		"constants": {"LIMIT": 3},
+		"scenes": {
+			"a": {"image": ["base", {"id": "lamp", "x": 10, "y": 20, "when": "lit"}, {"id": "night", "when": "not lit"}],
+				"image_transition": "fade",
+				"on": {"WAIT": [{"set": {"lit": true}}, "ついた。"], "LOOK": [{"set": {"LIMIT": 5}}, "{player}は {MAX_HP}。"],
+					"THINK": "x"}},
+		}}
+	var path := "user://_layers.scenario.json"
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(sc))
+	f.close()
+	var c := AdvCore.new()
+	c.setup({"seed": 1, "verbs": ["WAIT", "THINK"], "variables": {"lit": {"type": "bool", "default": false}, "player": {"type": "string", "default": "ゆうじ"}},
+		"constants": {"MAX_HP": 99}})
+	c.use_adapter(AdvJsonAdapter.new())
+	eq(c.load_scenario([path]), OK, "layers: load")
+	var ev := c.start()
+	var shows := ev.filter(func(e): return e["type"] == "image.show")
+	check(shows.size() == 1 and shows[0]["args"]["id"] == ["base", "night"], "image array filtered by when: %s" % str(shows))
+	eq(c.state.get_var("player"), "ゆうじ", "project variable default")
+	eq(c.state.get_var("MAX_HP"), 99, "project constant")
+	eq(c.state.get_var("LIMIT"), 3, "scenario constant")
+	var r := c.submit({"verb": "WAIT"})
+	var s2 := r.filter(func(e): return e["type"] == "image.show")
+	check(s2.size() == 1 and s2[0]["args"]["id"].size() == 2 and s2[0]["args"]["id"][1]["id"] == "lamp" and s2[0]["args"]["id"][1]["x"] == 10 and s2[0]["args"]["transition"] == "fade",
+		"image re-composed when condition changes: %s" % str(s2))
+	check(c.submit({"verb": "THINK"}).filter(func(e): return e["type"] == "image.show").is_empty(), "no redraw when unchanged")
+	c.submit({"verb": "LOOK"})
+	eq(c.state.get_var("LIMIT"), 3, "constant cannot be changed")
+	var diags := c.validate()
+	check(diags.any(func(d): return d["code"] == "CONST_WRITE"), "validate: CONST_WRITE")
+	check(not diags.any(func(d): return d["code"] == "UNKNOWN_VARIABLE"), "validate: project variables are known: %s" % str(diags.filter(func(d): return d["code"] == "UNKNOWN_VARIABLE")))
+	# セーブして戻しても、重ね合わせの状態が残る
+	var saved := c.save_state()
+	var c2 := AdvCore.new()
+	c2.setup({"seed": 1, "verbs": ["WAIT", "THINK"], "variables": {"lit": {"type": "bool", "default": false}}, "constants": {"MAX_HP": 99}})
+	c2.use_adapter(AdvJsonAdapter.new())
+	c2.load_scenario([path])
+	c2.load_state(saved)
+	check(c2.submit({"verb": "THINK"}).filter(func(e): return e["type"] == "image.show").is_empty(), "image state restored from save")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+func _test_text_stops() -> void:
+	var r := AdvTextMarkup.to_bbcode_stops("あい[p]うえ[page=2]お[w=0.5]か[se=knock][speed=5]き[/speed][instant]く[/instant]{{x}}[blink]け[/blink]", null, null)
+	var kinds: Array = r["stops"].map(func(st): return "%s@%d" % [st["kind"], st["at"]])
+	eq(kinds, ["p@2", "page@5", "w@6", "se@7", "speed@7", "speed@8", "speed@8", "speed@9"], "stops: %s" % str(kinds))
+	check(String(r["bbcode"]).contains("うえ\nお"), "page inserts a line break: %s" % r["bbcode"])
+	check(String(r["bbcode"]).contains("[pulse"), "blink becomes pulse")
+	eq(r["stops"][1]["value"], 2.0, "page seconds")
+	eq(AdvTextMarkup.to_plain("あ[p]い[page]う", null, null), "あい\nう", "plain text drops stops")
+	var r2 := AdvTextMarkup.to_bbcode_stops("[ruby=かんじ]漢字[/ruby][p]あ", null, null)
+	eq(r2["stops"][0]["at"], 7, "ruby paren counted before stop")

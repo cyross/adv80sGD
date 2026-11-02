@@ -49,6 +49,30 @@ static func collect(project_path: String = AdvProject.DEFAULT_PATH) -> Array:
 			out.append(e)
 			json_names[e["name"]] = true
 
+	# 全シナリオで共通の変数と定数（プロジェクト設定）、シナリオの定数
+	var pvars: Dictionary = project.get_value("variables", {})
+	for n in pvars:
+		if json_names.has(n):
+			continue
+		var d = pvars[n]
+		out.append({"name": n, "kind": "変数", "source": "共通", "type": String(d.get("type", "")) if d is Dictionary else "",
+			"default": d.get("default") if d is Dictionary else null, "file": project_path, "path": "/variables/" + n,
+			"line": 0, "reads": [], "writes": [], "note": "プロジェクト設定"})
+		json_names[n] = true
+	var consts: Dictionary = project.get_value("constants", {}).duplicate()
+	var cfile := {}
+	for n in consts:
+		cfile[n] = project_path
+	if main is AdvJsonAdapter:
+		for n in main.constants:
+			consts[n] = main.constants[n]
+			cfile[n] = main._file_of("constants", n)
+	for n in consts:
+		out.append({"name": n, "kind": "定数", "source": "共通" if cfile[n] == project_path else "JSON", "type": type_name(consts[n]),
+			"default": _value_text(consts[n]), "file": cfile[n], "path": "/constants/" + n, "line": 0, "reads": [], "writes": [],
+			"note": "書き換え不可"})
+		json_names[n] = true
+
 	# JSON の変数のうち、Ink にも同じ名前があるもの
 	var ink_names := {}
 	var ink0 = core.adapters_by_name.get("ink")

@@ -29,6 +29,7 @@ var characters: Dictionary = {}
 var items: Dictionary = {}
 var topics: Dictionary = {}
 var variables: Dictionary = {}
+var constants: Dictionary = {}       ## 定数（名前 → 値）
 var start_scene: String = ""
 var intent_schema_layer: Variant = null
 var event_defaults: Dictionary = {}
@@ -53,6 +54,7 @@ var _stack: Array = []        ## 実行中の手順 [{steps, i, path, kind}]。�
 var _choice: Dictionary = {}  ## 選択肢の入力待ち {id, path, options: {項目ID: 手順}, args}
 var _suspended: bool = false  ## ほかのアダプタ（Ink）に処理を渡して止まっている
 var _shown_sprites: Dictionary = {}  ## シーンの sprites で出しているもの（スプライトID → シーンID）
+var _shown_image: Variant = null     ## シーンの image を配列で書いたとき、いま出している重ね合わせ
 
 
 # ---------------------------------------------------------------- 読み込み
@@ -78,7 +80,7 @@ func _merge_source(d: Dictionary, path: String) -> void:
 		_origin["scenes/%s" % id] = path
 		if start_scene == "":
 			start_scene = id
-	for key in ["scenes", "dialogues", "characters", "items", "topics", "variables"]:
+	for key in ["scenes", "dialogues", "characters", "items", "topics", "variables", "constants"]:
 		var table: Dictionary = get(key)
 		var src: Dictionary = d.get(key, {})
 		for id in src:
@@ -222,6 +224,7 @@ const _SPRITE_SKIP := ["when", "show", "hide"]
 func _sync_sprites() -> void:
 	if _scratch == null:
 		return
+	_sync_scene_image()
 	var want := {}
 	var defs := {}
 	for d in scenes.get(_scratch.scene, {}).get("sprites", []):
@@ -248,6 +251,42 @@ func _sync_sprites() -> void:
 			args["transition"] = d["show"]
 		_emit(AdvEvents.make("sprite.show", args))
 		_shown_sprites[id] = _scratch.scene
+
+
+## シーンの image（5.2）を、条件に合わせて解決する。文字列ならそのまま、配列なら when に合う要素だけを
+## 重ねる順に並べたもの（要素は素材IDか {id, variant?, x?, y?}）。
+func _scene_image(sc: Dictionary) -> Variant:
+	var im = sc.get("image")
+	if not im is Array:
+		return String(im)
+	var out := []
+	for e in im:
+		if e is String:
+			out.append(e)
+		elif e is Dictionary and e.has("id"):
+			if e.has("when") and not ctx.eval(e["when"], _scratch):
+				continue
+			var d := {}
+			for k in e:
+				if k != "when":
+					d[k] = e[k]
+			out.append(d if d.size() > 1 else String(d["id"]))
+	return out
+
+
+## 条件で重ねる画像が変わったら、背景を出し直す（切り替え演出はシーンの image_transition、既定は cut）。
+func _sync_scene_image() -> void:
+	var sc: Dictionary = scenes.get(_scratch.scene, {})
+	if not sc.get("image") is Array:
+		return
+	var now = _scene_image(sc)
+	if _shown_image != null and now == _shown_image:
+		return
+	_shown_image = now
+	var args := {"layer": "bg", "id": now}
+	if sc.has("image_transition"):
+		args["transition"] = sc["image_transition"]
+	_emit(AdvEvents.make("image.show", args))
 
 
 func _sprite_def(scene_id: String, id: String) -> Variant:
@@ -421,8 +460,10 @@ func _goto_scene(id: String) -> void:
 	var first := not _scratch.visited.has(id)
 	_emit(AdvEvents.make("scene.goto", {"scene": id}))
 	var sc: Dictionary = scenes[id]
+	_shown_image = null
 	if sc.has("image"):
-		_emit(AdvEvents.make("image.show", {"layer": "bg", "id": String(sc["image"])}))
+		_shown_image = _scene_image(sc)
+		_emit(AdvEvents.make("image.show", {"layer": "bg", "id": _shown_image}))
 	_sync_sprites()
 	if first and sc.has("first"):
 		_push(sc["first"], "%s/first" % id, "scene")
@@ -694,7 +735,7 @@ func _all_names() -> Array:
 
 func save_state() -> Dictionary:
 	return {"stack": _stack.duplicate(true), "choice": _choice.duplicate(true), "suspended": _suspended,
-		"sprites": _shown_sprites.duplicate()}
+		"sprites": _shown_sprites.duplicate(), "image": _shown_image}
 
 
 func load_state(data: Dictionary) -> Error:
@@ -702,6 +743,7 @@ func load_state(data: Dictionary) -> Error:
 	_choice = data.get("choice", {}).duplicate(true)
 	_suspended = bool(data.get("suspended", false))
 	_shown_sprites = data.get("sprites", {}).duplicate()
+	_shown_image = data.get("image")
 	for f in _stack:
 		f["i"] = int(f.get("i", 0))
 	return OK
@@ -750,10 +792,22 @@ func validate() -> Array[Dictionary]:
 			_v_out.append(AdvDiag.make("warning", "ASSET_NOT_FOUND", "素材が見つかりません: %s（%s）" % [ref["id"], ref["kind"]],
 				"Asset not found: %s (%s)" % [ref["id"], ref["kind"]], ref["file"], ref["path"]))
 	for name in _v_reads:
-		if not variables.has(name) and not _v_writes.has(name):
+		if not variables.has(name) and not _v_writes.has(name) and not ctx.state.has_var(name):
 			var at: Array = _v_reads[name]
 			_v_out.append(AdvDiag.make("warning", "UNKNOWN_VARIABLE", "宣言も変更もされていない変数を参照しています: %s" % name,
 				"Variable is read but never declared or set: %s" % name, at[0], at[1]))
+	var project_vars: Dictionary = ctx._core.config.get("variables", {})
+	var all_consts: Dictionary = ctx._core.config.get("constants", {}).duplicate()
+	all_consts.merge(constants)
+	for name in _v_writes:
+		if all_consts.has(name):
+			var loc: Dictionary = _v_write_locs[name][0] if not _v_write_locs.get(name, []).is_empty() else {}
+			_v_out.append(AdvDiag.make("error", "CONST_WRITE", "定数を書き換えています: %s" % name,
+				"A constant is being changed: %s" % name, String(loc.get("file", "")), String(loc.get("path", ""))))
+	for name in variables:
+		if project_vars.has(name) or all_consts.has(name):
+			_v_out.append(AdvDiag.make("warning", "DUPLICATE_ID", "プロジェクト設定と同じ名前の変数・定数を宣言しています（シナリオの宣言を使います）: %s" % name,
+				"Same name as a project-wide variable or constant (the scenario's declaration wins): %s" % name, _file_of("variables", name), "/variables/" + _ptr(name)))
 	for sid in scenes:
 		if sid != start_scene and not _v_targets.has(sid):
 			_v_out.append(AdvDiag.make("info", "UNREACHABLE", "どこからも移動してこないシーンです: %s" % sid,
@@ -781,7 +835,14 @@ func _walk_all() -> void:
 			continue
 		var f := _file_of("scenes", sid)
 		var jp := _scene_pointer(sid, f)
-		if sc.has("image"):
+		if sc.get("image") is Array:
+			for i in sc["image"].size():
+				var e = sc["image"][i]
+				var eid := String(e) if e is String else String(e.get("id", "")) if e is Dictionary else ""
+				_v_refs.append({"kind": "image", "id": eid, "file": f, "path": "%s/image/%d" % [jp, i]})
+				if e is Dictionary and e.has("when"):
+					_walk_cond(e["when"], "%s/image/%d/when" % [jp, i], f)
+		elif sc.has("image"):
 			_v_refs.append({"kind": "image", "id": String(sc["image"]), "file": f, "path": jp + "/image"})
 		for key in ["first", "enter"]:
 			if sc.has(key):

@@ -24,8 +24,49 @@
       "description": "Display name"
     },
     "image": {
-      "type": "string",
-      "description": "Background image ID (or path)"
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "variant": {
+                    "type": "string"
+                  },
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  },
+                  "when": {
+                    "$ref": "#/definitions/condition"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "description": "Background image ID (or path). An array overlays the entries whose when holds"
+    },
+    "image_transition": {
+      "description": "Transition when an image array changes (default cut)"
     },
     "first": {
       "$ref": "#/definitions/step",
@@ -290,6 +331,18 @@
       },
       "description": "Variable declarations (optional)"
     },
+    "constants": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "boolean",
+          "integer",
+          "number",
+          "string"
+        ]
+      },
+      "description": "Constants (name -> value; read-only)"
+    },
     "characters": {
       "type": "object",
       "additionalProperties": {
@@ -372,8 +425,49 @@
             "description": "Display name"
           },
           "image": {
-            "type": "string",
-            "description": "Background image ID (or path)"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "variant": {
+                          "type": "string"
+                        },
+                        "x": {
+                          "type": "integer"
+                        },
+                        "y": {
+                          "type": "integer"
+                        },
+                        "when": {
+                          "$ref": "#/definitions/condition"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "description": "Background image ID (or path). An array overlays the entries whose when holds"
+          },
+          "image_transition": {
+            "description": "Transition when an image array changes (default cut)"
           },
           "first": {
             "$ref": "#/definitions/step",

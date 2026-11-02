@@ -11,7 +11,10 @@ var tpl: AdvTemplate
 var picture: Control
 var layers: Dictionary = {}          ## 層の名前 → Control
 var message_label: RichTextLabel
-var wait_mark: Label
+var wait_mark: Control               ## クリック待ちの印（テンプレートの ui.wait_mark）
+var page_mark: Control               ## ページ送り待ちの印（ui.page_mark。なければ wait_mark と同じ形）
+## 文字送りが止まった理由：""（送り中）、"stop"（文字送りのタグ）、"page"（窓がいっぱい）、"end"（最後まで出した）
+var halt: String = ""
 var command_select: AdvCommandSelect
 var command_line: AdvCommandLine
 var hotspot_layer: AdvHotspotLayer
@@ -26,6 +29,14 @@ var _tint: ColorRect                 ## 続けてかける色味（tint）
 var _speed: float = 40.0             ## 1秒あたりの文字数。0 なら一度に表示
 var _shown: float = 0.0
 var _typing: bool = false
+var _text_clip: Control              ## 文章の窓の中の、見える範囲（ページごとに文章をずらす）
+var _stops: Array = []               ## 文字送りのタグ [{at, kind, value}]（at は表示する文字の数）
+var _stop_i: int = 0                 ## 次の止まる位置
+var _stop: Dictionary = {}           ## いま止まっている文字送りのタグ
+var _limit: int = 0                  ## 今回の文字送りで出す文字の数
+var _page_top: int = 0               ## いまのページの先頭の行
+var _inline_speed: float = -1.0      ## [speed] で変えた速さ（-1 なら _speed）
+var _since_wait: int = 0             ## 最後に待ってから出した文字の数
 
 
 func build(template: AdvTemplate) -> void:
@@ -75,17 +86,19 @@ func build(template: AdvTemplate) -> void:
 	picture.add_child(hotspot_layer)
 
 	_msg_win = _window("MessageWindow")
+	_text_clip = Control.new()
+	_text_clip.name = "TextClip"
+	_text_clip.clip_contents = true
+	_text_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_msg_win.add_child(_text_clip)
 	message_label = RichTextLabel.new()
 	message_label.name = "Text"
 	message_label.bbcode_enabled = true
 	message_label.scroll_active = false
 	message_label.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
 	message_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_msg_win.add_child(message_label)
-	wait_mark = Label.new()
-	wait_mark.text = "▼"
-	wait_mark.visible = false
-	_msg_win.add_child(wait_mark)
+	_text_clip.add_child(message_label)
+	set_marks(null, null)
 
 	if tpl.region_rect("commands").size != Vector2i.ZERO:
 		_cmd_win = _window("CommandWindow")
@@ -164,9 +177,11 @@ func apply_layout() -> void:
 	var pad_a: Array = tpl.get_section("ui").get("window_padding", [8, 4])
 	var pad := Vector2(float(pad_a[0]), float(pad_a[1]))
 	if message_label != null:
-		message_label.position = pad
-		message_label.size = _msg_win.size - pad * 2
-		wait_mark.position = Vector2(_msg_win.size.x - 22, _msg_win.size.y - 22)
+		_text_clip.position = pad
+		_text_clip.size = _msg_win.size - pad * 2
+		message_label.size = Vector2(_text_clip.size.x, 100000)
+		_scroll_to_page()
+		_place_marks()
 	if _cmd_win != null:
 		_place_window(_cmd_win, tpl.region_rect("commands"))
 		var cpad := Vector2(maxf(4, pad.x - 4), maxf(4, pad.y))
@@ -332,14 +347,14 @@ func _make_theme() -> Theme:
 
 ## 画像を表示する。path が空なら代わりの表示（IDを書いた枠）を出す。tr は AdvVisuals.resolve_transition の結果。
 ## 切り替え演出が終わるまで待つ（await できる）。
-func show_image(layer: String, id: String, path: String, tr: Dictionary = {"type": "cut"}) -> void:
+func show_image(layer: String, id: String, path: String, tr: Dictionary = {"type": "cut"}, tex: Texture2D = null) -> void:
 	var l: Control = layers.get(layer, layers.get("bg"))
 	if l == null:
 		return
 	var old := l.get_children()
 	var g := CanvasGroup.new()
 	g.name = "Image"
-	g.add_child(_image_node(id, path))
+	g.add_child(_image_node(id, path, tex))
 	l.add_child(g)
 	await _transition(g, old, tr, false)
 	for o in old:
@@ -359,8 +374,9 @@ func hide_image(layer: String, tr: Dictionary = {"type": "cut"}) -> void:
 			o.queue_free()
 
 
-func _image_node(id: String, path: String) -> Control:
-	var tex: Texture2D = load(path) as Texture2D if path != "" else null
+func _image_node(id: String, path: String, tex: Texture2D = null) -> Control:
+	if tex == null and path != "":
+		tex = AdvImages.first_texture(AdvImages.load_visual(path))
 	if tex != null:
 		var tr := TextureRect.new()
 		tr.texture = tex
@@ -691,19 +707,51 @@ func reset_layer(layer: String) -> void:
 # ---------------------------------------------------------------- 文章
 
 ## 文章を表示する（文字送りあり）。name があれば「名前「本文」」の形にする。
-func show_text(bbcode: String, speaker_name: String = "", instant: bool = false) -> void:
+## stops は AdvTextMarkup.to_bbcode_stops の止まる位置。instant なら最後まで一度に出す（最後のページを見せる）。
+func show_text(bbcode: String, speaker_name: String = "", instant: bool = false, stops: Array = []) -> void:
 	var t := bbcode
+	var offset := 0
 	if speaker_name != "":
 		var nc := tpl.color(int(tpl.get_section("text").get("name_color", 6))).to_html(false)
 		t = "[color=#%s]%s[/color]「%s」" % [nc, AdvTextMarkup._escape(speaker_name), bbcode]
+		offset = speaker_name.length() + 1
 	message_label.text = t
-	wait_mark.visible = false
-	if instant or _speed <= 0.0:
-		complete_text()
-	else:
-		_shown = 0.0
-		message_label.visible_characters = 0
-		_typing = true
+	set_wait_mark(false)
+	_stops = []
+	for st in stops:
+		var d: Dictionary = st.duplicate()
+		d["at"] = int(d["at"]) + offset
+		_stops.append(d)
+	_stop_i = 0
+	_stop = {}
+	_page_top = 0
+	_inline_speed = -1.0
+	_since_wait = 0
+	_scroll_to_page()
+	if instant:
+		show_all()
+		return
+	_shown = 0.0
+	message_label.visible_characters = 0
+	_start_typing()
+
+
+## 最後まで一度に出す（ロードしたときなど）。いちばん後ろのページを見せる。
+func show_all() -> void:
+	_typing = false
+	_stop_i = _stops.size()
+	message_label.visible_characters = -1
+	_shown = float(message_label.get_total_character_count())
+	var last := maxi(0, message_label.get_line_count() - 1)
+	var top := 0
+	for st in _stops:
+		if st["kind"] == "page":
+			top = maxi(top, _line_of(int(st["at"])))
+	while top < last and not _fits(top, last):
+		top += 1
+	_page_top = top
+	_scroll_to_page()
+	halt = "end"
 
 
 ## 文字速度（1秒あたりの文字数。0 なら一度に表示）。
@@ -711,29 +759,203 @@ func set_text_speed(chars_per_sec: float) -> void:
 	_speed = chars_per_sec
 
 
+## [speed=n] の速さ（1秒あたりの文字数。0 なら一度に、-1 なら元に戻す）。
+func set_inline_speed(chars_per_sec: float) -> void:
+	_inline_speed = chars_per_sec
+
+
 func clear_text() -> void:
 	message_label.text = ""
-	wait_mark.visible = false
+	set_wait_mark(false)
 	_typing = false
+	_stops = []
+	_page_top = 0
+	_scroll_to_page()
+	halt = "end"
 
 
+## 文字送りの途中か（止まる位置かページの終わりで止まっているときは false）。
 func is_typing() -> bool:
 	return _typing
 
 
+## クリックされたとき：今の区切り（次の止まる位置かページの終わり）まで一度に出す。
 func complete_text() -> void:
+	if not _typing:
+		return
+	_shown = float(_limit)
+	_halt_at_limit()
+
+
+## いま止まっている文字送りのタグ。
+func current_stop() -> Dictionary:
+	return _stop
+
+
+## 最後に待ってから出した文字の数（ページの終わりとタグが重なったときに、二度待たないため）。
+func shown_since_wait() -> int:
+	return _since_wait
+
+
+func mark_waited() -> void:
+	_since_wait = 0
+
+
+## 止まっていたところから文字送りを続ける。
+func resume() -> void:
+	_stop = {}
+	_start_typing()
+
+
+## 次のページへ（まだ出していない最初の文字の行を、窓のいちばん上にする）。
+func next_page() -> void:
+	_stop = {}
+	var total := message_label.get_total_character_count()
+	if int(_shown) < total:
+		_page_top = maxi(_page_top, _line_of(int(_shown)))
+		_scroll_to_page()
+	_start_typing()
+
+
+func _start_typing() -> void:
+	halt = ""
+	var total := message_label.get_total_character_count()
+	var page_end := _page_end_char()
+	_limit = mini(page_end, total)
+	var reason := "end" if _limit >= total else "page"
+	while _stop_i < _stops.size() and int(_stops[_stop_i]["at"]) < int(_shown):
+		_stop_i += 1
+	if _stop_i < _stops.size() and int(_stops[_stop_i]["at"]) <= _limit:
+		_limit = int(_stops[_stop_i]["at"])
+		reason = "stop"
+	_pending_reason = reason
+	var spd := _speed if _inline_speed < 0.0 else _inline_speed
+	if spd <= 0.0 or int(_shown) >= _limit:
+		_shown = float(maxi(int(_shown), _limit))
+		_halt_at_limit()
+		return
+	_typing = true
+
+
+var _pending_reason := "end"
+
+
+func _halt_at_limit() -> void:
 	_typing = false
-	message_label.visible_characters = -1
+	var before := message_label.visible_characters
+	message_label.visible_characters = -1 if _limit >= message_label.get_total_character_count() else _limit
+	_since_wait += maxi(0, _limit - (before if before >= 0 else _limit))
+	halt = _pending_reason
+	if halt == "stop":
+		_stop = _stops[_stop_i]
+		_stop_i += 1
 
 
-func set_wait_mark(on: bool) -> void:
-	wait_mark.visible = on
+## このページに入りきる最後の文字の次の位置。
+func _page_end_char() -> int:
+	var lines := message_label.get_line_count()
+	var l := _page_top
+	while l < lines and _fits(_page_top, l):
+		l += 1
+	if l >= lines:
+		return message_label.get_total_character_count()
+	return message_label.get_line_range(l).x
+
+
+## top 行から line 行までが窓に入るか。
+func _fits(top: int, line: int) -> bool:
+	if line <= top:
+		return true
+	var bottom := message_label.get_line_offset(line + 1) if line + 1 < message_label.get_line_count() else message_label.get_content_height()
+	return bottom - message_label.get_line_offset(top) <= _text_clip.size.y + 0.5
+
+
+func _line_of(char_index: int) -> int:
+	var total := message_label.get_total_character_count()
+	if total == 0:
+		return 0
+	return maxi(0, message_label.get_character_line(clampi(char_index, 0, total - 1)))
+
+
+func _scroll_to_page() -> void:
+	if message_label == null:
+		return
+	message_label.position.y = -message_label.get_line_offset(_page_top) if _page_top > 0 and message_label.get_line_count() > _page_top else 0.0
+
+
+# ---------------------------------------------------------------- 待ちの印
+
+## 待ちの印を作り直す。click、page は Control（null なら「▼」の点滅）。
+func set_marks(click: Control, page: Control) -> void:
+	for m in [wait_mark, page_mark]:
+		if m != null and is_instance_valid(m):
+			m.queue_free()
+	wait_mark = click if click != null else _text_mark("▼", true)
+	page_mark = page if page != null else _text_mark(wait_mark.get_meta("text", "▼"), true) if not wait_mark.has_meta("image") else wait_mark.duplicate()
+	for m in [wait_mark, page_mark]:
+		m.visible = false
+		_msg_win.add_child(m)
+	_place_marks()
+
+
+## 文字の印（点滅つき）。
+func _text_mark(text: String, blink: bool) -> Control:
+	var l := Label.new()
+	l.text = text
+	l.set_meta("text", text)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if blink:
+		l.set_meta("blink", true)
+	return l
+
+
+func _place_marks() -> void:
+	for mm in [wait_mark, page_mark]:
+		if mm == null or not is_instance_valid(mm) or _msg_win == null:
+			continue
+		var m: Control = mm
+		var sz: Vector2 = m.get_meta("size", Vector2(16, 16)) if m.has_meta("size") else m.get_combined_minimum_size()
+		var off: Vector2 = m.get_meta("offset", Vector2.ZERO)
+		m.position = (_msg_win.size - sz - Vector2(6, 6) + off).round()
+
+
+## 待ちの印を出す・消す。kind は click か page。
+func set_wait_mark(on: bool, kind: String = "click") -> void:
+	for mm in [wait_mark, page_mark]:
+		if mm == null or not is_instance_valid(mm):
+			continue
+		var m: Control = mm
+		var show: bool = on and m == (page_mark if kind == "page" else wait_mark)
+		if m.visible == show:
+			continue
+		m.visible = show
+		if m.has_meta("tween"):
+			var old = m.get_meta("tween")
+			if old is Tween and old.is_valid():
+				old.kill()
+			m.remove_meta("tween")
+		m.modulate.a = 1.0
+		if show and m.get_meta("blink", false):
+			var tw: Tween = m.create_tween().set_loops()
+			tw.tween_property(m, "modulate:a", 0.0, 0.0).set_delay(0.5)
+			tw.tween_property(m, "modulate:a", 1.0, 0.0).set_delay(0.5)
+			m.set_meta("tween", tw)
+
+
+## 待ちの印が出ているか。
+func is_waiting_mark() -> bool:
+	return (wait_mark != null and wait_mark.visible) or (page_mark != null and page_mark.visible)
 
 
 func _process(delta: float) -> void:
 	if not _typing:
 		return
-	_shown += _speed * delta
+	var spd := _speed if _inline_speed < 0.0 else _inline_speed
+	_shown += spd * delta
+	if int(_shown) >= _limit:
+		_shown = float(_limit)
+		_halt_at_limit()
+		return
+	var before := message_label.visible_characters
 	message_label.visible_characters = int(_shown)
-	if int(_shown) >= message_label.get_total_character_count():
-		complete_text()
+	_since_wait += maxi(0, int(_shown) - before)

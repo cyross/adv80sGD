@@ -153,6 +153,8 @@ func _build_screen() -> void:
 	if not screen.hotspot_layer.hotspot_clicked.is_connected(_on_hotspot_clicked):
 		screen.hotspot_layer.hotspot_clicked.connect(_on_hotspot_clicked)
 	screen.hotspot_layer.sprite_lookup = screen.sprite
+	var ui: Dictionary = template.get_section("ui")
+	screen.set_marks(_make_mark(ui.get("wait_mark")), _make_mark(ui.get("page_mark", ui.get("wait_mark"))))
 	_cursor_kind = ""
 	_apply_text_cursor()
 	if features.is_on("readable_font") and template.get_section("fonts").has("readable"):
@@ -191,7 +193,7 @@ func _redraw_view() -> void:
 			screen.hide_image(layer)
 	for layer in _images:
 		var im: Dictionary = _images[layer]
-		screen.show_image(layer, im["id"], core.assets.resolve("image", im["id"], im.get("variant", "")))
+		screen.show_image(layer, _image_label(im["id"]), "", {"type": "cut"}, _layer_texture(im["id"], String(im.get("variant", ""))))
 	screen.clear_sprites()
 	for id in _sprites:
 		_restore_sprite(_sprites[id])
@@ -201,8 +203,8 @@ func _redraw_view() -> void:
 	if _last_text.is_empty():
 		screen.clear_text()
 	else:
-		var body := AdvTextMarkup.to_bbcode(String(_last_text.get("body", "")), core.state, template)
-		screen.show_text(body, String(_last_text.get("name", "")), true)
+		var conv := AdvTextMarkup.to_bbcode_stops(String(_last_text.get("body", "")), core.state, template)
+		screen.show_text(conv["bbcode"], String(_last_text.get("name", "")), true, conv["stops"])
 
 
 ## フィルターを切り替える（設定画面から呼ぶ）。filter_toggle が許可されていないときは何もしない。
@@ -476,10 +478,17 @@ func _play(ev: Dictionary) -> void:
 				_play_voice(voice)
 			_last_text = {"body": raw, "name": who}
 			message_log.add_text(AdvTextMarkup.to_plain(raw, core.state, template), who, String(ev.get("id", "")), voice)
-			screen.show_text(AdvTextMarkup.to_bbcode(raw, core.state, template), who, skipping)
+			var conv := AdvTextMarkup.to_bbcode_stops(raw, core.state, template)
+			screen.show_text(conv["bbcode"], who, skipping, conv["stops"])
 			if features.is_on("tts") and not skipping and not audio.is_voice_playing():
 				_speak(raw, who)
+			# ページめくりと文字送りのタグ（[p]、[page]、[w]、[se]、[speed]）を最後まで進める
+			await _finish_text()
 			if skipping and wait is String and wait == "click":
+				wait = "none"
+			elif wait is float or wait is int:
+				# 秒数の wait：クリックかその秒数で次へ（オート送りと同じく、待ちの印を出す）
+				await _wait_input("click", maxf(0.01, float(wait)))
 				wait = "none"
 		"text.clear":
 			_last_text = {}
@@ -495,15 +504,17 @@ func _play(ev: Dictionary) -> void:
 				wait = "none" if String(tr.get("type", "cut")) == "cut" else "end"
 			var job: Callable
 			if type == "image.show":
-				var id := String(args.get("id", ""))
+				var idv = args.get("id", "")
 				var variant := String(args.get("variant", ""))
-				var path := core.assets.resolve("image", id, variant)
-				if path == "" and core.assets.report_missing("image", id):
-					ended = true
-					return
-				_images[layer] = {"id": id, "variant": variant}
+				for e in (idv if idv is Array else [idv]):
+					var eid := String(e.get("id", "")) if e is Dictionary else String(e)
+					var evar := String(e.get("variant", "")) if e is Dictionary else variant
+					if core.assets.resolve("image", eid, evar) == "" and core.assets.report_missing("image", eid):
+						ended = true
+						return
+				_images[layer] = {"id": idv, "variant": variant}
 				screen.reset_layer(layer)
-				job = screen.show_image.bind(layer, id, path, tr)
+				job = screen.show_image.bind(layer, _image_label(idv), "", tr, _layer_texture(idv, variant))
 			else:
 				_images.erase(layer)
 				job = screen.hide_image.bind(layer, tr)
@@ -854,7 +865,7 @@ func current_cursor_kind() -> String:
 	if _cursor_forced is Dictionary:
 		return "_forced_image"
 	if busy and _overlay == null:
-		return "next" if screen.wait_mark.visible else "wait"
+		return "next" if screen.is_waiting_mark() else "wait"
 	if screen != null and _overlay == null:
 		var h := screen.hotspot_layer.hovered()
 		if not h.is_empty():
@@ -916,6 +927,85 @@ func _apply_text_cursor() -> void:
 		Input.set_custom_mouse_cursor(null, Input.CURSOR_IBEAM)
 
 
+# ---------------------------------------------------------------- 待ちの印（ui.wait_mark、ui.page_mark）
+
+## 待ちの印を作る。null なら標準（「▼」の点滅）。文字列なら その文字の点滅。
+## {text, blink?} か {image, anim?, blink?, offset?: [x, y], color_key?}（画像はアニメーション GIF やスプライトシートも使える）。
+func _make_mark(def: Variant) -> Control:
+	if def == null:
+		return null
+	if def is String:
+		return screen._text_mark(def, true)
+	if not def is Dictionary:
+		return null
+	var m: Control
+	if def.has("image"):
+		var id := String(def["image"])
+		var path := core.assets.resolve("image", id)
+		if path == "":
+			core.assets.report_missing("image", id)
+			return null
+		var entry := core.assets.entry("image", id)
+		var ck = AdvImages.key_color(def.get("color_key", entry.get("color_key")), template)
+		m = Control.new()
+		m.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sp := AdvSprite.new()
+		sp.set_visual(AdvImages.load_visual(path, ck), entry, func(fid: String) -> Texture2D:
+			return AdvImages.first_texture(AdvImages.load_visual(core.assets.resolve("image", fid), ck)))
+		m.add_child(sp)
+		var an := String(def.get("anim", "default"))
+		if an in sp.anim_names():
+			sp.play_anim(an)
+		m.set_meta("size", sp.frame_size())
+		m.set_meta("image", id)
+		m.custom_minimum_size = sp.frame_size()
+		m.set_meta("blink", bool(def.get("blink", false)))
+	else:
+		m = screen._text_mark(String(def.get("text", "▼")), bool(def.get("blink", true)))
+	var off: Array = def.get("offset", [0, 0])
+	m.set_meta("offset", Vector2(float(off[0]), float(off[1])))
+	return m
+
+
+# ---------------------------------------------------------------- 画像の層（重ね合わせ）
+
+## 層に出す画像。id は素材IDか、重ねる順に並べた配列（要素は素材IDか {id, variant?, x?, y?}）。
+## 配列なら、最初の画像の大きさの1枚に重ね合わせる（カラーキーも効く。アニメーション画像は最初のコマ）。
+func _layer_texture(idv: Variant, variant: String = "") -> Texture2D:
+	var list: Array = idv if idv is Array else [idv]
+	var base: Image = null
+	for e in list:
+		var eid := String(e.get("id", "")) if e is Dictionary else String(e)
+		var ev := String(e.get("variant", "")) if e is Dictionary else variant
+		var path := core.assets.resolve("image", eid, ev)
+		if path == "":
+			continue
+		var entry := core.assets.entry("image", eid)
+		var tex := AdvImages.first_texture(AdvImages.load_visual(path, AdvImages.key_color(entry.get("color_key"), template)))
+		if tex == null:
+			continue
+		if list.size() == 1:
+			return tex
+		var img := tex.get_image()
+		if img == null:
+			continue
+		if img.is_compressed():
+			img.decompress()
+		img.convert(Image.FORMAT_RGBA8)
+		if base == null:
+			base = img.duplicate()
+			continue
+		var at := Vector2i(int(e.get("x", 0)), int(e.get("y", 0))) if e is Dictionary else Vector2i.ZERO
+		base.blend_rect(img, Rect2i(Vector2i.ZERO, img.get_size()), at)
+	return ImageTexture.create_from_image(base) if base != null else null
+
+
+func _image_label(idv: Variant) -> String:
+	if idv is Array:
+		return "+".join(idv.map(func(e): return String(e.get("id", "")) if e is Dictionary else String(e)))
+	return String(idv)
+
+
 ## 切り替え演出を決める（スキップ中は cut）。mask のルール画像は素材IDかパスで指定する。
 func _transition_for(spec: Variant) -> Dictionary:
 	if skipping:
@@ -944,30 +1034,81 @@ func _wait(w: Variant) -> void:
 
 
 func _wait_click() -> void:
-	_click_pending = false
-	while screen.is_typing():
-		if _click_pending or auto_click or _skip_held():
-			screen.complete_text()
-			_click_pending = false
-			break
-		await get_tree().process_frame
+	await _finish_text()
 	if _skip_held():
 		return
-	screen.set_wait_mark(true)
+	await _wait_input("click", 0.0)
+	if bool(settings.get_value("voice_stop_on_advance", true)):
+		audio.stop_voice()
+
+
+## 文章を最後まで送る。窓がいっぱいになったらページ送りの印を出して待ち、文字送りのタグを実行する。
+func _finish_text() -> void:
+	while true:
+		_click_pending = false
+		while screen.is_typing():
+			if _click_pending or auto_click or _skip_held():
+				_click_pending = false
+				screen.complete_text()
+				break
+			await get_tree().process_frame
+		match screen.halt:
+			"page":
+				if screen.shown_since_wait() > 0:
+					await _wait_input("page", 0.0)
+				screen.next_page()
+			"stop":
+				var st := screen.current_stop()
+				match String(st.get("kind", "")):
+					"p":
+						await _wait_input("click", float(st.get("value", 0.0)))
+						screen.resume()
+					"page":
+						await _wait_input("page", float(st.get("value", 0.0)))
+						screen.next_page()
+					"w":
+						if not _skip_held() and not auto_click:
+							await get_tree().create_timer(maxf(0.0, float(st.get("value", 0.0)))).timeout
+						screen.resume()
+					"se":
+						if not _skip_held():
+							var path := core.assets.resolve("se", String(st["value"]))
+							if path != "":
+								audio.play_se(path, float(core.assets.entry("se", String(st["value"])).get("volume", 1.0)))
+							else:
+								core.assets.report_missing("se", String(st["value"]))
+						screen.resume()
+					"speed":
+						var v := float(st.get("value", -1.0))
+						screen.set_inline_speed(v if v <= 0.0 else v * float(settings.get_value("text_speed", 1.0)))
+						screen.resume()
+					_:
+						screen.resume()
+			_:
+				return
+
+
+## 待ちの印を出して、クリック（決定）を待つ。seconds が 0 より大きければその秒数で、オート送り中は文章の長さに応じた時間で進む。
+## kind は click（クリック待ち）か page（ページ送り待ち）。
+func _wait_input(kind: String, seconds: float) -> void:
+	if _skip_held() or auto_click:
+		screen.mark_waited()
+		return
+	screen.set_wait_mark(true, kind)
 	_click_pending = false
 	var waited := 0.0
 	var auto_wait := float(settings.get_value("auto_delay", 1.2)) + \
-		float(settings.get_value("auto_per_char", 0.04)) * screen.message_label.get_total_character_count()
+		float(settings.get_value("auto_per_char", 0.04)) * screen.shown_since_wait()
 	while not _click_pending and not auto_click and not _skip_held():
 		await get_tree().process_frame
-		if auto_mode and _overlay == null:
-			waited += get_process_delta_time()
-			if waited >= auto_wait:
-				break
+		waited += get_process_delta_time()
+		if seconds > 0.0 and waited >= seconds:
+			break
+		if auto_mode and _overlay == null and waited >= auto_wait:
+			break
 	_click_pending = false
 	screen.set_wait_mark(false)
-	if bool(settings.get_value("voice_stop_on_advance", true)):
-		audio.stop_voice()
+	screen.mark_waited()
 
 
 func _skip_held() -> bool:
