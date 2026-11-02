@@ -1,0 +1,13 @@
+{
+  "template_version": 1,
+  "id": "f7_classic",
+  "name": "F7 クラシック",
+  "extends": "pc88_classic",
+  "display": {
+    "preset": "F7"
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "template_version": 1,
+  "id": "mx2_classic",
+  "name": "MX2 クラシック",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "MX2",
+    "scale": "integer"
+  },
+  "palette": {
+    "source": "colors",
+    "colors": [
+      "#000000",
+      "#0000ff",
+      "#ff0000",
+      "#ff00ff",
+      "#00ff00",
+      "#00ffff",
+      "#ffff00",
+      "#ffffff"
+    ]
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "pixelmplus10",
+        "size": 10,
+        "line_height": 12
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [4, 4, 169, 158]
+      },
+      "commands": {
+        "rect": [175, 4, 77, 158],
+        "window": "main"
+      },
+      "message": {
+        "rect": [4, 164, 248, 44],
+        "window": "main"
+      },
+      "input": {
+        "visible": false
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 256, 212]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 0
+  },
+  "inputs": {
+    "enabled": [
+      "select"
+    ],
+    "parser_profile": "ja",
+    "command_columns": 1
+  },
+  "text": {
+    "color": 7,
+    "name_color": 6
+  },
+  "ui": {
+    "highlight": 1,
+    "window_skin": {
+      "type": "box",
+      "border": 1,
+      "pal": 7,
+      "fill": 0
+    }
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

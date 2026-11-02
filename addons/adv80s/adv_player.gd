@@ -142,11 +142,12 @@ func _build_screen() -> void:
 	display.setup(template)
 	display.set_filters_enabled(bool(settings.get_value("filters", true)) or not features.is_on("filter_toggle"))
 	screen.set_text_speed(float(template.get_section("text").get("speed", 40)) * float(settings.get_value("text_speed", 1.0)))
-	if screen.command_select != null:
+	if screen.command_select != null and not screen.command_select.intent_selected.is_connected(submit_intent):
 		screen.command_select.intent_selected.connect(submit_intent)
-	if screen.command_line != null:
+	if screen.command_line != null and not screen.command_line.command_entered.is_connected(submit_text):
 		screen.command_line.command_entered.connect(submit_text)
-	screen.hotspot_layer.hotspot_clicked.connect(_on_hotspot_clicked)
+	if not screen.hotspot_layer.hotspot_clicked.is_connected(_on_hotspot_clicked):
+		screen.hotspot_layer.hotspot_clicked.connect(_on_hotspot_clicked)
 	if features.is_on("readable_font") and template.get_section("fonts").has("readable"):
 		screen.set_readable(true)
 	apply_text_style()
@@ -163,6 +164,10 @@ func switch_template(id: String, transition: Variant = null) -> void:
 	if not skipping and String(tr.get("type", "cut")) in ["fade_color", "fade"]:
 		await screen.play_effect("flash", {"color": String(tr.get("color", "#000000")), "duration": float(tr.get("duration", 0.5))})
 	template = t
+	# 切り替え先のテンプレートの素材フォルダ（窓の枠の画像など）を重ねる
+	var troot := t.asset_root()
+	if troot != "" and not troot in core.assets.roots:
+		core.add_asset_roots([troot])
 	core.preset = String(t.preset.get("id", ""))
 	core.group = String(t.preset.get("group", ""))
 	core.assets.set_preset(core.preset, core.group)

@@ -141,6 +141,15 @@ godot --headless --path . --script res://addons/adv80s/tools/manifest_cli.gd -- 
   - **変数の一覧**：左上の切り替えで「変数の一覧」を選ぶと、JSON シナリオの変数（宣言したもの、宣言せずに読み書きしているもの。読む・書く場所の数と場所）、Ink の変数・定数・リスト（シナリオの `.ink.json` と同じ名前の `.ink` と、そこから INCLUDE しているものを読む。元の `.ink` がなければ `.ink.json` のグローバル変数）、条件式の組み込みの名前を並べる。JSON と Ink で同じ名前の変数には「同期」と出る。読んでいるのに宣言も変更もない変数は、メモに出す。
 - **継承した値の表示**：テンプレートの編集では、書いていない項目に元のテンプレート（extends を解決したもの）の値を「継承：値」と出す。中身は灰色の行で開いて見られる。＋で足すと、その値の写しから上書きを始める。ツールバーの「継承した値」で表示を切り替える。
 - **入力機器の切り替え（gamepad、touch）**：オフにすると、その機器の操作（ゲームパッドのボタンとスティック、タッチと、タッチから作られるマウスの操作）を、画面の部品に届く前に止める。キーボードとマウスは止めない。設定に「コントローラー」と「タッチそうさ」（タッチできる端末だけ）を足した。
+- **同梱のテンプレート**：プリセットの全26機種に1つずつ。`pc98_classic`、`pc88_classic` のほか、`sx1_classic`、`sx1t_classic`、`sx1tz_classic`、`f7_classic`、`f77a_classic`、`mx_classic`、`mx2_classic`、`m2p_classic`、`x68k_classic`、`ftns_classic`、`mtr_classic`、`vga_classic`、`win_classic`、`fc_classic`、`pce_classic`、`sfc_classic`、`ps1_classic`、`ps2_classic`、`gb_classic`、`gbc_classic`、`gba_classic`、`hd_modern`、`fhd_modern`、`4k_modern`。どれも `pc98_classic`（SX1、F7 は `pc88_classic`）を extends し、代表モードの解像度に合わせた区割り・フォント・色・窓を持つ。
+  - パソコンと現代の機種は「絵の下に文章とコマンド、入力欄あり」、家庭用ゲーム機・携帯機と MX 系は「絵の右にコマンド、下に文章、入力欄なし（コマンド選択だけ）」。
+  - パレットを持たないプリセットでは、文章などの色の番号のために、テンプレートに8色（`palette.source: colors`）を持たせた（画面の減色はプリセットのまま）。MX と GB はプリセットのパレットの番号を使う。
+  - 家庭用ゲーム機・携帯機・WIN・現代の機種は、窓の枠を9分割の画像で描く（`assets/ui/frame_<ID>.png`）。
+  - 各テンプレートの素材フォルダ `assets/` に、手書き用の `manifest.json`（空）と `manifest.auto.json` を置いた（pc98_classic、pc88_classic にも）。
+  - 作り直しは `python3 tools/build_templates.py addons/adv80s`（開発用、Python と Pillow。pc98_classic と pc88_classic の template.json は書き換えない）。そのあとマニフェストを生成する。
+  - サンプルの絵は 640x400 用なので、ほかの機種では大きさが合わない。機種ごとの絵は素材フォルダの `presets/<機種ID>/bg/…` に置く。
+- **テンプレートの項目の追加**：`ui.window_padding`（窓の内側の余白 [横, 縦]、既定 [8, 4]。枠の画像が太いときに広げる）、`inputs.command_columns`（コマンド選択の列の数、既定 2）。
+- テンプレートを切り替えたとき（旧表示と新表示の切り替え）、切り替え先のテンプレートの素材フォルダも重ねるようにした（窓の枠の画像が見つからなかった）。
 - **文章の表示調整（text_options）**：設定に「もじの おおきさ」（x1、x1.5、x2）、「もじの いろ」（テンプレートの色、しろ、きいろ、みずいろ、みどり）、「まどの こさ」（100%、75%、50%、25%）を足した。プレイヤー設定の `text_size`、`text_color`（パレットの番号、-1 でテンプレートの色）、`window_opacity`。ドットのフォントは x1.5 だと形が崩れるので、x2 を選ぶとよい。
 - **サンプルの BGM**：`tools/build_sample_bgm.py`（開発用、Python と numpy）で作った 86 秒の曲。イントロ 4 小節（9.6 秒）のあとを繰り返す（マニフェストの `loop_start` が 9.6）。
 - WAV のループの終わりは、データの大きさではなく長さ（秒）から求める（Godot が WAV を圧縮して取り込んでもずれないように）。

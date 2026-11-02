@@ -193,6 +193,11 @@
         },
         "parser_profile": {
           "type": "string"
+        },
+        "command_columns": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "コマンド選択の列の数（既定 2）"
         }
       },
       "additionalProperties": false
@@ -343,6 +348,15 @@
         },
         "highlight": {
           "type": "integer"
+        },
+        "window_padding": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "窓の内側の余白 [横, 縦]（既定 [8, 4]）"
         },
         "ext": {
           "type": "object",

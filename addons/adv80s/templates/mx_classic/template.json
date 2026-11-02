@@ -1,0 +1,80 @@
+{
+  "template_version": 1,
+  "id": "mx_classic",
+  "name": "MX クラシック",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "MX",
+    "scale": "integer"
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "pixelmplus10",
+        "size": 10,
+        "line_height": 11
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [4, 4, 169, 141]
+      },
+      "commands": {
+        "rect": [175, 4, 77, 141],
+        "window": "main"
+      },
+      "message": {
+        "rect": [4, 147, 248, 41],
+        "window": "main"
+      },
+      "input": {
+        "visible": false
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 256, 192]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 1
+  },
+  "inputs": {
+    "enabled": [
+      "select"
+    ],
+    "parser_profile": "ja",
+    "command_columns": 1
+  },
+  "text": {
+    "color": 15,
+    "name_color": 11
+  },
+  "ui": {
+    "highlight": 4,
+    "window_skin": {
+      "type": "box",
+      "border": 1,
+      "pal": 15,
+      "fill": 1
+    }
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

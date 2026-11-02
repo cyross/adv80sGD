@@ -257,7 +257,8 @@ TEMPLATE = {
             "named": mapof(obj({"regions": mapof({"anyOf": [REGION, {"type": "null"}]})}, extra=False), t("名前付きのレイアウト", "Named layouts")),
         }, extra=False),
         "inputs": obj({"enabled": {"type": "array", "items": {"enum": ["select", "parser", "icon", "click"]}},
-                       "parser_profile": STR}, extra=False),
+                       "parser_profile": STR,
+                       "command_columns": {"type": "integer", "minimum": 1, "description": t("コマンド選択の列の数（既定 2）", "Columns of the command list (default 2)")}}, extra=False),
         "text": obj({
             "speed": {"type": "number", "minimum": 0, "description": t("1秒あたりの文字数（0で一度に表示）", "Characters per second (0 = instant)")},
             "markup": STR,
@@ -273,7 +274,9 @@ TEMPLATE = {
         "transitions": obj({"default": STR, "named": {"type": "object"}, "replace": mapof(STR)}, extra=False),
         "features": {"type": "object", "description": t("モダン機能の既定値の上書き", "Override modern feature defaults")},
         "assets": obj({"root": STR, "manifest": STR}, extra=False),
-        "ui": obj({"window_skin": SKIN, "cursor": STR, "highlight": INT}),
+        "ui": obj({"window_skin": SKIN, "cursor": STR, "highlight": INT,
+                   "window_padding": {"type": "array", "items": INT, "minItems": 2, "maxItems": 2,
+                                      "description": t("窓の内側の余白 [横, 縦]（既定 [8, 4]）", "Inner padding of windows [x, y] (default [8, 4])")}}),
     }, required=["template_version", "id"]),
     "definitions": {
         "font_entry": {"type": "object", "additionalProperties": False, "properties": {

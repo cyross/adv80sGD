@@ -1,0 +1,10 @@
+{
+  "assets": {
+    "image:frame_ps1_classic": {
+      "file": "ui/frame_ps1_classic.png",
+      "type": "image"
+    }
+  },
+  "generated": true,
+  "manifest_version": 1
+}

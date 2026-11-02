@@ -84,6 +84,7 @@ func build(template: AdvTemplate) -> void:
 		_cmd_win = _window("CommandWindow")
 		command_select = AdvCommandSelect.new()
 		command_select.name = "CommandSelect"
+		command_select.columns = maxi(1, int(tpl.get_section("inputs").get("command_columns", 2)))
 		_cmd_win.add_child(command_select)
 	if tpl.region_rect("input").size != Vector2i.ZERO:
 		command_line = AdvCommandLine.new()
@@ -149,14 +150,18 @@ func apply_layout() -> void:
 				if c is Control:
 					c.size = picture.size
 	_place_window(_msg_win, tpl.region_rect("message"))
+	# 窓の内側の余白（テンプレートの ui.window_padding [横, 縦]。枠の画像が太いときに広げる）
+	var pad_a: Array = tpl.get_section("ui").get("window_padding", [8, 4])
+	var pad := Vector2(float(pad_a[0]), float(pad_a[1]))
 	if message_label != null:
-		message_label.position = Vector2(8, 4)
-		message_label.size = _msg_win.size - Vector2(16, 8)
+		message_label.position = pad
+		message_label.size = _msg_win.size - pad * 2
 		wait_mark.position = Vector2(_msg_win.size.x - 22, _msg_win.size.y - 22)
 	if _cmd_win != null:
 		_place_window(_cmd_win, tpl.region_rect("commands"))
-		command_select.position = Vector2(4, 4)
-		command_select.size = _cmd_win.size - Vector2(8, 8)
+		var cpad := Vector2(maxf(4, pad.x - 4), maxf(4, pad.y))
+		command_select.position = cpad
+		command_select.size = _cmd_win.size - cpad * 2
 	if command_line != null:
 		var r := tpl.region_rect("input")
 		command_line.visible = r.size != Vector2i.ZERO

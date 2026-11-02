@@ -1,0 +1,10 @@
+{
+  "assets": {
+    "image:frame_win_classic": {
+      "file": "ui/frame_win_classic.png",
+      "type": "image"
+    }
+  },
+  "generated": true,
+  "manifest_version": 1
+}

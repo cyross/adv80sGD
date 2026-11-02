@@ -1,0 +1,96 @@
+{
+  "template_version": 1,
+  "id": "ps2_classic",
+  "name": "PS2 クラシック",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "PS2",
+    "scale": "integer"
+  },
+  "palette": {
+    "source": "colors",
+    "colors": [
+      "#000000",
+      "#0000ff",
+      "#ff0000",
+      "#ff00ff",
+      "#00ff00",
+      "#00ffff",
+      "#ffff00",
+      "#ffffff"
+    ]
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "dot16",
+        "size": 16
+      },
+      {
+        "asset": "pixelmplus12",
+        "size": 12,
+        "line_height": 16
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [8, 5, 428, 370]
+      },
+      "commands": {
+        "rect": [440, 5, 192, 370],
+        "window": "main"
+      },
+      "message": {
+        "rect": [8, 379, 624, 96],
+        "window": "main"
+      },
+      "input": {
+        "visible": false
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 640, 480]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 0
+  },
+  "inputs": {
+    "enabled": [
+      "select"
+    ],
+    "parser_profile": "ja"
+  },
+  "text": {
+    "color": 7,
+    "name_color": 6
+  },
+  "ui": {
+    "highlight": 1,
+    "window_skin": {
+      "type": "nine_patch",
+      "image": "frame_ps2_classic",
+      "margins": [12, 12, 12, 12]
+    },
+    "window_padding": [12, 8]
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

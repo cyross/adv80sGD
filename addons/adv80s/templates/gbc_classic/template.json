@@ -1,0 +1,93 @@
+{
+  "template_version": 1,
+  "id": "gbc_classic",
+  "name": "GBC クラシック",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "GBC",
+    "scale": "integer"
+  },
+  "palette": {
+    "source": "colors",
+    "colors": [
+      "#000000",
+      "#0000ff",
+      "#ff0000",
+      "#ff00ff",
+      "#00ff00",
+      "#00ffff",
+      "#ffff00",
+      "#ffffff"
+    ]
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "pixelmplus10",
+        "size": 10,
+        "line_height": 11
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [4, 4, 84, 93]
+      },
+      "commands": {
+        "rect": [90, 4, 66, 93],
+        "window": "main"
+      },
+      "message": {
+        "rect": [4, 99, 152, 41],
+        "window": "main"
+      },
+      "input": {
+        "visible": false
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 160, 144]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 7
+  },
+  "inputs": {
+    "enabled": [
+      "select"
+    ],
+    "parser_profile": "ja",
+    "command_columns": 1
+  },
+  "text": {
+    "color": 0,
+    "name_color": 1
+  },
+  "ui": {
+    "highlight": 5,
+    "window_skin": {
+      "type": "nine_patch",
+      "image": "frame_gbc_classic",
+      "margins": [4, 4, 4, 4]
+    },
+    "window_padding": [6, 3]
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

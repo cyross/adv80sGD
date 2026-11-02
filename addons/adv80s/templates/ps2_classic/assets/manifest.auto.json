@@ -1,0 +1,10 @@
+{
+  "assets": {
+    "image:frame_ps2_classic": {
+      "file": "ui/frame_ps2_classic.png",
+      "type": "image"
+    }
+  },
+  "generated": true,
+  "manifest_version": 1
+}

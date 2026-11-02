@@ -1,0 +1,93 @@
+{
+  "template_version": 1,
+  "id": "ps1_classic",
+  "name": "PS1 クラシック",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "PS1",
+    "scale": "integer"
+  },
+  "palette": {
+    "source": "colors",
+    "colors": [
+      "#000000",
+      "#0000ff",
+      "#ff0000",
+      "#ff00ff",
+      "#00ff00",
+      "#00ffff",
+      "#ffff00",
+      "#ffffff"
+    ]
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "pixelmplus12",
+        "size": 12,
+        "line_height": 14
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [4, 4, 214, 166]
+      },
+      "commands": {
+        "rect": [220, 4, 96, 166],
+        "window": "main"
+      },
+      "message": {
+        "rect": [4, 172, 312, 64],
+        "window": "main"
+      },
+      "input": {
+        "visible": false
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 320, 240]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 0
+  },
+  "inputs": {
+    "enabled": [
+      "select"
+    ],
+    "parser_profile": "ja",
+    "command_columns": 1
+  },
+  "text": {
+    "color": 7,
+    "name_color": 6
+  },
+  "ui": {
+    "highlight": 1,
+    "window_skin": {
+      "type": "nine_patch",
+      "image": "frame_ps1_classic",
+      "margins": [8, 8, 8, 8]
+    },
+    "window_padding": [10, 7]
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

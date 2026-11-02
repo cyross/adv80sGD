@@ -1,0 +1,77 @@
+{
+  "template_version": 1,
+  "id": "sx1t_classic",
+  "name": "SX1T クラシック",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "SX1T",
+    "scale": "integer"
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "dot16",
+        "size": 16
+      },
+      {
+        "asset": "pixelmplus12",
+        "size": 12,
+        "line_height": 16
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [8, 4, 624, 268]
+      },
+      "message": {
+        "rect": [8, 276, 434, 88],
+        "window": "main"
+      },
+      "input": {
+        "rect": [8, 368, 434, 28]
+      },
+      "commands": {
+        "rect": [446, 276, 186, 120],
+        "window": "main"
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 640, 400]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 0
+  },
+  "text": {
+    "color": 7,
+    "name_color": 6
+  },
+  "ui": {
+    "highlight": 1,
+    "window_skin": {
+      "type": "box",
+      "border": 1,
+      "pal": 7,
+      "fill": 0
+    }
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

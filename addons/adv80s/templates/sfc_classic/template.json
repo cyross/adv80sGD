@@ -1,0 +1,93 @@
+{
+  "template_version": 1,
+  "id": "sfc_classic",
+  "name": "SFC クラシック",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "SFC",
+    "scale": "integer"
+  },
+  "palette": {
+    "source": "colors",
+    "colors": [
+      "#000000",
+      "#0000ff",
+      "#ff0000",
+      "#ff00ff",
+      "#00ff00",
+      "#00ffff",
+      "#ffff00",
+      "#ffffff"
+    ]
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "pixelmplus12",
+        "size": 12,
+        "line_height": 14
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [4, 4, 169, 164]
+      },
+      "commands": {
+        "rect": [175, 4, 77, 164],
+        "window": "main"
+      },
+      "message": {
+        "rect": [4, 170, 248, 50],
+        "window": "main"
+      },
+      "input": {
+        "visible": false
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 256, 224]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 0
+  },
+  "inputs": {
+    "enabled": [
+      "select"
+    ],
+    "parser_profile": "ja",
+    "command_columns": 1
+  },
+  "text": {
+    "color": 7,
+    "name_color": 6
+  },
+  "ui": {
+    "highlight": 1,
+    "window_skin": {
+      "type": "nine_patch",
+      "image": "frame_sfc_classic",
+      "margins": [4, 4, 4, 4]
+    },
+    "window_padding": [8, 6]
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

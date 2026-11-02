@@ -1,0 +1,86 @@
+{
+  "template_version": 1,
+  "id": "4k_modern",
+  "name": "4K モダン",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "4K",
+    "scale": "integer"
+  },
+  "palette": {
+    "source": "colors",
+    "colors": [
+      "#000000",
+      "#0000ff",
+      "#ff0000",
+      "#ff00ff",
+      "#00ff00",
+      "#00ffff",
+      "#ffff00",
+      "#ffffff"
+    ]
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "tekuplus",
+        "size": 72,
+        "line_height": 96
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [48, 22, 3744, 1468]
+      },
+      "message": {
+        "rect": [48, 1514, 2606, 432],
+        "window": "main"
+      },
+      "input": {
+        "rect": [48, 1970, 2606, 168]
+      },
+      "commands": {
+        "rect": [2678, 1514, 1114, 624],
+        "window": "main"
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 3840, 2160]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 0
+  },
+  "text": {
+    "color": 7,
+    "name_color": 6
+  },
+  "ui": {
+    "highlight": 1,
+    "window_skin": {
+      "type": "nine_patch",
+      "image": "frame_4k_modern",
+      "margins": [48, 48, 48, 48]
+    },
+    "window_padding": [72, 36]
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

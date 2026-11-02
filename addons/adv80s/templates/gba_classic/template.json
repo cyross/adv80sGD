@@ -1,0 +1,93 @@
+{
+  "template_version": 1,
+  "id": "gba_classic",
+  "name": "GBA クラシック",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "GBA",
+    "scale": "integer"
+  },
+  "palette": {
+    "source": "colors",
+    "colors": [
+      "#000000",
+      "#0000ff",
+      "#ff0000",
+      "#ff00ff",
+      "#00ff00",
+      "#00ffff",
+      "#ffff00",
+      "#ffffff"
+    ]
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "pixelmplus10",
+        "size": 10,
+        "line_height": 12
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [4, 4, 158, 106]
+      },
+      "commands": {
+        "rect": [164, 4, 72, 106],
+        "window": "main"
+      },
+      "message": {
+        "rect": [4, 112, 232, 44],
+        "window": "main"
+      },
+      "input": {
+        "visible": false
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 240, 160]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 0
+  },
+  "inputs": {
+    "enabled": [
+      "select"
+    ],
+    "parser_profile": "ja",
+    "command_columns": 1
+  },
+  "text": {
+    "color": 7,
+    "name_color": 6
+  },
+  "ui": {
+    "highlight": 1,
+    "window_skin": {
+      "type": "nine_patch",
+      "image": "frame_gba_classic",
+      "margins": [4, 4, 4, 4]
+    },
+    "window_padding": [7, 4]
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

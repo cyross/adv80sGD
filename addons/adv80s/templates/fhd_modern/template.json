@@ -1,0 +1,86 @@
+{
+  "template_version": 1,
+  "id": "fhd_modern",
+  "name": "FHD モダン",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "FHD",
+    "scale": "integer"
+  },
+  "palette": {
+    "source": "colors",
+    "colors": [
+      "#000000",
+      "#0000ff",
+      "#ff0000",
+      "#ff00ff",
+      "#00ff00",
+      "#00ffff",
+      "#ffff00",
+      "#ffffff"
+    ]
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "tekuplus",
+        "size": 36,
+        "line_height": 48
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [24, 11, 1872, 734]
+      },
+      "message": {
+        "rect": [24, 757, 1303, 216],
+        "window": "main"
+      },
+      "input": {
+        "rect": [24, 985, 1303, 84]
+      },
+      "commands": {
+        "rect": [1339, 757, 557, 312],
+        "window": "main"
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 1920, 1080]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 0
+  },
+  "text": {
+    "color": 7,
+    "name_color": 6
+  },
+  "ui": {
+    "highlight": 1,
+    "window_skin": {
+      "type": "nine_patch",
+      "image": "frame_fhd_modern",
+      "margins": [24, 24, 24, 24]
+    },
+    "window_padding": [36, 18]
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

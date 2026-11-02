@@ -1,0 +1,10 @@
+{
+  "assets": {
+    "image:frame_fhd_modern": {
+      "file": "ui/frame_fhd_modern.png",
+      "type": "image"
+    }
+  },
+  "generated": true,
+  "manifest_version": 1
+}

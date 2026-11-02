@@ -1,0 +1,10 @@
+{
+  "assets": {
+    "image:frame_gba_classic": {
+      "file": "ui/frame_gba_classic.png",
+      "type": "image"
+    }
+  },
+  "generated": true,
+  "manifest_version": 1
+}

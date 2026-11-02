@@ -1,0 +1,10 @@
+{
+  "assets": {
+    "image:frame_4k_modern": {
+      "file": "ui/frame_4k_modern.png",
+      "type": "image"
+    }
+  },
+  "generated": true,
+  "manifest_version": 1
+}

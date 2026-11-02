@@ -193,6 +193,11 @@
         },
         "parser_profile": {
           "type": "string"
+        },
+        "command_columns": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Columns of the command list (default 2)"
         }
       },
       "additionalProperties": false
@@ -343,6 +348,15 @@
         },
         "highlight": {
           "type": "integer"
+        },
+        "window_padding": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "Inner padding of windows [x, y] (default [8, 4])"
         },
         "ext": {
           "type": "object",

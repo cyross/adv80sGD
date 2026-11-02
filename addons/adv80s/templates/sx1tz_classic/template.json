@@ -1,0 +1,86 @@
+{
+  "template_version": 1,
+  "id": "sx1tz_classic",
+  "name": "SX1TZ クラシック",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "SX1TZ",
+    "scale": "integer"
+  },
+  "palette": {
+    "source": "colors",
+    "colors": [
+      "#000000",
+      "#0000ff",
+      "#ff0000",
+      "#ff00ff",
+      "#00ff00",
+      "#00ffff",
+      "#ffff00",
+      "#ffffff"
+    ]
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "pixelmplus10",
+        "size": 10,
+        "line_height": 12
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [4, 4, 312, 108]
+      },
+      "message": {
+        "rect": [4, 114, 204, 56],
+        "window": "main"
+      },
+      "input": {
+        "rect": [4, 172, 204, 24]
+      },
+      "commands": {
+        "rect": [210, 114, 106, 82],
+        "window": "main"
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 320, 200]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 0
+  },
+  "text": {
+    "color": 7,
+    "name_color": 6
+  },
+  "ui": {
+    "highlight": 1,
+    "window_skin": {
+      "type": "box",
+      "border": 1,
+      "pal": 7,
+      "fill": 0
+    }
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

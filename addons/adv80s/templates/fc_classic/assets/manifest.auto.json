@@ -1,0 +1,10 @@
+{
+  "assets": {
+    "image:frame_fc_classic": {
+      "file": "ui/frame_fc_classic.png",
+      "type": "image"
+    }
+  },
+  "generated": true,
+  "manifest_version": 1
+}

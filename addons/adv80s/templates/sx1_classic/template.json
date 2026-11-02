@@ -1,0 +1,13 @@
+{
+  "template_version": 1,
+  "id": "sx1_classic",
+  "name": "SX1 クラシック",
+  "extends": "pc88_classic",
+  "display": {
+    "preset": "SX1"
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}

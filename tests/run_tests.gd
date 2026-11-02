@@ -23,6 +23,7 @@ func _initialize() -> void:
 	_test_ink_conformance()
 	_test_ink_adapter()
 	_test_editor_form()
+	_test_templates()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -690,3 +691,48 @@ func _test_editor_form() -> void:
 	check(by_name.has("Ink/saw_lights") and by_name["Ink/saw_lights"]["line"] > 0 and by_name["Ink/saw_lights"]["note"] == "JSON と同期", "vars: ink VAR from source, synced")
 	check(by_name.has("組み込み/has(アイテム)"), "vars: builtins")
 	eq(scr.entry_for_file("res://other/logo.png", "res://g/assets", AdvAssets.DEFAULT_FOLDERS)["key"], "image:logo", "editor: entry by extension")
+
+
+# ---------------------------------------------------------------- 同梱のテンプレート
+
+func _test_templates() -> void:
+	var ids: Array = load("res://addons/adv80s/editor/adv_editor_screen.gd").template_ids()
+	check(ids.size() >= 26, "templates: one per machine (%d)" % ids.size())
+	var machines := {}
+	for id in ids:
+		var diags: Array = []
+		var t := AdvTemplate.load_template(String(id), diags)
+		if t == null:
+			check(false, "template loads: %s %s" % [id, str(diags)])
+			continue
+		var raw = AdvJson.load_file(AdvTemplate.find_path(String(id)))
+		var sv := AdvSchemaValidator.check(raw, "template", String(id)).filter(func(d): return d["severity"] != "info")
+		check(sv.is_empty() and diags.is_empty(), "template valid: %s %s %s" % [id, str(sv), str(diags)])
+		machines[String(t.preset.get("machine", ""))] = true
+		var screen := Rect2i(Vector2i.ZERO, t.preset["size"])
+		var rects := []
+		for r in ["picture", "message", "commands", "input"]:
+			var rr := t.region_rect(r)
+			if rr.size == Vector2i.ZERO:
+				continue
+			check(screen.encloses(rr), "template %s: %s inside the screen %s" % [id, r, str(rr)])
+			for o in rects:
+				check(not o.intersects(rr), "template %s: %s does not overlap" % [id, r])
+			rects.append(rr)
+		# 素材：窓の枠の画像と、フォントの候補（dot16 は同梱しない）
+		var a := AdvAssets.new()
+		a.add_root(AdvAssets.BUILTIN_ROOT)
+		if t.asset_root() != "":
+			a.add_root(t.asset_root())
+		var skin: Dictionary = t.get_section("ui").get("window_skin", {})
+		if String(skin.get("type", "box")) == "nine_patch":
+			check(a.resolve("image", String(skin.get("image", ""))) != "", "template %s: frame image" % id)
+		var main = t.get_section("fonts").get("main")
+		var cands: Array = main if main is Array else [main]
+		var found := false
+		for c in cands:
+			if a.resolve("font", String(c.get("asset", "")).trim_prefix("font.")) != "":
+				found = true
+		check(found, "template %s: a bundled font is found" % id)
+	for m in AdvPresets.machines():
+		check(machines.has(m), "template for machine %s" % m)

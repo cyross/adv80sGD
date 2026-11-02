@@ -1,0 +1,86 @@
+{
+  "template_version": 1,
+  "id": "hd_modern",
+  "name": "HD モダン",
+  "extends": "pc98_classic",
+  "display": {
+    "preset": "HD",
+    "scale": "integer"
+  },
+  "palette": {
+    "source": "colors",
+    "colors": [
+      "#000000",
+      "#0000ff",
+      "#ff0000",
+      "#ff00ff",
+      "#00ff00",
+      "#00ffff",
+      "#ffff00",
+      "#ffffff"
+    ]
+  },
+  "fonts": {
+    "main": [
+      {
+        "asset": "tekuplus",
+        "size": 24,
+        "line_height": 32
+      }
+    ]
+  },
+  "layout": {
+    "regions": {
+      "picture": {
+        "rect": [16, 7, 1248, 490]
+      },
+      "message": {
+        "rect": [16, 505, 869, 144],
+        "window": "main"
+      },
+      "input": {
+        "rect": [16, 657, 869, 56]
+      },
+      "commands": {
+        "rect": [893, 505, 371, 208],
+        "window": "main"
+      }
+    },
+    "named": {
+      "fullscreen_cg": {
+        "regions": {
+          "picture": {
+            "rect": [0, 0, 1280, 720]
+          },
+          "message": {
+            "visible": false
+          },
+          "input": {
+            "visible": false
+          },
+          "commands": {
+            "visible": false
+          }
+        }
+      }
+    },
+    "background": 0
+  },
+  "text": {
+    "color": 7,
+    "name_color": 6
+  },
+  "ui": {
+    "highlight": 1,
+    "window_skin": {
+      "type": "nine_patch",
+      "image": "frame_hd_modern",
+      "margins": [16, 16, 16, 16]
+    },
+    "window_padding": [24, 12]
+  },
+  "assets": {
+    "root": "assets/",
+    "manifest": "manifest.json"
+  }
+}
