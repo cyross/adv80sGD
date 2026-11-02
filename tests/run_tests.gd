@@ -590,6 +590,26 @@ func _test_ink_adapter() -> void:
 	ev = c.submit({"verb": "OPEN", "target": "register"})
 	check(_bodies(ev).contains("Have key.") and c.state.has_item("coin"), "ink: has_item / item_add")
 
+	# 段階1のサンプルに足した Ink の会話
+	var c4 := AdvCore.new()
+	c4.setup({"seed": 1})
+	c4.add_asset_roots(["res://tests/stage1/assets"])
+	c4.use_adapter(AdvJsonAdapter.new())
+	c4.load_scenario(["res://tests/stage1/scenario/stage1.scenario.json", "res://tests/stage1/scenario/stage1_talk.ink.json"])
+	var e4 := c4.validate().filter(func(d): return d["severity"] != "info")
+	eq(e4.size(), 0, "stage1 + ink: validate %s" % str(e4))
+	c4.start("room")
+	ev = c4.submit({"verb": "ASK", "target": "ayumi", "topic": "window"})
+	eq(_bodies(ev), "まどの そと？ / ……しらない ひとには はなせない。 / あゆみは また まどの そとを みつめた。", "stage1 ink: not met yet")
+	c4._commit([AdvEvents.make("state.set", {"name": "met_ayumi", "value": true}), AdvEvents.make("item.add", {"id": "key"})])
+	ev = c4.submit({"verb": "ASK", "target": "ayumi", "topic": "window"})
+	var cs4 := ev.filter(func(e): return e["type"] == "choice.show")
+	eq(cs4[0]["args"]["choices"].map(func(x): return x["label"]), ["あかりの ことを きく", "かぎを みせる", "はなしを おえる"], "stage1 ink: choices")
+	ev = c4.submit({"verb": "CHOOSE", "target": "c0"})
+	check(c4.state.get_var("saw_lights") == true and c4.state.notebook.has("lights"), "stage1 ink: variable and notebook")
+	ev = c4.submit({"verb": "CHOOSE", "target": "c1"})
+	eq(_bodies(ev), "あの やかたに、 なにか あるのかも しれない。 / あゆみは また まどの そとを みつめた。", "stage1 ink: end and back to JSON")
+
 	# Ink だけのゲーム
 	var c2 := AdvCore.new()
 	c2.setup({})

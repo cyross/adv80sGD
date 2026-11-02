@@ -16,6 +16,10 @@
     "met_ayumi": {
       "type": "bool",
       "default": false
+    },
+    "saw_lights": {
+      "type": "bool",
+      "default": false
     }
   },
   "characters": {
@@ -352,6 +356,12 @@
         "goto": "ayumi_case"
       },
       "この ぎょうは でない。"
+    ],
+    "ayumi_window": [
+      {
+        "ink": "window_talk"
+      },
+      "あゆみは また まどの そとを みつめた。"
     ]
   },
   "topics": {
@@ -370,6 +380,17 @@
         "label": "メモについて",
         "dialogue": "ayumi_jump",
         "when": "met_ayumi"
+      },
+      {
+        "id": "window",
+        "label": "まどの そとについて",
+        "dialogue": "ayumi_window",
+        "names": [
+          "まど",
+          "まどのそと",
+          "そと",
+          "window"
+        ]
       }
     ]
   },

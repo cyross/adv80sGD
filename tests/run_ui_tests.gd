@@ -84,6 +84,20 @@ func _main() -> void:
 	await _settle()
 	check(player.core.state.get_var("met_ayumi") == true, "chose after load")
 
+	# ---- 段階7：Ink で書いた会話（JSON から呼び、終わったら戻る）
+	player.submit_text("あゆみに まどについて きく")
+	await _settle()
+	check(sel.choosing and _buttons(sel).has("あかりの ことを きく"), "ink choices: %s" % str(_buttons(sel)))
+	await _shot("18_ink_choice")
+	_press(sel, "あかりの ことを きく")
+	await _settle()
+	check(player.core.state.get_var("saw_lights") == true, "ink variable returned to Core")
+	check(sel.choosing and not _buttons(sel).has("あかりの ことを きく"), "ink once-only choice gone: %s" % str(_buttons(sel)))
+	_press(sel, "はなしを おえる")
+	await _settle()
+	check(player.screen.message_label.get_parsed_text().contains("みつめた"), "back to JSON after ink: %s" % player.screen.message_label.get_parsed_text())
+	check(not sel.choosing and player.core.adapter_name(player.core.adapter) == "main", "json adapter on top again")
+
 	# セーブとロード（入力待ちのとき）
 	check(player.save_game("01") == OK, "save slot 01")
 	player.submit_text("ろうかへ いく")
@@ -93,7 +107,7 @@ func _main() -> void:
 	await _settle()
 	check(player.core.state.scene == "room" and player._images["bg"]["id"] == "room", "scene and image restored")
 	check(player.audio.current_bgm.get("id", "") == "theme", "bgm restored")
-	check(player.screen.message_label.get_parsed_text().contains("@マーク"), "last text restored: %s" % player.screen.message_label.get_parsed_text())
+	check(player.screen.message_label.get_parsed_text().contains("みつめた"), "last text restored: %s" % player.screen.message_label.get_parsed_text())
 	var saves := player.list_saves()
 	check(saves.filter(func(x): return x["exists"]).size() >= 3, "list saves: %s" % str(saves.map(func(x): return [x["slot"], x["exists"]])))
 	# 書き換えたセーブは読まない

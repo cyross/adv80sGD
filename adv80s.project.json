@@ -6,7 +6,8 @@
     "pc88_classic"
   ],
   "scenarios": [
-    "res://tests/stage1/scenario/stage1.scenario.json"
+    "res://tests/stage1/scenario/stage1.scenario.json",
+    "res://tests/stage1/scenario/stage1_talk.ink.json"
   ],
   "asset_roots": [
     "res://tests/stage1/assets"

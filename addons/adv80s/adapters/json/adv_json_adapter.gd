@@ -507,6 +507,7 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 			for t in topics.get(String(args.get("target", "")), []):
 				if ctx.eval(t.get("when", true)):
 					list.append({"type": "topic", "id": t["id"], "label": t.get("label", t["id"]),
+						"names": t.get("names", []).duplicate(),
 						"new": not ctx.state.talked.has(String(t.get("dialogue", "")))})
 			return list
 		"nouns":
