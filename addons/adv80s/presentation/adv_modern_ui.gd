@@ -181,6 +181,14 @@ func _fill_settings(m: AdvMenuPanel) -> void:
 		m.add_button("よみやすい もじ：%s" % _onoff(player.screen.readable), func():
 			player.set_feature("readable_font", not player.screen.readable)
 			refill.call())
+	if player.features.allowed.get("gamepad", true):
+		m.add_button("コントローラー：%s" % _onoff(_on("gamepad")), func():
+			player.set_feature("gamepad", not _on("gamepad"))
+			refill.call())
+	if player.features.allowed.get("touch", true) and DisplayServer.is_touchscreen_available():
+		m.add_button("タッチそうさ：%s" % _onoff(_on("touch")), func():
+			player.set_feature("touch", not _on("touch"))
+			refill.call())
 	if player.features.allowed.get("tts", true) and AdvPlayer._tts_available():
 		m.add_button("よみあげ：%s" % _onoff(_on("tts")), func():
 			player.set_feature("tts", not _on("tts"))

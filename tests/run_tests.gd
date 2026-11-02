@@ -667,6 +667,19 @@ func _test_editor_form() -> void:
 			row = it
 	check(row != null and row.get_cell_mode(1) == TreeItem.CELL_MODE_RANGE and row.get_text(1) == "zzz,a,b", "form: suggestions as a dropdown keeping the current value")
 	f2.free()
+	# 継承した値
+	var f3 := AdvSchemaForm.new()
+	f3.inherited = AdvTemplate.load_template("pc88_classic").data
+	f3.setup(AdvSchemaValidator.load_schema("template"), {"template_version": 1, "id": "x", "extends": "pc88_classic"})
+	var fonts_row: TreeItem = null
+	for it in f3.get_root().get_children():
+		if it.get_text(0) == "fonts":
+			fonts_row = it
+	check(fonts_row != null and fonts_row.get_text(1).begins_with("継承："), "form: inherited value shown: %s" % (fonts_row.get_text(1) if fonts_row else ""))
+	f3._on_button(fonts_row, 1, AdvSchemaForm.BTN_ADD, 1)
+	check(f3.data.has("fonts") and f3.data["fonts"] == f3.inherited["fonts"] and not is_same(f3.data["fonts"], f3.inherited["fonts"]), "form: override starts from a copy of the inherited value")
+	eq(AdvSchemaForm.lookup({"a": {"b": null}}, ["a", "b"]), [true, null], "form: lookup finds null values")
+	f3.free()
 	# 変数の一覧
 	var vars := AdvVariableIndex.collect()
 	var by_name := {}

@@ -664,7 +664,26 @@ func toggle_skip() -> void:
 		skip_mode = not skip_mode
 
 
+## 無効にした入力機器の操作か（モダン機能 gamepad、touch）。
+## ゲームパッドのボタンとスティック、タッチと、タッチから作られたマウスの操作を見る。
+func is_blocked_input(event: InputEvent) -> bool:
+	if features == null:
+		return false
+	if (event is InputEventJoypadButton or event is InputEventJoypadMotion) and not features.is_on("gamepad"):
+		return true
+	if not features.is_on("touch"):
+		if event is InputEventScreenTouch or event is InputEventScreenDrag:
+			return true
+		if event is InputEventMouse and event.device == InputEvent.DEVICE_ID_EMULATION:
+			return true
+	return false
+
+
 func _input(event: InputEvent) -> void:
+	# 無効にした機器の操作は、画面の部品に届く前に止める（_input は GUI より先に呼ばれる）
+	if is_blocked_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	if _overlay != null:
 		if event.is_action_pressed("ui_cancel") or (event is InputEventKey and event.pressed and event.keycode == KEY_F4):
 			_overlay.call("close")

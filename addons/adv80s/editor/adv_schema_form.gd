@@ -19,6 +19,8 @@ const BTN_SWITCH := 3
 var schema_root: Dictionary = {}
 var data: Variant = {}
 var read_only: bool = false
+## 継承した値（テンプレートの extends 先を解決したもの）。書いていない項目に「継承：値」と出し、＋で足すとその値から始める
+var inherited: Variant = null
 ## 文字列の項目の候補を返す関数 func(path: Array) -> Array。候補があれば、その項目は一覧から選ぶ形になる
 var suggest: Callable
 
@@ -322,14 +324,25 @@ func _build_absent(parent: TreeItem, key: String, s: Variant, path: Array) -> vo
 	it.set_custom_color(0, Color(0.55, 0.55, 0.55))
 	it.set_text(1, "（未設定）")
 	it.set_custom_color(1, Color(0.55, 0.55, 0.55))
+	var inh := lookup(inherited, path)
+	if inh[0]:
+		it.set_text(1, "継承：" + _short(inh[1]))
+		it.set_custom_color(1, Color(0.55, 0.7, 0.85))
+		it.set_tooltip_text(1, "元のテンプレートの値です。＋で、この値から上書きを始めます\n" + JSON.stringify(inh[1], "  "))
 	var desc := String(resolve(s).get("description", ""))
 	if desc == "":
 		var bs := branches(s)
 		if not bs.is_empty():
 			desc = String(bs[0].get("description", ""))
 	it.set_tooltip_text(0, desc)
-	it.set_metadata(0, {"absent": path, "schema": s})
-	it.add_button(1, _icon("Add"), BTN_ADD, false, "この項目を足します")
+	var meta := {"absent": path, "schema": s}
+	if inh[0]:
+		meta["inherited"] = inh[1]
+		if inh[1] is Dictionary or inh[1] is Array:
+			_build_inherited(it, inh[1])
+			it.collapsed = true
+	it.set_metadata(0, meta)
+	it.add_button(1, _icon("Add"), BTN_ADD, false, "この項目を足します" if not inh[0] else "継承した値から上書きを始めます")
 
 
 func _build_item(parent: TreeItem, key: String, value: Variant, s: Variant, path: Array, removable: bool,
@@ -420,6 +433,43 @@ func _branch_names(s: Variant) -> String:
 	return " / ".join(names)
 
 
+## 継承した値の中身を、読むだけの灰色の行で並べる。
+func _build_inherited(parent: TreeItem, v: Variant) -> void:
+	var keys: Array = v.keys() if v is Dictionary else range(v.size())
+	for k in keys:
+		var cv = v[k]
+		var it := create_item(parent)
+		it.set_text(0, str(k) if v is Dictionary else "[%d]" % k)
+		it.set_custom_color(0, Color(0.5, 0.6, 0.7))
+		it.set_text(1, _short(cv) if not (cv is Dictionary or cv is Array) else _summary(cv))
+		it.set_custom_color(1, Color(0.5, 0.6, 0.7))
+		it.set_tooltip_text(1, JSON.stringify(cv, "  "))
+		if cv is Dictionary or cv is Array:
+			_build_inherited(it, cv)
+			it.collapsed = true
+
+
+## root の path の値。[見つかったか, 値]
+static func lookup(root: Variant, path: Array) -> Array:
+	var cur: Variant = root
+	for p in path:
+		if cur is Dictionary and cur.has(p):
+			cur = cur[p]
+		elif cur is Array and p is int and p < cur.size():
+			cur = cur[p]
+		else:
+			return [false, null]
+	return [root != null, cur]
+
+
+## 一覧に出す短い値（長い JSON は省く）。
+static func _short(v: Variant) -> String:
+	var t := JSON.stringify(v)
+	if t.length() <= 48:
+		return t
+	return _summary(v)
+
+
 static func _summary(v: Variant) -> String:
 	if v is Dictionary:
 		return "{ %d 項目 }" % v.size()
@@ -475,7 +525,11 @@ func _on_button(it: TreeItem, _col: int, id: int, _mouse: int) -> void:
 	match id:
 		BTN_ADD:
 			if m.has("absent"):
-				set_at(m["absent"], default_for(pick_branch(m["schema"], null)))
+				if m.has("inherited"):
+					var iv = m["inherited"]
+					set_at(m["absent"], iv.duplicate(true) if iv is Dictionary or iv is Array else iv)
+				else:
+					set_at(m["absent"], default_for(pick_branch(m["schema"], null)))
 				_expanded[pointer(m["absent"])] = true
 			elif m.has("append"):
 				var arr = get_at(m["append"])

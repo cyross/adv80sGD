@@ -24,6 +24,7 @@ var _form: AdvSchemaForm
 var _diag_tree: Tree
 var _json: TextEdit
 var _add_files_btn: Button
+var _show_inherited: CheckBox
 var _file_buttons: Array = []   ## ファイルを編集するときだけ出すボタン
 var _split: HSplitContainer
 var _vars_box: VBoxContainer
@@ -72,6 +73,12 @@ func _init() -> void:
 	_add_files_btn.tooltip_text = "素材フォルダのファイルを選んで、マニフェストに項目を足します（loop_start や機種別の差し替えを書くため）"
 	_add_files_btn.pressed.connect(_on_add_files)
 	bar.add_child(_add_files_btn)
+	_show_inherited = CheckBox.new()
+	_show_inherited.text = "継承した値"
+	_show_inherited.tooltip_text = "テンプレートで、書いていない項目に元のテンプレート（extends）の値を出します"
+	_show_inherited.button_pressed = true
+	_show_inherited.toggled.connect(func(_on): _form.inherited = _inherited_of(_form.data); _form.rebuild())
+	bar.add_child(_show_inherited)
 	_status = Label.new()
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -175,6 +182,7 @@ func _shortcut_input(event: InputEvent) -> void:
 
 func _refresh_files() -> void:
 	_add_files_btn.visible = _kind.selected == KIND_MANIFEST
+	_show_inherited.visible = _kind.selected == KIND_TEMPLATE
 	var vars := _kind.selected == KIND_VARIABLES
 	_split.visible = not vars
 	_vars_box.visible = vars
@@ -241,6 +249,7 @@ func _open(path: String) -> void:
 		else:
 			_status.text = "JSON の書き方に誤りがあります（%d 行目）: %s" % [j.get_error_line(), j.get_error_message()]
 	_form.read_only = path.begins_with("res://addons/adv80s/templates/") or path.begins_with(AdvAssets.BUILTIN_ROOT)
+	_form.inherited = _inherited_of(value)
 	_form.setup(schema, value)
 	_dirty = false
 	_update_json()
@@ -296,7 +305,22 @@ func _show_in_fs() -> void:
 		EditorInterface.select_file(_path)
 
 
+## テンプレートの extends 先を解決した値（継承した値の表示に使う）。テンプレート以外や extends がなければ null。
+func _inherited_of(value: Variant) -> Variant:
+	if _kind.selected != KIND_TEMPLATE or not _show_inherited.button_pressed or not value is Dictionary:
+		return null
+	var ext = value.get("extends")
+	if not ext is String or ext == "" or AdvTemplate.find_path(ext) == "":
+		return null
+	var t := AdvTemplate.load_template(ext)
+	return t.data if t != null else null
+
+
 func _on_form_changed() -> void:
+	var inh = _inherited_of(_form.data)
+	if JSON.stringify(inh) != JSON.stringify(_form.inherited):
+		_form.inherited = inh
+		_form.rebuild()
 	_dirty = true
 	_status.text = "変更あり（保存していません）"
 	_update_json()

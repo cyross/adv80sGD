@@ -319,6 +319,22 @@ func _main() -> void:
 	await _settle()
 	check(int(player.display._material.get_shader_parameter("cycle_len")) == 0, "palette cycle stopped")
 
+	# ---- 入力機器の切り替え（gamepad、touch）
+	var jb := InputEventJoypadButton.new()
+	jb.button_index = JOY_BUTTON_A
+	jb.pressed = true
+	check(not player.is_blocked_input(jb), "gamepad on by default")
+	player.set_feature("gamepad", false)
+	check(player.is_blocked_input(jb), "gamepad off blocks joypad")
+	var key := InputEventKey.new()
+	key.keycode = KEY_ENTER
+	check(not player.is_blocked_input(key), "keyboard never blocked")
+	player.set_feature("gamepad", true)
+	check(not player.is_blocked_input(jb), "gamepad back on")
+	var tm := InputEventMouseButton.new()
+	tm.device = InputEvent.DEVICE_ID_EMULATION
+	check(player.is_blocked_input(tm) == not player.features.is_on("touch"), "touch-emulated mouse follows the touch feature")
+
 	# ---- 文章の表示調整（text_options）
 	player.set_text_option("text_size", 2.0)
 	player.set_text_option("text_color", 6)
