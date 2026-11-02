@@ -306,6 +306,7 @@ func validate() -> Array[Dictionary]
 | `start` | 指定した場所から開始し、出力イベントを返す |
 | `handle_intent` | 意図を処理して出力イベントを返す（中心となるメソッド） |
 | `query` | UIやモダン機能からの問い合わせに答える（`hints`、`objective`、`notebook`、`flow`、`hotspots`、`topics` など） |
+| `resume` | 上に積んだアダプタ（Inkなど）の処理が終わって戻ってきたときに、止めていた手順の続きを実行して出力イベントを返す |
 | `save_state`、`load_state` | アダプタ内部の状態（Inkの呼び出し位置、会話の途中の位置など）を保存・復元する |
 | `validate` | シナリオの確認結果を返す。コマンドラインの確認（5.6）がこれを呼ぶ |
 
@@ -328,7 +329,7 @@ func validate() -> Array[Dictionary]
 
 - **同期で配列を返す**：メソッドはすぐに出力イベントの配列を返す。演出の終了待ちなどは表示レイヤーが `wait` に従って処理し、アダプタの中では待たない。
 - **入力が必要な地点までまとめて返す**：`input` 待ちのイベント（`choice.show`、`input.request` など）までをまとめて返し、選ばれた結果は `CHOOSE` の意図として `handle_intent` に届く。
-- **JSONとInkの受け渡し**：JSONアダプタが主となり、すべての意図を受け取る。Inkには、JSONの手順 `{ "ink": "ノット名" }` で明示的に処理を渡し、Inkの処理が終わったらJSONに戻る。処理中のアダプタはCoreが積み上げて管理する。
+- **JSONとInkの受け渡し**：JSONアダプタが主となり、すべての意図を受け取る。Inkには、JSONの手順 `{ "ink": "ノット名" }` で明示的に処理を渡し、Inkの処理が終わったらJSONに戻る。処理中のアダプタはCoreが積み上げて管理する。受け渡しは出力イベント adapter.enter と adapter.exit で行い、Coreはこれを表示側へ渡さない（5.3）。
 - **問い合わせ**：UIは `Core.query` に問い合わせ、Coreが自分で答えられない分だけをアダプタの `query` に回す（下の「問い合わせ」）。
 - **保存**：セーブデータには、Coreの状態に加えて、アダプタごとの `save_state()` の結果を入れる。
 - **確認**：`validate` をアダプタに持たせ、コマンドラインの確認がInkを含むすべてのシナリオ形式に同じように働く。
@@ -393,7 +394,7 @@ UIの問い合わせ先は `Core.query(名前, 引数)` に一本化する。`no
 | `MISSING_TARGET` | `call`、`goto`、`dialogue` で呼ぶ先がない | エラー |
 | `FEATURE_DEPENDENCY` | 機能の依存が満たされず、自動で無効になる（10.1） | 警告 |
 | `UNREACHABLE` | どこからも呼ばれない会話やシーン | 情報 |
-| `INK_*` | Inkアダプタ固有の問題 | アダプタが決める |
+| `INK_*` | Inkアダプタ固有の問題（INK_LOAD、INK_VERSION、INK_UNSUPPORTED、INK_LIST、INK_EXTERNAL、INK_MISSING_KNOT。5.3） | アダプタが決める |
 
 
 
@@ -431,10 +432,17 @@ UIの問い合わせ先は `Core.query(名前, 引数)` に一本化する。`no
 Inkはinkle社が公開している分岐ストーリー用のスクリプト言語（MITライセンス）。会話や選択肢の分岐に向く。
 
 - 作者は `.ink` を書き、公式ツール inklecate でJSONに変換する。inklecateは制作時のみ使い、完成したゲームには含めない。
-- 変換済みJSONを再生する実行部分をGDScriptで自作する。
-- Inkの変数はCoreの状態（フラグ、変数）と同期する。
-- 意図はInkの外部関数または選択肢として受け渡す。
+- 変換済みJSON（.ink.json）を再生する実行部分をGDScriptで自作する。inkle社のC#版の実行部分と同じ動きにそろえ、対応するinkVersionは19〜21とする。LISTは対応しない（使うと確認で INK_LIST を出す）。RANDOMとシャッフルのシーケンスは乱数の作り方がC#版と違うため、同じ種でも結果は一致しない。
+- Inkの変数はCoreの状態（フラグ、変数）と同期する。Inkに入るとき、Inkのグローバル変数と同じ名前のCoreの変数の値をInkに写す。Inkの中で変わったグローバル変数は state.set でCoreに返す（プロジェクト設定 ink.sync_variables を false にすると返さない）。
+- 意図はInkの外部関数または選択肢として受け渡す（下の「選択肢と意図」「外部関数」）。
 - 想定する使い方：探索部分はJSON、会話シーンはInkのように、1本のゲームで両方を混在できる。会話もJSONだけで書けるようにし、Inkは任意とする。
+- **読み込み**：プロジェクト設定のシナリオの一覧にある `.ink.json` はInkアダプタが読む。`.ink.json` だけのゲームではInkアダプタが主になる（最初から再生する）。複数の `.ink.json` を並べた場合は、指定したノットを持つ最初のファイルを使う。
+- **受け渡しの流れ**：JSONの手順 `{ "ink": "ノット名" }` は出力イベント `adapter.enter` を出して止まる。CoreはInkアダプタを積んで `start` を呼ぶ。Inkが選択肢なしで止まる（`-> DONE`、`-> END`、終わりまで進む）と `adapter.exit` を出し、CoreはInkアダプタを外して下のアダプタの `resume` を呼ぶ。この2つのイベントは表示側へは渡さない。
+- **行とタグ**：Inkの1行ごとに `text.show` を出す。`@話者ID 文章`（JSONの手順と同じ）か `# speaker:話者ID` で台詞にする。行IDは `# id:…` で書け、省略すると `ink:ノット名#本文のハッシュ` になる。`# voice:ID`、`# bg:ID`、`# bgm:ID`、`# se:ID` で声・背景・BGM・効果音を出し、`# {"image.show": {…}}` のようにJSONの手順と同じ書き方で出力イベントを出せる。そのほかのタグは `text.show` の `ext.tags` に入れる。
+- **選択肢と意図**：選択肢は `choice.show` で出し、項目のIDは `c0`、`c1`… とする。選択肢にタグ `# intent:動詞[:対象[:with]]`（`*` は何でも）をつけると、コマンド入力の意図でもその選択肢を選べる。`# hidden` は一覧に出さない（すべて hidden なら一覧を出さず、コマンド入力だけで進む会話になる）。intent タグのある選択肢を出している間は、コマンド入力も受け付ける（`pending_choice` の `accepts_intents`）。合う選択肢がない意図には、辞書の既定の返事を出して待ち続ける。
+- **外部関数**：`has_item`、`item_count`、`item_add`、`item_remove`、`get_var`、`set_var`、`visited`、`talked`、`cond`（条件式）、`event`（種類, 引数のJSON）、`goto_scene` を標準で用意する。これ以外は、Ink側に同じ名前の関数があればそれを使い、なければ確認で `INK_EXTERNAL` を出す。
+- **到達記録**：Inkに入るとき `state.mark`（talked、`ink:ノット名`）を出し、選んだ選択肢は chosen に `ink:ノット名#c…/c番号` で残す。
+- **確認**：`INK_LOAD`（読めない）、`INK_VERSION`（未確認の版）、`INK_UNSUPPORTED`（読めない部分）、`INK_LIST`、`INK_EXTERNAL`、`INK_MISSING_KNOT`（JSONから渡すノットがない）を出す。タグで書いた素材がなければ `ASSET_NOT_FOUND` を出す。
 
 ### 5.4 出力イベント
 
@@ -1106,7 +1114,7 @@ PS2の色：[RGB 32ビット（RGBA 8ビット）](https://www.d-colors.net/game
 - テキスト形式の読み書きは、デバッグビルドまたは設定フラグで有効にしたときだけ許可する。
 - セーブの設定は、プロジェクト設定の `save` にまとめる（`protection`：`hmac` / `hmac_aes` / `none`、`on_tamper`：`reject` / `warn`、`text_format`、`dir`、`slots`、`key_provider`：`embedded` / `per_user` / スクリプトのパス）。
 - オートセーブは、出力イベントをひとまとまり実行し終えた時点で行う（Core が状態をまとめて適用するため）。
-- 保存対象：Coreの状態（フラグ、変数、所持品、現在のシーン）、Inkの状態、メッセージログ。表示設定などプレイヤー設定は別ファイルにする。
+- 保存対象：Coreの状態（フラグ、変数、所持品、現在のシーン）、Inkの状態（すべてのアダプタの状態と積み上げの順番）、メッセージログ。表示設定などプレイヤー設定は別ファイルにする。
 
 ### 8.1 改ざん検知と暗号化
 
