@@ -138,6 +138,7 @@ STEP_DEFS = {
             }, None, ["options"])}, t("選択肢", "Choice"), ["choice"], extra=False),
             {"$ref": "#/definitions/event"},
             {"type": "object", "description": t("出力イベントの短い書き方（{\"image.show\": {…}}）", "Output event shorthand ({\"image.show\": {...}})"),
+             "properties": {"checkpoint": {"type": "object"}, "wait": {"type": "object"}, "group": {"type": "object"}},
              "patternProperties": {"^(x\\.)?[a-z_]+\\.[a-z_]+$": {"type": "object"}}, "additionalProperties": False},
         ]
     },
@@ -207,6 +208,12 @@ SCENARIO = {
         "intent_schema": {"type": "object", "description": t("このシナリオの意図スキーマの層", "Intent schema layer of this scenario")},
         "event_defaults": EVENT_DEFAULTS,
         "assets": obj({"root": STR, "manifest": STR}, t("シナリオが持つ素材フォルダ", "Asset folder of this scenario"), extra=False),
+        "flow": obj({
+            "nodes": {"type": "array", "items": obj({"id": STR, "label": STR, "chapter": STR}, None, ["id"])},
+            "edges": {"type": "array", "items": obj({"from": STR, "to": STR}, None, ["from", "to"], extra=False)},
+        }, t("フローチャートの構造。点への到達は flow.mark で記録する", "Flowchart structure. Reaching a node is recorded with flow.mark")),
+        "chapters": {"type": "array", "description": t("チャプター（node はフローチャートの点。到達すると選べるようになる）", "Chapters (node is a flowchart node; unlocked when reached)"),
+                     "items": obj({"id": STR, "label": STR, "node": STR, "unlocked": BOOL}, None, ["id", "label"])},
     }),
     "definitions": {**COND_DEFS, **STEP_DEFS},
 }
@@ -352,6 +359,7 @@ PROJECT = {
         "missing_asset": {"enum": ["placeholder", "error"], "description": t("見つからない素材の扱い", "How to treat missing assets")},
         "lang": {"enum": ["ja", "en"]},
         "dictionaries": STRS,
+        "verbs": {**STRS, "description": t("標準で使う動詞に足す拡張の動詞（GIVE、SHOW、PUSH、PULL、HIT、CALL、THINK、WAIT など）", "Extended verbs to enable in addition to the basic ones")},
         "slot_mode": {"enum": ["named", "standard"]},
         "intent_schema": obj({"entry": STR, "layers": {"type": "array", "items": obj({
             "file": STR, "when": {"$ref": "#/definitions/condition"}}, None, ["file"], extra=False)}}, extra=False),
@@ -360,6 +368,7 @@ PROJECT = {
                      "patternProperties": {"^x\\.": FEATURE}, "additionalProperties": False,
                      "description": t("モダン機能（許可、既定値、細かい設定）", "Modern features (allow, default, options)")},
         "seed": INT,
+        "hint_topics": mapof(STR, t("ヒントの話題の表示名（話題 → 表示名）", "Display names of hint topics")),
         "transitions": obj({"named": mapof({"anyOf": [STR, {"type": "object", "properties": {"type": STR}}]},
                                            t("名前付きの切り替え演出（名前 → 演出と引数）", "Named transitions (name -> type and arguments)"))}, extra=False),
         "effects": {**STRS, "description": t("自作のフィルター・切り替え演出・画面効果の定義ファイル（*.effect.json）", "Custom filter / transition / effect definitions (*.effect.json)")},

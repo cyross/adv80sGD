@@ -19,6 +19,9 @@ var assets := AdvAssets.new()
 var config: Dictionary = {}
 var ctx: AdvContext
 
+## 全プレイ共通の進行の記録（フローチャートとチャプター選択に使う。なくてもよい）
+var progress: AdvProgress = null
+
 var preset: String = "98"
 var group: String = "pc80"
 var features: Dictionary = {}
@@ -170,7 +173,7 @@ func _commit(events: Array) -> Array[Dictionary]:
 			# 既読スキップのため、この表示の前に読んでいたかを残しておく
 			if not e.has("ext"):
 				e["ext"] = {}
-			e["ext"]["was_read"] = state.read.has(String(e["id"]))
+			e["ext"]["was_read"] = state.read.has(String(e["id"])) or (progress != null and progress.read.has(String(e["id"])))
 			state.read[String(e["id"])] = true
 		out.append(e)
 	return out
@@ -180,18 +183,119 @@ func _commit(events: Array) -> Array[Dictionary]:
 func query(what: String, args: Dictionary = {}) -> Variant:
 	match what:
 		"verbs":
-			var list := []
-			for id in schema.verbs:
-				if dictionary.has_verb(id):
-					list.append({"id": id, "label": dictionary.verb_label(id), "slots": schema.slots(id)})
-			return list
+			return _query_verbs()
 		"tried":
 			return state.tried.keys()
+		"objective":
+			return state.objective.duplicate() if not state.objective.is_empty() else null
+		"notebook":
+			var cat := String(args.get("category", ""))
+			var list := []
+			for id in state.notebook:
+				var n: Dictionary = state.notebook[id]
+				if cat == "" or n["category"] == cat:
+					list.append({"id": id, "category": n["category"], "title": n["title"], "body": n["body"], "order": n["order"]})
+			list.sort_custom(func(x, y): return x["order"] < y["order"])
+			return list
+		"hints":
+			var topic := String(args.get("topic", ""))
+			var list := []
+			for t in state.hints:
+				if topic != "" and t != topic:
+					continue
+				var h: Dictionary = state.hints[t]
+				var n := int(h["revealed"])
+				list.append({"topic": t, "stages": h["hints"].size(), "revealed": n, "texts": h["hints"].slice(0, n)})
+			return list
+		"flow":
+			var st = _adapter_query("flow_structure", args)
+			if not st is Dictionary:
+				return null
+			var nodes := []
+			for n in st.get("nodes", []):
+				var id := String(n.get("id", ""))
+				var reached := state.flow.has(id) or (progress != null and progress.reached.has(id))
+				nodes.append({"id": id, "label": String(n.get("label", id)), "chapter": String(n.get("chapter", "")),
+					"reached": reached, "can_jump": progress != null and progress.snapshots.has(id)})
+			return {"nodes": nodes, "edges": st.get("edges", []).duplicate(true)}
+		"chapters":
+			var st = _adapter_query("chapters_structure", args)
+			if not st is Array:
+				return null
+			var list := []
+			for c in st:
+				var node := String(c.get("node", c.get("id", "")))
+				var unlocked := bool(c.get("unlocked", false)) or state.flow.has(node) or (progress != null and progress.reached.has(node))
+				list.append({"id": String(c.get("id", "")), "label": String(c.get("label", "")), "node": node,
+					"unlocked": unlocked, "can_jump": progress != null and progress.snapshots.has(node)})
+			return list
+		"hotspots":
+			var hs = _adapter_query("hotspots", args)
+			if not hs is Array:
+				return hs
+			var hidden: Dictionary = state.ui.get("hidden", {})
+			var shown = state.ui.get("shown")
+			var list := []
+			for h in hs:
+				var id := String(h["id"])
+				if hidden.has(id) or (shown is Array and not id in shown):
+					continue
+				var tried_verbs := []
+				for k in state.tried:
+					var parts := String(k).split(":")
+					if parts.size() == 2 and parts[1] == String(h.get("target", id)):
+						tried_verbs.append(parts[0])
+				var e: Dictionary = h.duplicate()
+				e["tried_verbs"] = tried_verbs
+				e["new"] = tried_verbs.is_empty()
+				list.append(e)
+			return list
+	return _adapter_query(what, args)
+
+
+func _adapter_query(what: String, args: Dictionary) -> Variant:
 	for i in range(_adapters.size() - 1, -1, -1):
 		var r = _adapters[i].query(what, args)
 		if r != null:
 			return r
 	return null
+
+
+## 使える動詞の一覧 [{id, label, slots, enabled, tried}]。
+## 標準は辞書にある基本の動詞（extended でないもの）。プロジェクト設定 verbs で足し、verbs.update で変えられる。
+func _query_verbs() -> Array:
+	var ids: Array = []
+	var ui_verbs = state.ui.get("verbs")
+	if ui_verbs is Array:
+		ids = ui_verbs.duplicate()
+	else:
+		for id in schema.verbs:
+			if dictionary.has_verb(id) and not dictionary.is_extended(id):
+				ids.append(id)
+		for id in config.get("verbs", []):
+			if not id in ids:
+				ids.append(id)
+		for id in state.ui.get("verbs_added", []):
+			if not id in ids:
+				ids.append(id)
+		for id in state.ui.get("verbs_removed", []):
+			ids.erase(id)
+	var list := []
+	for id in ids:
+		if not schema.has_verb(id) or not dictionary.has_verb(id):
+			continue
+		var tried := false
+		for k in state.tried:
+			if String(k) == id or String(k).begins_with(id + ":"):
+				tried = true
+				break
+		list.append({"id": id, "label": dictionary.verb_label(id), "slots": schema.slots(id), "enabled": true, "tried": tried})
+	return list
+
+
+## ヒントを1段階進める（モダン機能 hint）。進めたら true。
+func reveal_hint(topic: String) -> bool:
+	return state.reveal_hint(topic)
 
 
 func validate() -> Array[Dictionary]:

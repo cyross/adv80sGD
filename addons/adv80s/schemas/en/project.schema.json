@@ -77,6 +77,13 @@
         "type": "string"
       }
     },
+    "verbs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Extended verbs to enable in addition to the basic ones"
+    },
     "slot_mode": {
       "enum": [
         "named",
@@ -452,6 +459,13 @@
     },
     "seed": {
       "type": "integer"
+    },
+    "hint_topics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Display names of hint topics"
     },
     "transitions": {
       "type": "object",

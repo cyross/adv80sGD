@@ -4,11 +4,12 @@ extends Panel
 ## マウスホイールでさかのぼり、右クリック・Esc・ログのキーで閉じる。
 
 signal closed
+signal rewind_requested(index: int)   ## 入力の行を押した（その入力の前まで巻き戻す）
 
 var _text: RichTextLabel
 
 
-func open(entries_log: AdvMessageLog, tpl: AdvTemplate, screen_size: Vector2) -> void:
+func open(entries_log: AdvMessageLog, tpl: AdvTemplate, screen_size: Vector2, can_rewind: bool = false) -> void:
 	position = Vector2.ZERO
 	size = screen_size
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -36,12 +37,19 @@ func open(entries_log: AdvMessageLog, tpl: AdvTemplate, screen_size: Vector2) ->
 	for e in entries_log.entries:
 		var body := AdvTextMarkup._escape(String(e.get("body", "")))
 		if e["kind"] == "input":
-			lines.append("[color=#%s]> %s[/color]" % [input_c, body])
+			if can_rewind and e.has("rewind"):
+				lines.append("[url=%d][color=#%s]> %s[/color][/url]" % [int(e["rewind"]), input_c, body])
+			else:
+				lines.append("[color=#%s]> %s[/color]" % [input_c, body])
 		elif e.has("name"):
 			lines.append("[color=#%s]%s[/color]「%s」" % [name_c, AdvTextMarkup._escape(String(e["name"])), body])
 		else:
 			lines.append(body)
+	if can_rewind:
+		lines.append("")
+		lines.append("（入力の行を えらぶと、その まえに もどる）")
 	_text.text = "\n".join(lines)
+	_text.meta_clicked.connect(func(meta): rewind_requested.emit(int(str(meta))))
 
 
 func _gui_input(event: InputEvent) -> void:

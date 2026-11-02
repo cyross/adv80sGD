@@ -517,6 +517,106 @@
       "additionalProperties": false,
       "description": "シナリオが持つ素材フォルダ"
     },
+    "flow": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "chapter": {
+                "type": "string"
+              },
+              "ext": {
+                "type": "object",
+                "description": "拡張領域。中身は自由"
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x\\.": {
+                "description": "自作の項目（x.名前）"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "to"
+            ]
+          }
+        },
+        "ext": {
+          "type": "object",
+          "description": "拡張領域。中身は自由"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x\\.": {
+          "description": "自作の項目（x.名前）"
+        }
+      },
+      "description": "フローチャートの構造。点への到達は flow.mark で記録する"
+    },
+    "chapters": {
+      "type": "array",
+      "description": "チャプター（node はフローチャートの点。到達すると選べるようになる）",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "unlocked": {
+            "type": "boolean"
+          },
+          "ext": {
+            "type": "object",
+            "description": "拡張領域。中身は自由"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "自作の項目（x.名前）"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ]
+      }
+    },
     "ext": {
       "type": "object",
       "description": "拡張領域。中身は自由"
@@ -863,6 +963,17 @@
         {
           "type": "object",
           "description": "出力イベントの短い書き方（{\"image.show\": {…}}）",
+          "properties": {
+            "checkpoint": {
+              "type": "object"
+            },
+            "wait": {
+              "type": "object"
+            },
+            "group": {
+              "type": "object"
+            }
+          },
           "patternProperties": {
             "^(x\\.)?[a-z_]+\\.[a-z_]+$": {
               "type": "object"

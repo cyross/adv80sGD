@@ -77,6 +77,13 @@
         "type": "string"
       }
     },
+    "verbs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "標準で使う動詞に足す拡張の動詞（GIVE、SHOW、PUSH、PULL、HIT、CALL、THINK、WAIT など）"
+    },
     "slot_mode": {
       "enum": [
         "named",
@@ -452,6 +459,13 @@
     },
     "seed": {
       "type": "integer"
+    },
+    "hint_topics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "ヒントの話題の表示名（話題 → 表示名）"
     },
     "transitions": {
       "type": "object",

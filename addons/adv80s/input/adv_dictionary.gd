@@ -105,6 +105,11 @@ func verb_label(id: String) -> String:
 	return String(data.get("verbs", {}).get(id, {}).get("label", id))
 
 
+## 拡張の動詞（プロジェクトで有効にして使う）か。
+func is_extended(id: String) -> bool:
+	return bool(data.get("verbs", {}).get(id, {}).get("extended", false))
+
+
 func default_reply(id: String) -> String:
 	return String(data.get("verbs", {}).get(id, {}).get("default_reply", ""))
 

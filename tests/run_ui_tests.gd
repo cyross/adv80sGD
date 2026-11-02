@@ -28,6 +28,7 @@ func _main() -> void:
 	player = scene.instantiate()
 	player.auto_click = true
 	player.settings_path = ""
+	player.progress_path = ""
 	_rmdir("user://test_saves")
 	root.add_child(player)
 	player.project.data["save"] = {"dir": "user://test_saves", "slots": 3}
@@ -122,7 +123,9 @@ func _main() -> void:
 	player.submit_text("あゆみ みる")
 	await _settle()
 	check(not player.busy, "skip through read text")
-	player.submit_text("ろうかへ いく")   # 「ろうかに もどってきた」は未読
+	player.submit_text("ろうかへ いく")
+	await _settle()
+	player.submit_text("ドア みる")   # 「ふるびた 木の ドアだ」はまだ読んでいない
 	for i in 30:
 		await process_frame
 	check(player.busy and not player.skip_mode, "skip stops at unread text")
@@ -130,6 +133,7 @@ func _main() -> void:
 	await _settle()
 	player.submit_text("ドアを あける")
 	await _settle()
+	check(player.core.state.scene == "room", "back in room")
 
 	# 切り替え演出と画面効果（すべての種類を一通り動かす）
 	for t in ["fade", "wipe", "blinds", "line_draw", "interlace", "plane_draw", "mosaic", "dissolve", "blocks", "iris", "fade_color"]:
@@ -190,6 +194,99 @@ func _main() -> void:
 	await _settle()
 	check(player.screen.message_label.get_parsed_text().contains("ながい かみ"), "typed command reaches the parser: %s" % player.screen.message_label.get_parsed_text())
 
+	# ---- 段階5：モダン機能
+	await player.switch_template("pc98_classic")
+	await _settle()
+	# システムメニュー
+	player.modern.open_system_menu()
+	await _settle()
+	check(player._overlay is AdvMenuPanel, "system menu opens")
+	await _shot("09_system_menu")
+	player._overlay.close()
+	await _settle()
+	# 手帳
+	player.modern.open_notebook()
+	await _settle()
+	check(_panel_text(player._overlay).contains("ふるい かぎ") and _panel_text(player._overlay).contains("あゆみ"), "notebook shows entries")
+	await _shot("10_notebook")
+	player._overlay.close()
+	await _settle()
+	# フローチャート
+	player.modern.open_flowchart()
+	await _settle()
+	await _shot("11_flowchart")
+	player._overlay.close()
+	await _settle()
+	# 画面選択：input.mode で click を有効にし、物を押す
+	player._run(player.core._commit([{"type": "input.mode", "args": {"enable": ["select", "parser", "click"]}}]))
+	await _settle()
+	player.submit_text("ろうかへ いく")
+	await _settle()
+	check(player.core.state.scene == "hallway", "back in hallway for click test")
+	var hl := player.screen.hotspot_layer
+	check(hl.hotspots.size() == 2, "hotspots shown: %d" % hl.hotspots.size())
+	hl.hotspot_clicked.emit(hl.hotspots.filter(func(h): return h["id"] == "plant")[0])
+	await _settle()
+	check(player.screen.message_label.get_parsed_text().contains("もう なにも ない"), "click examines: %s" % player.screen.message_label.get_parsed_text())
+	_press(player.screen.command_select, "みる")
+	await _settle()
+	hl.hotspot_clicked.emit(hl.hotspots.filter(func(h): return h["id"] == "door")[0])
+	await _settle()
+	check(player.screen.message_label.get_parsed_text().contains("木の ドア"), "verb then click: %s" % player.screen.message_label.get_parsed_text())
+	player._show_all_hotspots = true
+	player._refresh_hotspots()
+	await _shot("12_hotspots")
+	# 試したコマンドの印
+	check(player.screen.command_select.show_tried, "tried marks on")
+	# 巻き戻し
+	var before: Dictionary = player.core.state.to_dict()
+	player.submit_text("かんがえる")
+	await _settle()
+	check(player.can_rewind(), "can rewind")
+	await player.rewind(1)
+	await _settle()
+	check(player.core.state.tried == before["tried"], "rewind restores state")
+	# フローチャートから再開
+	check(player.progress.snapshots.has("room"), "flow snapshot recorded")
+	await player.jump_to_node("room")
+	await _settle()
+	check(player.core.state.scene == "room", "jump to flow node")
+	# 読みやすいフォント、旧表示と新表示の切り替え
+	player.set_feature("readable_font", true)
+	check(player.screen.readable, "readable font on")
+	await _shot("13_readable")
+	player.set_feature("readable_font", false)
+	await player.cycle_template()
+	await _settle()
+	check(player.template.id == "pc88_classic", "era switch")
+	# ヒント（段階を進める）
+	await player.cycle_template()
+	await _settle()
+	await player.load_game("auto1")
+	await _settle()
+	player.core._commit([{"type": "hint.set", "args": {"topic": "door", "hints": ["ひとつめ", "ふたつめ"]}}])
+	player.modern.open_hints()
+	await _settle()
+	check(_panel_text(player._overlay).contains("ドアについて"), "hint topic label")
+	var reveal: Button = player._overlay.find_children("*", "Button", true, false).filter(func(b): return b.text.contains("つぎの ヒント"))[0]
+	reveal.pressed.emit()
+	await _settle()
+	check(_panel_text(player._overlay).contains("ひとつめ") and not _panel_text(player._overlay).contains("ふたつめ"), "hint revealed one stage")
+	await _shot("14_hints")
+	player._overlay.close()
+	await _settle()
+	player.modern.open_chapters()
+	await _settle()
+	var chs: Array = player._overlay.find_children("*", "Button", true, false).map(func(b): return b.text)
+	check(chs.has("だい1しょう ろうか") and chs.has("だい2しょう へや"), "chapters listed: %s" % str(chs))
+	player._overlay.close()
+	await _settle()
+	player.modern.open_settings()
+	await _settle()
+	await _shot("15_settings")
+	player._overlay.close()
+	await _settle()
+
 	print("ui failed: %d" % _failed)
 	quit(1 if _failed > 0 else 0)
 
@@ -207,6 +304,13 @@ func _shot(name: String) -> void:
 	await RenderingServer.frame_post_draw
 	var img := root.get_texture().get_image()
 	img.save_png("%s/%s.png" % [_shot_dir, name])
+
+
+func _panel_text(p: Node) -> String:
+	var t := ""
+	for n in p.find_children("*", "RichTextLabel", true, false):
+		t += (n as RichTextLabel).get_parsed_text() + "\n"
+	return t
 
 
 func _rmdir(path: String) -> void:

@@ -2,7 +2,8 @@
   "project_version": 1,
   "template": "pc98_classic",
   "templates": [
-    "pc98_classic"
+    "pc98_classic",
+    "pc88_classic"
   ],
   "scenarios": [
     "res://tests/stage1/scenario/stage1.scenario.json"
@@ -14,6 +15,45 @@
   "lang": "ja",
   "features": {
     "hint": {
+      "allow": true,
+      "default": true
+    },
+    "objective": {
+      "allow": true,
+      "default": true
+    },
+    "notebook": {
+      "allow": true,
+      "default": true
+    },
+    "flowchart": {
+      "allow": true,
+      "default": true
+    },
+    "chapter_select": {
+      "allow": true,
+      "default": true
+    },
+    "hotspot": {
+      "allow": true,
+      "default": true
+    },
+    "tried_marks": {
+      "allow": true,
+      "default": true
+    },
+    "rewind": {
+      "allow": true,
+      "default": true,
+      "options": {
+        "max_steps": 50
+      }
+    },
+    "era_switch": {
+      "allow": true,
+      "default": true
+    },
+    "readable_font": {
       "allow": true,
       "default": false
     }
@@ -29,5 +69,12 @@
         "duration": 0.8
       }
     }
+  },
+  "verbs": [
+    "GIVE",
+    "THINK"
+  ],
+  "hint_topics": {
+    "door": "ドアについて"
   }
 }

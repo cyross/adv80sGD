@@ -64,6 +64,13 @@ static func to_bbcode(body: String, state: AdvState, tpl: AdvTemplate) -> String
 	return out
 
 
+## 読み上げ用の文字列。ルビのある語はルビ（読み）で読み、ほかの装飾は取り除く。
+static func to_speech(body: String, state: AdvState) -> String:
+	var re := RegEx.create_from_string("\\[ruby=([^\\]]*)\\][^\\[]*\\[/ruby\\]")
+	var s := re.sub(body, "$1", true)
+	return to_plain(s, state, null)
+
+
 ## 装飾を取り除いた文字列（メッセージログや読み上げ用）。
 static func to_plain(body: String, state: AdvState, tpl: AdvTemplate) -> String:
 	_init_re()

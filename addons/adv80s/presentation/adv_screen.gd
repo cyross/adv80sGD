@@ -3,6 +3,7 @@ extends Control
 ## 画面（表示層）。元の解像度で作り、テンプレートの区割りに従って、画像の層、メッセージの窓、
 ## コマンドの窓、入力欄を置く。切り替え演出と画面効果もここで行う（フィルターは AdvDisplay がかける）。
 
+const READABLE_FONTS := ["BIZ UDGothic", "BIZ UDPGothic", "Meiryo", "Hiragino Sans", "Noto Sans CJK JP", "sans-serif"]
 const FALLBACK_FONTS := ["MS Gothic", "ＭＳ ゴシック", "Osaka-Mono", "Noto Sans Mono CJK JP",
 	"Noto Sans CJK JP", "IPAGothic", "VL Gothic", "monospace"]
 
@@ -13,6 +14,8 @@ var message_label: RichTextLabel
 var wait_mark: Label
 var command_select: AdvCommandSelect
 var command_line: AdvCommandLine
+var hotspot_layer: AdvHotspotLayer
+var readable: bool = false           ## 読みやすいフォントを使う（モダン機能 readable_font）
 ## 素材IDからパスを引く関数（フォントやマスク画像に使う）。func(kind, id) -> String
 var resolver: Callable
 
@@ -59,6 +62,10 @@ func build(template: AdvTemplate) -> void:
 		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		picture.add_child(l)
 		layers[String(layer_name)] = l
+	hotspot_layer = AdvHotspotLayer.new()
+	hotspot_layer.name = "Hotspots"
+	hotspot_layer.tpl = tpl
+	picture.add_child(hotspot_layer)
 
 	_msg_win = _window("MessageWindow")
 	message_label = RichTextLabel.new()
@@ -91,9 +98,17 @@ func build(template: AdvTemplate) -> void:
 	apply_layout()
 
 
+## 読みやすいフォントに切り替える。
+func set_readable(on: bool) -> void:
+	readable = on
+	theme = _make_theme()
+
+
 ## 区割りを今のレイアウトに合わせて置き直す（layout.set で切り替えたときにも呼ぶ）。
 func apply_layout() -> void:
 	_place(picture, tpl.region_rect("picture"))
+	if hotspot_layer != null:
+		hotspot_layer.size = picture.size
 	for l in layers.values():
 		l.size = picture.size
 		for g in l.get_children():
@@ -158,7 +173,8 @@ func _window(node_name: String) -> Panel:
 ## テンプレートの fonts.main。素材が見つからなければ、OSのフォントを使う。
 ## 行の高さは fonts.main.line_height（省略時は文字の大きさ）にそろえる。当時の画面のように、16ドットの文字なら16行ごとに並ぶ。
 func _main_font() -> Font:
-	var main: Dictionary = tpl.get_section("fonts").get("main", {})
+	var fonts := tpl.get_section("fonts")
+	var main: Dictionary = fonts.get("readable" if readable and fonts.has("readable") else "main", {})
 	var fsize := int(main.get("size", 16))
 	var font: Font = null
 	var asset := String(main.get("asset", ""))
@@ -168,10 +184,15 @@ func _main_font() -> Font:
 			font = load(path) as Font
 	if font == null:
 		var sf := SystemFont.new()
-		sf.font_names = PackedStringArray(FALLBACK_FONTS)
-		sf.antialiasing = TextServer.FONT_ANTIALIASING_NONE
-		sf.hinting = TextServer.HINTING_NONE
-		sf.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+		if readable:
+			# 読みやすいフォント：なめらかに描く
+			sf.font_names = PackedStringArray(READABLE_FONTS)
+			sf.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
+		else:
+			sf.font_names = PackedStringArray(FALLBACK_FONTS)
+			sf.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+			sf.hinting = TextServer.HINTING_NONE
+			sf.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
 		font = sf
 	var line_h := int(main.get("line_height", fsize))
 	var extra := int(round(font.get_height(fsize))) - line_h

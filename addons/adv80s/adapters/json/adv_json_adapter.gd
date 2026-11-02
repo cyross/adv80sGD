@@ -32,12 +32,16 @@ var variables: Dictionary = {}
 var start_scene: String = ""
 var intent_schema_layer: Variant = null
 var event_defaults: Dictionary = {}
+var flow: Dictionary = {"nodes": [], "edges": []}   ## フローチャートの構造（"flow": {nodes, edges}）
+var chapters: Array = []                             ## チャプター（"chapters": [{id, label, node}]）
 var asset_roots: PackedStringArray = []   ## シナリオが持つ素材フォルダ（"assets": {"root": …}）
 var files: PackedStringArray = []
 var sources: Dictionary = {}              ## ファイル → 読み込んだJSON（validate で使う）
 var diags: Array[Dictionary] = []
 
 const MAX_STEPS := 100000
+## 「.」を含まない出力イベントの名前（短い書き方 {"checkpoint": {…}} で使える）
+const _DOTLESS_EVENTS := ["checkpoint", "wait", "group"]
 
 # 1回の処理（start や handle_intent）の間だけ使う作業用の値
 var _scratch: AdvState      ## 下書きの状態。出したイベントをここにも適用して、続く条件の評価に使う
@@ -79,6 +83,11 @@ func _merge_source(d: Dictionary, path: String) -> void:
 			_put(table, id, src[id], path, "/%s/%s" % [key, id])
 	if d.has("start"):
 		start_scene = String(d["start"])
+	if d.get("flow") is Dictionary:
+		flow["nodes"].append_array(d["flow"].get("nodes", []))
+		flow["edges"].append_array(d["flow"].get("edges", []))
+	if d.get("chapters") is Array:
+		chapters.append_array(d["chapters"])
 	if d.has("event_defaults"):
 		event_defaults = AdvJson.merge(event_defaults, d["event_defaults"])
 	if d.get("assets") is Dictionary and d["assets"].has("root"):
@@ -308,7 +317,7 @@ func _exec_dict(d: Dictionary, path: String) -> void:
 	if d.has("type"):
 		_emit(d.duplicate(true))
 		return
-	if d.size() == 1 and String(d.keys()[0]).contains("."):
+	if d.size() == 1 and (String(d.keys()[0]).contains(".") or String(d.keys()[0]) in _DOTLESS_EVENTS):
 		var type := String(d.keys()[0])
 		var args = d[type]
 		_emit(AdvEvents.make(type, args.duplicate(true) if args is Dictionary else {}))
@@ -472,13 +481,21 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 			for id in scenes.get(ctx.state.scene, {}).get("objects", {}):
 				var obj = scenes[ctx.state.scene]["objects"][id]
 				if obj is Dictionary and obj.has("region") and ctx.eval(obj.get("when", true)):
-					list.append({"id": id, "rect": obj["region"]})
+					var is_char: bool = obj.has("character")
+					var target := String(obj["character"]) if is_char else String(id)
+					list.append({"id": id, "target": target, "type": "character" if is_char else "object",
+						"label": _object_label(String(id), obj), "region": obj["region"], "rect": obj["region"]})
 			return list
+		"flow_structure":
+			return flow if not flow["nodes"].is_empty() else null
+		"chapters_structure":
+			return chapters if not chapters.is_empty() else null
 		"topics":
 			var list := []
 			for t in topics.get(String(args.get("target", "")), []):
 				if ctx.eval(t.get("when", true)):
-					list.append({"type": "topic", "id": t["id"], "label": t.get("label", t["id"])})
+					list.append({"type": "topic", "id": t["id"], "label": t.get("label", t["id"]),
+						"new": not ctx.state.talked.has(String(t.get("dialogue", "")))})
 			return list
 		"nouns":
 			return _all_names()
@@ -536,6 +553,17 @@ func _targets() -> Array:
 		names.append_array(ctx.dictionary.noun_names(id))
 		list.append({"type": "item", "id": id, "label": item_label(id), "names": names})
 	return list
+
+
+func _object_label(id: String, obj: Dictionary) -> String:
+	if obj.has("label"):
+		return String(obj["label"])
+	if obj.has("character"):
+		var c = characters.get(String(obj["character"]), {})
+		if c is Dictionary and c.has("name"):
+			return String(c["name"])
+	var names: Array = obj.get("names", [])
+	return String(names[0]) if not names.is_empty() else id
 
 
 ## シナリオ全体に出てくる呼び名（いまは指せないものも含む）。
@@ -771,7 +799,7 @@ func _walk_step(step: Variant, jp: String, f: String, in_dialogue: bool) -> void
 			type = String(d["type"])
 			args = d.get("args", {})
 			ap = jp + "/args"
-		elif d.size() == 1 and String(d.keys()[0]).contains("."):
+		elif d.size() == 1 and (String(d.keys()[0]).contains(".") or String(d.keys()[0]) in _DOTLESS_EVENTS):
 			type = String(d.keys()[0])
 			args = d[type]
 			ap = "%s/%s" % [jp, _ptr(type)]

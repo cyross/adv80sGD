@@ -517,6 +517,106 @@
       "additionalProperties": false,
       "description": "Asset folder of this scenario"
     },
+    "flow": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "chapter": {
+                "type": "string"
+              },
+              "ext": {
+                "type": "object",
+                "description": "Extension area. Free-form"
+              }
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x\\.": {
+                "description": "Custom property (x.name)"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "to"
+            ]
+          }
+        },
+        "ext": {
+          "type": "object",
+          "description": "Extension area. Free-form"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x\\.": {
+          "description": "Custom property (x.name)"
+        }
+      },
+      "description": "Flowchart structure. Reaching a node is recorded with flow.mark"
+    },
+    "chapters": {
+      "type": "array",
+      "description": "Chapters (node is a flowchart node; unlocked when reached)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "unlocked": {
+            "type": "boolean"
+          },
+          "ext": {
+            "type": "object",
+            "description": "Extension area. Free-form"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "Custom property (x.name)"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ]
+      }
+    },
     "ext": {
       "type": "object",
       "description": "Extension area. Free-form"
@@ -863,6 +963,17 @@
         {
           "type": "object",
           "description": "Output event shorthand ({\"image.show\": {...}})",
+          "properties": {
+            "checkpoint": {
+              "type": "object"
+            },
+            "wait": {
+              "type": "object"
+            },
+            "group": {
+              "type": "object"
+            }
+          },
           "patternProperties": {
             "^(x\\.)?[a-z_]+\\.[a-z_]+$": {
               "type": "object"

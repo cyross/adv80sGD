@@ -10,6 +10,7 @@ extends Control
 ##   F2  オート送りの切り替え                   F3  スキップの切り替え
 ##   F4・ホイール上  メッセージログ             F5  クイックセーブ   F9  クイックロード
 ##   Esc  セーブ・ロードの画面（開いている画面は閉じる）
+##   F1・右クリック・ゲームパッドの Start  メニュー   F6  調べられる場所の表示の切り替え
 
 signal game_ended
 signal idle                     ## 出力イベントを実行し終えて、入力を待つ状態になった
@@ -30,6 +31,8 @@ signal loaded(slot: String)
 @export var auto_click: bool = false
 ## プレイヤー設定のファイル（空なら保存しない）
 @export var settings_path: String = AdvSettings.PATH
+## 全プレイ共通の進行の記録のファイル（空なら保存しない）
+@export var progress_path: String = AdvProgress.PATH
 
 var project: AdvProject
 var core: AdvCore
@@ -40,6 +43,8 @@ var features: AdvFeatures
 var settings: AdvSettings
 var message_log: AdvMessageLog = AdvMessageLog.new()
 var key_provider: AdvKeyProvider
+var progress: AdvProgress
+var modern: AdvModernUI
 
 var busy: bool = false
 var ended: bool = false
@@ -53,14 +58,20 @@ var _scene_transition: Variant = null  ## scene.goto の transition（次の背�
 var _last_text: Dictionary = {}        ## 最後に表示した文章 {body, name}（ロードで表示し直す）
 var _overlay: Control = null           ## 開いているログ画面やセーブ画面
 var _autosave_pending: bool = false
+var _flow_pending: PackedStringArray = []  ## flow.mark で到達した点（ひとまとまり実行し終えたら記録する）
+var _history: Array = []                   ## 巻き戻し用の記録 [{data, log_size}]
+var _show_all_hotspots: bool = false
 
 
 func _ready() -> void:
 	var diags: Array = []
 	project = AdvProject.load_project(project_path, diags)
 	settings = AdvSettings.load_settings(settings_path) if settings_path != "" else AdvSettings.new()
+	progress = AdvProgress.load_progress(progress_path)
+	modern = AdvModernUI.new(self)
 	core = AdvCore.new()
 	core.setup(project.core_config())
+	core.progress = progress
 	core.assets.folders = project.asset_folders()
 
 	AdvVisuals.load_custom(project.get_value("effects", []), diags)
@@ -125,6 +136,9 @@ func _build_screen() -> void:
 		screen.command_select.intent_selected.connect(submit_intent)
 	if screen.command_line != null:
 		screen.command_line.command_entered.connect(submit_text)
+	screen.hotspot_layer.hotspot_clicked.connect(_on_hotspot_clicked)
+	if features.is_on("readable_font") and template.get_section("fonts").has("readable"):
+		screen.set_readable(true)
 
 
 ## 画面テンプレートを切り替える（旧表示と新表示の切り替えなど）。状態はそのままで、画面を作り直す。
@@ -183,6 +197,38 @@ func _save_settings() -> void:
 		settings.save(settings_path)
 
 
+func save_settings() -> void:
+	_save_settings()
+
+
+## モダン機能を実行時に切り替える（プロジェクトで禁止したものは変えられない）。
+func set_feature(key: String, on: bool) -> void:
+	if not features.allowed.get(key, true):
+		return
+	var f: Dictionary = settings.get_value("features", {})
+	f[key] = on
+	settings.set_value("features", f)
+	_save_settings()
+	_resolve_features()
+	match key:
+		"readable_font":
+			screen.set_readable(features.is_on("readable_font"))
+		"tts":
+			if not features.is_on("tts") and _tts_available():
+				DisplayServer.tts_stop()
+	if not busy:
+		_enter_idle()
+
+
+## 登録したテンプレート（プロジェクト設定 templates）を順に切り替える（旧表示と新表示の切り替え）。
+func cycle_template() -> void:
+	var list: Array = project.get_value("templates", [])
+	if list.size() < 2:
+		return
+	var i := list.find(template.id)
+	await switch_template(String(list[(i + 1) % list.size()]))
+
+
 func _named_transitions() -> Dictionary:
 	return project.get_value("transitions", {}).get("named", {})
 
@@ -208,9 +254,11 @@ static func _tts_available() -> bool:
 func submit_intent(intent: Dictionary) -> void:
 	if busy or ended or _overlay != null:
 		return
+	_push_history()
 	var label := String(intent.get("ext", {}).get("label", ""))
 	if label != "":
 		message_log.add_input(label)
+		message_log.entries.back()["rewind"] = _history.size() - 1
 	_run(core.submit(intent))
 
 
@@ -220,7 +268,9 @@ func submit_text(text: String) -> void:
 		return
 	if core.query("pending_choice") != null:
 		return
+	_push_history()
 	message_log.add_input(text)
+	message_log.entries.back()["rewind"] = _history.size() - 1
 	var r := AdvParserJa.parse(text, core)
 	if r.has("reply"):
 		_run([AdvEvents.text(String(r["reply"]))])
@@ -243,12 +293,21 @@ func _run(events: Array) -> void:
 	if _autosave_pending:
 		_autosave_pending = false
 		autosave()
+	if not _flow_pending.is_empty():
+		var snap := _make_save_data()
+		for node in _flow_pending:
+			progress.mark_reached(node, snap)
+		_flow_pending.clear()
+	progress.merge_read(core.state.read)
+	if progress_path != "":
+		progress.save()
 	_enter_idle()
 
 
 ## 入力を待つ状態にする。選択肢を出しているときは、選択肢だけを選べるようにする。
 func _enter_idle() -> void:
 	var choice = core.query("pending_choice")
+	_apply_input_modes()
 	_set_inputs_enabled(true)
 	if choice is Dictionary:
 		if screen.command_select != null:
@@ -258,9 +317,49 @@ func _enter_idle() -> void:
 	else:
 		if screen.command_select != null:
 			screen.command_select.refresh(core)
-		if screen.command_line != null and not auto_click:
+		if screen.command_line != null and screen.command_line.visible and not auto_click:
 			screen.command_line.grab_focus()
+	_refresh_hotspots()
 	idle.emit()
+
+
+## 入力UIの切り替え（テンプレートの inputs.enabled、出力イベント input.mode）。
+func _apply_input_modes() -> void:
+	var modes = core.state.ui.get("input_modes")
+	if not modes is Array:
+		modes = template.get_section("inputs").get("enabled", ["select", "parser"])
+	if screen.command_line != null:
+		screen.command_line.visible = "parser" in modes and template.region_rect("input").size != Vector2i.ZERO
+	if screen.command_select != null:
+		screen.command_select.get_parent().visible = ("select" in modes or "icon" in modes) and template.region_rect("commands").size != Vector2i.ZERO
+		screen.command_select.icons = "icon" in modes
+		screen.command_select.show_tried = features.is_on("tried_marks")
+	var click: bool = "click" in modes
+	screen.hotspot_layer.mouse_filter = Control.MOUSE_FILTER_STOP if click or features.is_on("hotspot") else Control.MOUSE_FILTER_IGNORE
+	screen.hotspot_layer.set_meta("click", click)
+
+
+func _refresh_hotspots() -> void:
+	var hs = core.query("hotspots")
+	var layer := screen.hotspot_layer
+	layer.set_hotspots(hs if hs is Array else [])
+	layer.show_hover = features.is_on("hotspot")
+	layer.show_all = _show_all_hotspots and features.is_on("hotspot")
+	layer.show_new = features.is_on("tried_marks")
+	layer.queue_redraw()
+
+
+## 画面選択：コマンド選択で対象を選んでいる途中ならその対象に、そうでなければ既定の動詞で調べる。
+func _on_hotspot_clicked(h: Dictionary) -> void:
+	if busy or _overlay != null or not bool(screen.hotspot_layer.get_meta("click", false)):
+		return
+	var t := {"type": String(h.get("type", "object")), "id": String(h.get("target", h["id"])), "label": String(h.get("label", h["id"]))}
+	if screen.command_select != null and screen.command_select.is_picking():
+		screen.command_select.pick_target(t)
+		return
+	var verb := String(template.get_section("inputs").get("click_verb", "EXAMINE"))
+	submit_intent({"verb": verb, "slots": {"target": {"type": t["type"], "id": t["id"]}}, "source": "click",
+		"ext": {"label": "%s %s" % [t["label"], core.dictionary.verb_label(verb)]}})
 
 
 func _set_inputs_enabled(on: bool) -> void:
@@ -290,6 +389,8 @@ func _play(ev: Dictionary) -> void:
 			_last_text = {"body": raw, "name": who}
 			message_log.add_text(AdvTextMarkup.to_plain(raw, core.state, template), who, String(ev.get("id", "")), String(args.get("voice", "")))
 			screen.show_text(AdvTextMarkup.to_bbcode(raw, core.state, template), who, skipping)
+			if features.is_on("tts") and not skipping:
+				_speak(raw, who)
 			if skipping and wait is String and wait == "click":
 				wait = "none"
 		"text.clear":
@@ -337,9 +438,13 @@ func _play(ev: Dictionary) -> void:
 			if features.is_on("autosave") and "scene" in _autosave_on():
 				_autosave_pending = true
 			wait = "none"
+		"flow.mark":
+			_flow_pending.append(String(args.get("node", "")))
 		"checkpoint":
 			if features.is_on("autosave") and bool(args.get("autosave", true)) and "checkpoint" in _autosave_on():
 				_autosave_pending = true
+		"notebook.add", "objective.set", "hint.set", "verbs.update", "hotspots.update", "input.mode":
+			pass  # 状態は Core が記録する。表示は入力待ちになったときに更新する
 		"choice.show":
 			var prompt := String(args.get("prompt", ""))
 			if prompt != "":
@@ -365,7 +470,7 @@ func _play(ev: Dictionary) -> void:
 			ended = true
 			return
 		_:
-			if not AdvEvents.is_state_event(ev) and not type in ["wait", "voice.play"]:
+			if not AdvEvents.is_state_event(ev) and not type in ["wait", "voice.play", "flow.mark"]:
 				AdvDiag.debug_warn("UNSUPPORTED", "まだ実行できない出力イベントです: %s" % type,
 					"Output event not supported yet: %s" % type)
 	if skipping and type == "wait":
@@ -470,12 +575,28 @@ func _input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				if not busy:
 					open_save_menu("save")
+			KEY_F1:
+				modern.open_system_menu()
+			KEY_F6:
+				_show_all_hotspots = not _show_all_hotspots
+				_refresh_hotspots()
 			_:
 				pass
-		if event.keycode in [KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F9, KEY_ESCAPE]:
+		if event.keycode in [KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6, KEY_F9, KEY_ESCAPE]:
 			get_viewport().set_input_as_handled()
 			return
+	if event is InputEventJoypadButton and event.pressed:
+		if event.button_index == JOY_BUTTON_START:
+			modern.open_system_menu()
+			get_viewport().set_input_as_handled()
+			return
+		# ゲームパッドで操作し始めたら、入力欄からコマンドの一覧へ移る
+		if not busy and screen.command_line != null and screen.command_line.has_focus() and screen.command_select != null:
+			screen.command_select.focus_first()
 	if not busy:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+			modern.open_system_menu()
+			get_viewport().set_input_as_handled()
 		return
 	var pressed := false
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -501,11 +622,15 @@ func open_log() -> void:
 	if _overlay != null or not features.is_on("message_log"):
 		return
 	var v := AdvLogView.new()
-	v.open(message_log, template, Vector2(template.screen_size))
-	await _show_overlay(v)
+	v.open(message_log, template, Vector2(template.screen_size), features.is_on("rewind") and not busy)
+	v.rewind_requested.connect(func(i: int): v.close(); rewind_to(i))
+	await show_overlay(v)
 
 
-func _show_overlay(c: Control) -> void:
+## 画面全体に重ねる画面（ログ、セーブ、メニューなど）を出し、閉じるまで待つ。
+func show_overlay(c: Control) -> void:
+	if _overlay != null:
+		_overlay.call("close")
 	_overlay = c
 	screen.add_child(c)
 	await c.closed
@@ -526,7 +651,7 @@ func open_save_menu(mode: String = "save") -> void:
 		else:
 			load_game(slot)
 		m.close())
-	await _show_overlay(m)
+	await show_overlay(m)
 
 
 func _save_cfg() -> Dictionary:
@@ -576,21 +701,27 @@ func _read_slot(slot: String) -> Dictionary:
 	return {"ok": false, "error": AdvSave.ERR_IO, "data": {}}
 
 
-## セーブする。実行中（busy）は、選択肢の入力待ちのときだけセーブできる。
-func save_game(slot: String) -> Error:
-	var cfg := _save_cfg()
-	var data := {
+## セーブするデータ（巻き戻しとフローチャートの記録にも同じ形を使う）。
+func _make_save_data() -> Dictionary:
+	var sc = core.query("scene")
+	return {
 		"save_version": 1,
 		"meta": {
 			"time": int(Time.get_unix_time_from_system()),
 			"scene": core.state.scene,
-			"scene_name": String((core.query("scene") if core.query("scene") is Dictionary else {}).get("name", "")),
+			"scene_name": String(sc.get("name", "")) if sc is Dictionary else "",
 		},
 		"core": core.save_state(),
 		"log": message_log.to_array(),
 		"view": {"template": template.id, "layout": template._layout_name, "images": _images.duplicate(true),
 			"text": _last_text.duplicate()},
 	}
+
+
+## セーブする。実行中（busy）は、選択肢の入力待ちのときだけセーブできる。
+func save_game(slot: String) -> Error:
+	var cfg := _save_cfg()
+	var data := _make_save_data()
 	var bytes: PackedByteArray
 	if _text_allowed() and bool(cfg.get("text_format", false)):
 		bytes = AdvSave.encode_text(data)
@@ -629,7 +760,14 @@ func load_game(slot: String) -> String:
 		return String(res["error"])
 	if res.get("warning", "") != "":
 		push_warning("[adv80s] セーブデータの署名が一致しません（改ざんの疑い）。設定に従って読み込みます: %s" % slot)
-	var data: Dictionary = res["data"]
+	_history.clear()
+	await _apply_save_data(res["data"])
+	loaded.emit(slot)
+	return ""
+
+
+## セーブと同じ形のデータから、状態と画面を戻す。
+func _apply_save_data(data: Dictionary) -> void:
 	core.load_state(data.get("core", {}))
 	message_log.from_array(data.get("log", []))
 	var view: Dictionary = data.get("view", {})
@@ -643,8 +781,65 @@ func load_game(slot: String) -> String:
 	_redraw_view()
 	ended = false
 	_enter_idle()
-	loaded.emit(slot)
-	return ""
+
+
+# ---------------------------------------------------------------- 巻き戻し、フローチャート、読み上げ
+
+## 入力を送る直前の状態を残す（モダン機能 rewind）。
+func _push_history() -> void:
+	if not features.is_on("rewind"):
+		return
+	_history.append({"data": _make_save_data(), "log_size": message_log.entries.size()})
+	var max_steps := int(features.options.get("rewind", {}).get("max_steps", 100))
+	while _history.size() > max_steps:
+		_history.pop_front()
+		for e in message_log.entries:
+			if e.has("rewind"):
+				e["rewind"] = int(e["rewind"]) - 1
+
+
+func can_rewind() -> bool:
+	return features.is_on("rewind") and not _history.is_empty()
+
+
+## steps 回分の入力の前まで戻す。
+func rewind(steps: int = 1) -> void:
+	if busy or _history.is_empty():
+		return
+	rewind_to(maxi(0, _history.size() - steps))
+
+
+## 記録の index 番目（その入力を送る直前）まで戻す。
+func rewind_to(index: int) -> void:
+	if busy or index < 0 or index >= _history.size():
+		return
+	var h: Dictionary = _history[index]
+	_history.resize(index)
+	await _apply_save_data(h["data"])
+
+
+## フローチャートやチャプター選択で、到達した点から再開する。
+func jump_to_node(node: String) -> void:
+	if busy or not progress.snapshots.has(node):
+		return
+	_history.clear()
+	await _apply_save_data(progress.snapshots[node])
+
+
+## 文章を読み上げる（モダン機能 tts）。ルビのある語はルビで読む。
+func _speak(body: String, speaker_name: String) -> void:
+	if not _tts_available():
+		return
+	var voices := DisplayServer.tts_get_voices_for_language(String(project.get_value("lang", "ja")))
+	if voices.is_empty():
+		voices = DisplayServer.tts_get_voices().map(func(v): return v["id"])
+	if voices.is_empty():
+		return
+	var text := AdvTextMarkup.to_speech(body, core.state)
+	if speaker_name != "":
+		text = speaker_name + "。" + text
+	DisplayServer.tts_stop()
+	DisplayServer.tts_speak(text, String(voices[0]))
 
 
 ## プロジェクト設定 save.key_provider に従って鍵を用意する。

@@ -3,7 +3,8 @@ extends RefCounted
 ## 出力イベント（5.4）の補助。イベントの形：{type, args, wait, id, log, ext}
 
 ## 状態を変えるイベント（Core が適用する）。
-const STATE_TYPES := ["state.set", "item.add", "item.remove", "scene.goto", "state.mark"]
+const STATE_TYPES := ["state.set", "item.add", "item.remove", "scene.goto", "state.mark",
+	"notebook.add", "objective.set", "hint.set", "flow.mark", "verbs.update", "hotspots.update", "input.mode"]
 
 
 static func make(type: String, args: Dictionary = {}, wait: Variant = null) -> Dictionary:

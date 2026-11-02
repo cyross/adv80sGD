@@ -13,6 +13,13 @@ var read: Dictionary = {}        ## 読んだ行（行ID → true）
 var chosen: Dictionary = {}      ## 選んだ選択肢（"選択肢ID/項目ID" → true）
 var tried: Dictionary = {}       ## 試したコマンド（"動詞:対象" → true）
 
+# モダン機能の記録（出力イベントで Core が更新する）
+var notebook: Dictionary = {}    ## 手帳（ID → {category, title, body, order}）
+var objective: Dictionary = {}   ## 目的 {id, text}。空なら目的なし
+var hints: Dictionary = {}       ## ヒント（話題 → {hints: [段階の文…], revealed: 見た段階の数}）
+var flow: Dictionary = {}        ## フローチャートで到達した点（点ID → true）
+var ui: Dictionary = {}          ## 入力UIの上書き {verbs: [動詞ID…] | null, hidden: {物ID: true}, input_modes: [...] | null}
+
 ## 宣言された変数（名前 → {type, default}）。未定義の変数の判定に使う。
 var declared: Dictionary = {}
 
@@ -75,7 +82,93 @@ func apply_event(ev: Dictionary) -> bool:
 		"state.mark":
 			_apply_mark(args)
 			return true
+		"notebook.add":
+			var id := String(args.get("id", args.get("title", "")))
+			var order: int = notebook[id]["order"] if notebook.has(id) else notebook.size()
+			notebook[id] = {"category": String(args.get("category", "")), "title": String(args.get("title", id)),
+				"body": String(args.get("body", "")), "order": order}
+			return true
+		"objective.set":
+			var text := String(args.get("text", ""))
+			objective = {} if text == "" else {"id": String(args.get("id", "")), "text": text}
+			return true
+		"hint.set":
+			var topic := String(args.get("topic", ""))
+			var list: Array = args.get("hints", [])
+			if list.is_empty():
+				hints.erase(topic)
+			else:
+				# 同じ内容ならそのまま。内容が変わったら（謎が進んだら）最初の段階からにする
+				var old: Dictionary = hints.get(topic, {})
+				var revealed: int = int(old.get("revealed", 0)) if old.get("hints", []) == list else 0
+				hints[topic] = {"hints": list.duplicate(), "revealed": revealed}
+			return true
+		"flow.mark":
+			flow[String(args.get("node", ""))] = true
+			return true
+		"verbs.update":
+			_apply_list_update("verbs", args.get("verbs", []), String(args.get("mode", "replace")))
+			return true
+		"hotspots.update":
+			var mode := String(args.get("mode", "replace"))
+			var hidden: Dictionary = ui.get("hidden", {})
+			var objs: Array = args.get("objects", [])
+			match mode:
+				"remove":
+					for o in objs:
+						hidden[String(o)] = true
+				"add":
+					for o in objs:
+						hidden.erase(String(o))
+				_:
+					ui["shown"] = objs.duplicate()
+					hidden.clear()
+			ui["hidden"] = hidden
+			return true
+		"input.mode":
+			var en = args.get("enable", null)
+			ui["input_modes"] = en.duplicate() if en is Array else null
+			return true
 	return false
+
+
+## verbs.update：replace は一覧を置き換え、add と remove は足し引きする。
+func _apply_list_update(key: String, list: Array, mode: String) -> void:
+	var added: Array = ui.get(key + "_added", [])
+	var removed: Array = ui.get(key + "_removed", [])
+	match mode:
+		"add":
+			for v in list:
+				removed.erase(v)
+				if ui.get(key) is Array:
+					if not v in ui[key]:
+						ui[key].append(v)
+				elif not v in added:
+					added.append(v)
+		"remove":
+			for v in list:
+				added.erase(v)
+				if ui.get(key) is Array:
+					ui[key].erase(v)
+				elif not v in removed:
+					removed.append(v)
+		_:
+			ui[key] = list.duplicate()
+			added = []
+			removed = []
+	ui[key + "_added"] = added
+	ui[key + "_removed"] = removed
+
+
+## ヒントを1段階進める。進めたら true。
+func reveal_hint(topic: String) -> bool:
+	if not hints.has(topic):
+		return false
+	var h: Dictionary = hints[topic]
+	if int(h["revealed"]) >= h["hints"].size():
+		return false
+	h["revealed"] = int(h["revealed"]) + 1
+	return true
 
 
 func _apply_set(args: Dictionary) -> void:
@@ -147,6 +240,11 @@ func to_dict() -> Dictionary:
 		"read": read.duplicate(),
 		"chosen": chosen.duplicate(),
 		"tried": tried.duplicate(),
+		"notebook": notebook.duplicate(true),
+		"objective": objective.duplicate(),
+		"hints": hints.duplicate(true),
+		"flow": flow.duplicate(),
+		"ui": ui.duplicate(true),
 	}
 
 
@@ -159,3 +257,8 @@ func from_dict(d: Dictionary) -> void:
 	read = d.get("read", {}).duplicate()
 	chosen = d.get("chosen", {}).duplicate()
 	tried = d.get("tried", {}).duplicate()
+	notebook = d.get("notebook", {}).duplicate(true)
+	objective = d.get("objective", {}).duplicate()
+	hints = d.get("hints", {}).duplicate(true)
+	flow = d.get("flow", {}).duplicate()
+	ui = d.get("ui", {}).duplicate(true)

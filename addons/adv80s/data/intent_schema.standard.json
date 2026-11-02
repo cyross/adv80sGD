@@ -17,6 +17,16 @@
                             { "name": "with",   "type": "item",   "particles": ["で"], "required": false } ] },
     "CLOSE":   { "slots": [ { "name": "target", "type": "object", "particles": ["を"] } ] },
     "ITEMS":   { "slots": [] },
-    "CHOOSE":  { "slots": [ { "name": "target", "type": "choice" } ] }
+    "CHOOSE":  { "slots": [ { "name": "target", "type": "choice" } ] },
+    "GIVE":    { "slots": [ { "name": "with",   "type": "item",      "particles": ["を"] },
+                            { "name": "target", "type": "character", "particles": ["に", "へ"] } ] },
+    "SHOW":    { "slots": [ { "name": "with",   "type": "item",      "particles": ["を"] },
+                            { "name": "target", "type": "character", "particles": ["に", "へ"] } ] },
+    "PUSH":    { "slots": [ { "name": "target", "type": "object", "particles": ["を"] } ] },
+    "PULL":    { "slots": [ { "name": "target", "type": "object", "particles": ["を"] } ] },
+    "HIT":     { "slots": [ { "name": "target", "type": "object", "particles": ["を"] } ] },
+    "CALL":    { "slots": [ { "name": "target", "type": "character", "particles": ["を"] } ] },
+    "THINK":   { "slots": [] },
+    "WAIT":    { "slots": [] }
   }
 }

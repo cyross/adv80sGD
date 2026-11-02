@@ -12,6 +12,7 @@ extends RefCounted
 ##   "asset_folders": { "bg": "image", ... },   // 種類フォルダの対応表への追加・変更（null で削除）
 ##   "missing_asset": "placeholder",             // placeholder / error
 ##   "lang": "ja",
+##   "verbs": ["GIVE", "SHOW"],                  // 標準で使う動詞に足す拡張の動詞（4.4）
 ##   "dictionaries": [], "slot_mode": "named", "intent_schema": { "entry", "layers" },
 ##   "event_defaults": { "text.show": { "wait": "click" } },
 ##   "features": { "hint": { "allow": true, "default": false, "options": {} } },
@@ -69,7 +70,7 @@ func asset_folders() -> Dictionary:
 ## Core の setup に渡す設定。
 func core_config() -> Dictionary:
 	var cfg := {}
-	for key in ["lang", "dictionaries", "slot_mode", "intent_schema", "event_defaults", "missing_asset", "seed"]:
+	for key in ["lang", "dictionaries", "slot_mode", "intent_schema", "event_defaults", "missing_asset", "seed", "verbs"]:
 		if data.has(key):
 			cfg[key] = data[key]
 	return cfg

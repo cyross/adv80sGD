@@ -65,6 +65,32 @@
       "name": "ろうか",
       "image": "hallway",
       "first": [
+        {
+          "flow.mark": {
+            "node": "start"
+          }
+        },
+        {
+          "objective.set": {
+            "id": "escape",
+            "text": "ここから でる ほうほうを さがす"
+          }
+        },
+        {
+          "hint.set": {
+            "topic": "door",
+            "hints": [
+              "ドアには かぎが かかっている。",
+              "かぎは ちかくに かくされているかも。",
+              "うえきばちを しらべてみよう。"
+            ]
+          }
+        },
+        {
+          "checkpoint": {
+            "id": "start"
+          }
+        },
         "うすぐらい ろうかに いる。",
         "おくに ふるびた ドアが ある。 あしもとには うえきばちが おいてある。"
       ],
@@ -153,18 +179,48 @@
                   "item.add": {
                     "id": "key"
                   }
+                },
+                {
+                  "notebook.add": {
+                    "id": "key",
+                    "category": "もちもの",
+                    "title": "ふるい かぎ",
+                    "body": "うえきばちの したで みつけた しんちゅうの かぎ。"
+                  }
+                },
+                {
+                  "hint.set": {
+                    "topic": "door",
+                    "hints": [
+                      "かぎを ドアに つかってみよう。"
+                    ]
+                  }
                 }
               ]
             },
             "TAKE": "おもくて もてない。"
           }
         }
+      },
+      "on": {
+        "THINK": "うえきばちが きになる。"
       }
     },
     "room": {
       "name": "へや",
       "image": "room",
       "first": [
+        {
+          "flow.mark": {
+            "node": "room"
+          }
+        },
+        {
+          "objective.set": {
+            "id": "talk",
+            "text": "しょうじょと はなす"
+          }
+        },
         "ほこりっぽい へやだ。 まどべに しょうじょが たっている。"
       ],
       "enter": "へやに はいった。",
@@ -189,7 +245,8 @@
             "LOOK": "ながい かみの しょうじょだ。 こちらを じっと みている。",
             "TALK": {
               "dialogue": "ayumi_first"
-            }
+            },
+            "GIVE+key": "@ayumi これは……！ どこで みつけたの？"
           }
         }
       }
@@ -215,6 +272,24 @@
                 {
                   "set": {
                     "met_ayumi": true
+                  }
+                },
+                {
+                  "flow.mark": {
+                    "node": "met"
+                  }
+                },
+                {
+                  "notebook.add": {
+                    "id": "ayumi",
+                    "category": "じんぶつ",
+                    "title": "あゆみ",
+                    "body": "へやに いた しょうじょ。 ここから でたがっている。"
+                  }
+                },
+                {
+                  "objective.set": {
+                    "text": ""
                   }
                 }
               ]
@@ -261,5 +336,46 @@
         "when": "met_ayumi"
       }
     ]
-  }
+  },
+  "flow": {
+    "nodes": [
+      {
+        "id": "start",
+        "label": "ろうか",
+        "chapter": "ch1"
+      },
+      {
+        "id": "room",
+        "label": "へや",
+        "chapter": "ch2"
+      },
+      {
+        "id": "met",
+        "label": "あゆみと であう",
+        "chapter": "ch2"
+      }
+    ],
+    "edges": [
+      {
+        "from": "start",
+        "to": "room"
+      },
+      {
+        "from": "room",
+        "to": "met"
+      }
+    ]
+  },
+  "chapters": [
+    {
+      "id": "ch1",
+      "label": "だい1しょう ろうか",
+      "node": "start"
+    },
+    {
+      "id": "ch2",
+      "label": "だい2しょう へや",
+      "node": "room"
+    }
+  ]
 }

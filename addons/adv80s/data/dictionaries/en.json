@@ -1,28 +1,194 @@
 {
   "dictionary_version": 1,
   "lang": "en",
-  "normalize": { "kana": false, "width": true },
-  "particles": ["with", "on", "to", "at", "in", "about"],
+  "normalize": {
+    "kana": false,
+    "width": true
+  },
+  "particles": [
+    "with",
+    "on",
+    "to",
+    "at",
+    "in",
+    "about"
+  ],
   "verbs": {
-    "LOOK":    { "label": "LOOK",    "words": ["look", "l", "see"], "stems": [],
-                 "default_reply": "You see nothing special." },
-    "EXAMINE": { "label": "EXAMINE", "words": ["examine", "x", "search", "check", "inspect"], "stems": [],
-                 "default_reply": "You find nothing unusual." },
-    "TAKE":    { "label": "TAKE",    "words": ["take", "get", "pick", "grab"], "stems": [],
-                 "default_reply": "You can't take that." },
-    "USE":     { "label": "USE",     "words": ["use"], "stems": [],
-                 "default_reply": "You can't use that here." },
-    "TALK":    { "label": "TALK",    "words": ["talk", "speak"], "stems": [],
-                 "default_reply": "There is no answer." },
-    "ASK":     { "label": "ASK",     "words": ["ask"], "stems": [],
-                 "default_reply": "No reply." },
-    "MOVE":    { "label": "GO",      "words": ["go", "move", "walk", "enter"], "stems": [],
-                 "default_reply": "You can't go there." },
-    "OPEN":    { "label": "OPEN",    "words": ["open"], "stems": [],
-                 "default_reply": "It won't open." },
-    "CLOSE":   { "label": "CLOSE",   "words": ["close", "shut"], "stems": [],
-                 "default_reply": "You can't close that." },
-    "ITEMS":   { "label": "INVENTORY", "words": ["inventory", "inv", "i", "items"], "stems": [] }
+    "LOOK": {
+      "label": "LOOK",
+      "words": [
+        "look",
+        "l",
+        "see"
+      ],
+      "stems": [],
+      "default_reply": "You see nothing special."
+    },
+    "EXAMINE": {
+      "label": "EXAMINE",
+      "words": [
+        "examine",
+        "x",
+        "search",
+        "check",
+        "inspect"
+      ],
+      "stems": [],
+      "default_reply": "You find nothing unusual."
+    },
+    "TAKE": {
+      "label": "TAKE",
+      "words": [
+        "take",
+        "get",
+        "pick",
+        "grab"
+      ],
+      "stems": [],
+      "default_reply": "You can't take that."
+    },
+    "USE": {
+      "label": "USE",
+      "words": [
+        "use"
+      ],
+      "stems": [],
+      "default_reply": "You can't use that here."
+    },
+    "TALK": {
+      "label": "TALK",
+      "words": [
+        "talk",
+        "speak"
+      ],
+      "stems": [],
+      "default_reply": "There is no answer."
+    },
+    "ASK": {
+      "label": "ASK",
+      "words": [
+        "ask"
+      ],
+      "stems": [],
+      "default_reply": "No reply."
+    },
+    "MOVE": {
+      "label": "GO",
+      "words": [
+        "go",
+        "move",
+        "walk",
+        "enter"
+      ],
+      "stems": [],
+      "default_reply": "You can't go there."
+    },
+    "OPEN": {
+      "label": "OPEN",
+      "words": [
+        "open"
+      ],
+      "stems": [],
+      "default_reply": "It won't open."
+    },
+    "CLOSE": {
+      "label": "CLOSE",
+      "words": [
+        "close",
+        "shut"
+      ],
+      "stems": [],
+      "default_reply": "You can't close that."
+    },
+    "ITEMS": {
+      "label": "INVENTORY",
+      "words": [
+        "inventory",
+        "inv",
+        "i",
+        "items"
+      ],
+      "stems": []
+    },
+    "GIVE": {
+      "label": "GIVE",
+      "words": [
+        "give",
+        "hand"
+      ],
+      "stems": [],
+      "default_reply": "Nobody takes it.",
+      "extended": true
+    },
+    "SHOW": {
+      "label": "SHOW",
+      "words": [
+        "show"
+      ],
+      "stems": [],
+      "default_reply": "No reaction.",
+      "extended": true
+    },
+    "PUSH": {
+      "label": "PUSH",
+      "words": [
+        "push",
+        "press"
+      ],
+      "stems": [],
+      "default_reply": "It won't budge.",
+      "extended": true
+    },
+    "PULL": {
+      "label": "PULL",
+      "words": [
+        "pull"
+      ],
+      "stems": [],
+      "default_reply": "It won't budge.",
+      "extended": true
+    },
+    "HIT": {
+      "label": "HIT",
+      "words": [
+        "hit",
+        "kick",
+        "punch"
+      ],
+      "stems": [],
+      "default_reply": "Ouch.",
+      "extended": true
+    },
+    "CALL": {
+      "label": "CALL",
+      "words": [
+        "call",
+        "shout"
+      ],
+      "stems": [],
+      "default_reply": "No answer.",
+      "extended": true
+    },
+    "THINK": {
+      "label": "THINK",
+      "words": [
+        "think",
+        "deduce"
+      ],
+      "stems": [],
+      "default_reply": "Nothing comes to mind.",
+      "extended": true
+    },
+    "WAIT": {
+      "label": "WAIT",
+      "words": [
+        "wait",
+        "z"
+      ],
+      "stems": [],
+      "default_reply": "Time passes.",
+      "extended": true
+    }
   },
   "nouns": {},
   "replies": {

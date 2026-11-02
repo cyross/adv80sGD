@@ -15,6 +15,9 @@ var _filled: Dictionary = {}
 var _enabled: bool = true
 var _labels: PackedStringArray = []   ## ログに残す、選んだものの表示名
 var choosing: bool = false            ## 選択肢を出している
+var show_tried: bool = false          ## 試したコマンドを区別して出す（モダン機能 tried_marks）
+var icons: bool = false               ## 動詞をアイコンで出す（入力UI icon）。アイコンは画像ID "icon.動詞ID（小文字）"
+var dim_color: Color = Color(0.6, 0.6, 0.6)
 
 
 func _ready() -> void:
@@ -53,9 +56,16 @@ func _clear() -> void:
 	scroll_vertical = 0
 
 
-func _add(label: String, cb: Callable) -> void:
+func _add(label: String, cb: Callable, tried: bool = false, icon: Texture2D = null) -> void:
 	var b := Button.new()
 	b.text = label
+	if icon != null:
+		b.icon = icon
+		b.expand_icon = false
+	if tried and show_tried:
+		b.add_theme_color_override("font_color", dim_color)
+		b.add_theme_color_override("font_hover_color", dim_color)
+		b.add_theme_color_override("font_focus_color", dim_color)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.focus_mode = Control.FOCUS_ALL
@@ -65,13 +75,19 @@ func _add(label: String, cb: Callable) -> void:
 
 
 func _show_verbs() -> void:
+	_verb = {}
 	_clear()
 	_grid.columns = columns
 	var verbs = _core.query("verbs")
 	if not verbs is Array:
 		return
 	for v in verbs:
-		_add(String(v["label"]), _on_verb.bind(v))
+		var icon: Texture2D = null
+		if icons:
+			var p := _core.assets.resolve("image", "icon." + String(v["id"]).to_lower())
+			if p != "":
+				icon = load(p) as Texture2D
+		_add(String(v["label"]), _on_verb.bind(v), bool(v.get("tried", false)), icon)
 
 
 func _on_verb(v: Dictionary) -> void:
@@ -118,10 +134,37 @@ func _next_slot() -> void:
 	_clear()
 	_grid.columns = columns
 	for c in cands:
-		_add(String(c["label"]), _on_target.bind(def, c))
+		var tried := _core.state.tried.has("%s:%s" % [_verb["id"], c["id"]])
+		_add(String(c["label"]), _on_target.bind(def, c), tried)
 	if not def.get("required", true):
 		_add(_label("select_none", "まわり"), _on_skip)
 	_add(_label("select_back", "もどる"), _show_verbs)
+
+
+func focus_first() -> void:
+	for b in _grid.get_children():
+		if b is Button and not b.disabled:
+			b.grab_focus()
+			return
+
+
+## いま対象を選んでいる途中か（画面選択で使う）。
+func is_picking() -> bool:
+	return not _verb.is_empty() and not choosing
+
+
+## 画面選択で選んだ物を、いま埋めているスロットに入れる。入れられたら true。
+func pick_target(t: Dictionary) -> bool:
+	if not is_picking():
+		return false
+	var slots: Array = _verb.get("slots", [])
+	if _slot_index >= slots.size():
+		return false
+	var def: Dictionary = slots[_slot_index]
+	if not _core.schema.accepts(String(def.get("type", "object")), String(t["type"])):
+		return false
+	_on_target(def, t)
+	return true
 
 
 func _on_target(def: Dictionary, c: Dictionary) -> void:
