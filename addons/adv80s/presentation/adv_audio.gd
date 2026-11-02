@@ -48,8 +48,8 @@ static func load_stream(path: String, loop: bool, loop_start: float) -> AudioStr
 		if loop:
 			w.loop_mode = AudioStreamWAV.LOOP_FORWARD
 			w.loop_begin = int(loop_start * w.mix_rate)
-			var bytes_per_sample := (2 if w.format == AudioStreamWAV.FORMAT_16_BITS else 1) * (2 if w.stereo else 1)
-			w.loop_end = w.data.size() / bytes_per_sample
+			# 圧縮（QOA など）されていてもよいように、長さ（秒）から求める
+			w.loop_end = int(round(w.get_length() * w.mix_rate))
 		else:
 			w.loop_mode = AudioStreamWAV.LOOP_DISABLED
 	elif s.get("loop") != null:

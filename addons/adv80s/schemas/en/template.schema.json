@@ -67,24 +67,23 @@
     "fonts": {
       "type": "object",
       "additionalProperties": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "asset": {
-            "type": "string"
+        "anyOf": [
+          {
+            "type": "null"
           },
-          "size": {
-            "type": "integer"
+          {
+            "$ref": "#/definitions/font_entry"
           },
-          "line_height": {
-            "type": "integer"
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/font_entry"
+            },
+            "minItems": 1
           }
-        },
-        "additionalProperties": false
+        ]
       },
-      "description": "Fonts (main, readable)"
+      "description": "Fonts (main, readable). With an array of candidates, the first one found is used"
     },
     "layout": {
       "type": "object",
@@ -373,6 +372,23 @@
     "id"
   ],
   "definitions": {
+    "font_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asset": {
+          "type": "string",
+          "description": "Font asset ID (file name in the font folder)"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "line_height": {
+          "type": "integer",
+          "description": "Line height (defaults to size)"
+        }
+      }
+    },
     "filter": {
       "anyOf": [
         {

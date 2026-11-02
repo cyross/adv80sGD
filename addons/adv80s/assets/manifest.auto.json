@@ -1,0 +1,30 @@
+{
+  "assets": {
+    "font:pixelmplus10": {
+      "file": "font/pixelmplus10.ttf",
+      "type": "font"
+    },
+    "font:pixelmplus10_bold": {
+      "file": "font/pixelmplus10_bold.ttf",
+      "type": "font"
+    },
+    "font:pixelmplus12": {
+      "file": "font/pixelmplus12.ttf",
+      "type": "font"
+    },
+    "font:pixelmplus12_bold": {
+      "file": "font/pixelmplus12_bold.ttf",
+      "type": "font"
+    },
+    "font:tekuplus": {
+      "file": "font/tekuplus.ttf",
+      "type": "font"
+    },
+    "font:tekuplus_bold": {
+      "file": "font/tekuplus_bold.ttf",
+      "type": "font"
+    }
+  },
+  "generated": true,
+  "manifest_version": 1
+}

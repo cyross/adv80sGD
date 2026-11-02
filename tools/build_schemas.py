@@ -245,8 +245,11 @@ TEMPLATE = {
         }, extra=False),
         "palette": obj({"source": {"enum": ["preset", "colors"]},
                         "colors": {"type": "array", "items": {"type": "string", "pattern": "^#?[0-9a-fA-F]{6}$"}}}, extra=False),
-        "fonts": mapof({"type": ["object", "null"], "properties": {"asset": STR, "size": INT, "line_height": INT}, "additionalProperties": False},
-                       t("フォント（main、readable）", "Fonts (main, readable)")),
+        "fonts": mapof({"anyOf": [
+                           {"type": "null"},
+                           {"$ref": "#/definitions/font_entry"},
+                           {"type": "array", "items": {"$ref": "#/definitions/font_entry"}, "minItems": 1}]},
+                       t("フォント（main、readable）。候補の配列で書くと、素材が見つかった最初のものを使う", "Fonts (main, readable). With an array of candidates, the first one found is used")),
         "layout": obj({
             "background": {"type": "integer", "description": t("背景のパレット番号", "Background palette index")},
             "layers": {**STRS, "description": t("画像の層（奥から順）", "Image layers (back to front)")},
@@ -273,6 +276,10 @@ TEMPLATE = {
         "ui": obj({"window_skin": SKIN, "cursor": STR, "highlight": INT}),
     }, required=["template_version", "id"]),
     "definitions": {
+        "font_entry": {"type": "object", "additionalProperties": False, "properties": {
+            "asset": {"type": "string", "description": t("フォントの素材ID（font フォルダのファイル名）", "Font asset ID (file name in the font folder)")},
+            "size": INT,
+            "line_height": {"type": "integer", "description": t("行の高さ（省略時は size）", "Line height (defaults to size)")}}},
         "filter": {"anyOf": [
             {"type": "string"},
             {"type": "object", "required": ["type"], "description": t("フィルター（type と引数）", "Filter (type and arguments)"),

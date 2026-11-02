@@ -237,6 +237,8 @@ static func _same(a: String, b: String) -> bool:
 ## プロジェクト設定、テンプレート、シナリオから素材フォルダを集める（重ねる順）。
 static func project_roots(project: AdvProject, diags: Array) -> PackedStringArray:
 	var r := PackedStringArray()
+	if DirAccess.dir_exists_absolute(AdvAssets.BUILTIN_ROOT):
+		r.append(AdvAssets.BUILTIN_ROOT)
 	for p in project.get_value("asset_roots", []):
 		r.append(String(p).trim_suffix("/"))
 	var tids: Array = project.get_value("templates", []).duplicate()

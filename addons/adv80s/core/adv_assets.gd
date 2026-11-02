@@ -12,6 +12,9 @@ const DEFAULT_FOLDERS := {
 	"bgm": "bgm", "se": "se", "voice": "voice", "font": "font", "shader": "shader",
 }
 
+## アドオンが持つ素材フォルダ（標準のフォント）。いちばん下に重ねる
+const BUILTIN_ROOT := "res://addons/adv80s/assets"
+
 var folders: Dictionary = DEFAULT_FOLDERS
 var missing_asset: String = "placeholder"   ## placeholder / error
 var preset_id: String = ""                  ## 例 "98.640x400"

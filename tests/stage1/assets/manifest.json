@@ -3,7 +3,7 @@
   "assets": {
     "theme": {
       "type": "bgm",
-      "loop_start": 0.25,
+      "loop_start": 9.6,
       "volume": 0.8
     }
   }

@@ -37,7 +37,7 @@ func _main() -> void:
 	check(player.core.state.scene == "hallway", "start in hallway")
 	check(player.audio.current_bgm.get("id", "") == "theme" and player.audio._bgm[player.audio._bgm_index].playing, "bgm playing")
 	var st: AudioStream = player.audio._bgm[player.audio._bgm_index].stream
-	check(st is AudioStreamWAV and (st as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD and (st as AudioStreamWAV).loop_begin == int(0.25 * 11025), "bgm loop_start from manifest")
+	check(st is AudioStreamWAV and (st as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD and (st as AudioStreamWAV).loop_begin == int(9.6 * (st as AudioStreamWAV).mix_rate), "bgm loop_start from manifest")
 
 	# コマンド選択：「しらべる」→「うえきばち」
 	var sel := player.screen.command_select

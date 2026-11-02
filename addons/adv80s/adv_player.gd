@@ -87,8 +87,11 @@ func _ready() -> void:
 	core.group = String(template.preset.get("group", ""))
 	core.assets.set_preset(core.preset, core.group)
 
-	# 素材フォルダ：プロジェクト → テンプレート → シナリオ
-	var roots: Array = project.get_value("asset_roots", []).duplicate()
+	# 素材フォルダ：アドオンの標準 → プロジェクト → テンプレート → シナリオ
+	var roots: Array = []
+	if DirAccess.dir_exists_absolute(AdvAssets.BUILTIN_ROOT):
+		roots.append(AdvAssets.BUILTIN_ROOT)
+	roots.append_array(project.get_value("asset_roots", []))
 	if assets_root != "":
 		roots.append(assets_root)
 	var troot := template.asset_root()

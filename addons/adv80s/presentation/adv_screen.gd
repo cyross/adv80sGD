@@ -170,18 +170,48 @@ func _window(node_name: String) -> Panel:
 	return p
 
 
-## テンプレートの fonts.main。素材が見つからなければ、OSのフォントを使う。
-## 行の高さは fonts.main.line_height（省略時は文字の大きさ）にそろえる。当時の画面のように、16ドットの文字なら16行ごとに並ぶ。
+## テンプレートの fonts.main（読みやすいフォントのときは fonts.readable）。
+## {asset, size, line_height} を1つ、または候補の配列で書く。配列なら、素材が見つかった最初のものを使う。
+## どれも見つからなければ、OSのフォントを使う（大きさは最初の候補のもの）。
+## 行の高さは line_height（省略時は文字の大きさ）にそろえる。当時の画面のように、16ドットの文字なら16行ごとに並ぶ。
+## ドットのフォント（main）は、なめらかにせず、ドットのまま描く。
+var font_size: int = 16
+
+
 func _main_font() -> Font:
 	var fonts := tpl.get_section("fonts")
-	var main: Dictionary = fonts.get("readable" if readable and fonts.has("readable") else "main", {})
-	var fsize := int(main.get("size", 16))
+	var key := "readable" if readable and fonts.has("readable") else "main"
+	var entry = fonts.get(key, {})
+	var cands: Array = entry if entry is Array else [entry]
+	var main: Dictionary = cands[0] if not cands.is_empty() and cands[0] is Dictionary else {}
 	var font: Font = null
-	var asset := String(main.get("asset", ""))
-	if asset != "" and resolver.is_valid():
+	for c in cands:
+		if not c is Dictionary:
+			continue
+		var asset := String(c.get("asset", "")).trim_prefix("font.")
+		if asset == "" or not resolver.is_valid():
+			continue
 		var path := String(resolver.call("font", asset))
-		if path != "":
-			font = load(path) as Font
+		if path == "":
+			continue
+		var f = load(path)
+		if f is FontFile:
+			var ff: FontFile = f.duplicate()
+			if key == "main":
+				ff.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+				ff.hinting = TextServer.HINTING_NONE
+				ff.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+				ff.multichannel_signed_distance_field = false
+				ff.generate_mipmaps = false
+			font = ff
+			main = c
+			break
+		elif f is Font:
+			font = f
+			main = c
+			break
+	var fsize := int(main.get("size", 16))
+	font_size = fsize
 	if font == null:
 		var sf := SystemFont.new()
 		if readable:
@@ -208,7 +238,7 @@ func _main_font() -> Font:
 func _make_theme() -> Theme:
 	var th := Theme.new()
 	th.default_font = _main_font()
-	var fsize := int(tpl.get_section("fonts").get("main", {}).get("size", 16))
+	var fsize := font_size
 	th.default_font_size = fsize
 	var fg := tpl.color(int(tpl.get_section("text").get("color", 7)))
 	var hl := tpl.color(int(tpl.get_section("ui").get("highlight", 1)))

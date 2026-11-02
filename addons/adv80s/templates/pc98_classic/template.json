@@ -8,7 +8,10 @@
   "palette": { "source": "preset" },
 
   "fonts": {
-    "main":     { "asset": "font.dot16", "size": 16 },
+    "main": [
+      { "asset": "dot16",        "size": 16 },
+      { "asset": "pixelmplus12", "size": 12, "line_height": 16 }
+    ],
     "readable": { "asset": "font.ud",    "size": 16 }
   },
 

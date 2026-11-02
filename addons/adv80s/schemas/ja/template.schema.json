@@ -67,24 +67,23 @@
     "fonts": {
       "type": "object",
       "additionalProperties": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "asset": {
-            "type": "string"
+        "anyOf": [
+          {
+            "type": "null"
           },
-          "size": {
-            "type": "integer"
+          {
+            "$ref": "#/definitions/font_entry"
           },
-          "line_height": {
-            "type": "integer"
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/font_entry"
+            },
+            "minItems": 1
           }
-        },
-        "additionalProperties": false
+        ]
       },
-      "description": "フォント（main、readable）"
+      "description": "フォント（main、readable）。候補の配列で書くと、素材が見つかった最初のものを使う"
     },
     "layout": {
       "type": "object",
@@ -373,6 +372,23 @@
     "id"
   ],
   "definitions": {
+    "font_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asset": {
+          "type": "string",
+          "description": "フォントの素材ID（font フォルダのファイル名）"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "line_height": {
+          "type": "integer",
+          "description": "行の高さ（省略時は size）"
+        }
+      }
+    },
     "filter": {
       "anyOf": [
         {
