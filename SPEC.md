@@ -477,6 +477,7 @@ Inkはinkle社が公開している分岐ストーリー用のスクリプト言
 | --- | --- | --- |
 | テキスト | `text.show`、`text.append`、`text.clear` | メッセージ表示（話者、本文、表示する窓） |
 | 画像 | `image.show`、`image.hide`、`effect.play` | 背景や立ち絵の層、切り替え演出、フラッシュや揺れ。スプライトと装飾画像は sprite.show など（6.4）、マウスカーソルは cursor.set（6.5） |
+| 動画 | `video.play`、`video.stop` | オープニングやイベントの動画、動く背景（6.6） |
 | 音 | `bgm.play`、`bgm.stop`、`se.play`、`voice.play` | 音楽、効果音、ボイス |
 | 状態 | `state.set`、`item.add`、`item.remove` | フラグ、変数、所持品の変更 |
 | 進行 | `scene.goto`、`wait`、`group`、`choice.show`、`input.request`、`game.end` | シーン移動、待機、同時実行、選択肢、スロットの聞き返し |
@@ -503,6 +504,7 @@ Inkはinkle社が公開している分岐ストーリー用のスクリプト言
 | `image.hide` | `layer`、`id?`、`transition?`、`duration?` | 同上 |
 | `sprite.show`、`sprite.set`、`sprite.hide`、`sprite.anim`、`sprite.effect`、`sprite.clear` | 6.4 の表を参照 | 6.4 の表を参照 |
 | `cursor.set` | `kind` か `image`（null で自動に戻す。6.5） | `none` |
+| `video.play`、`video.stop` | 6.6 の表を参照 | 6.6 の表を参照 |
 | `effect.play` | `name`（`flash`、`shake`、`fade` など）、`duration?`、`params?` | `end` |
 | `bgm.play` | `id`、`loop?`（既定 true）、`fade?`（秒）、`volume?` | `none` |
 | `bgm.stop` | `fade?` | `none` |
@@ -645,6 +647,7 @@ Godot標準のBBCodeタグ（`[b]`、`[color]`、`[wave]` など）に加え、A
 | `se/` | 効果音（`se`） |
 | `voice/` | ボイス（`voice`） |
 | `font/` | フォント（`font`） |
+| `movie/` | 動画（`video`。6.6） |
 | `shader/` | フィルター（`shader`） |
 
 ### 5.6 自動生成マニフェストのエディタ機能
@@ -988,7 +991,10 @@ godot --headless --path <プロジェクト> --script res://addons/adv80s/tools/
 - **変えられるもの**：位置 `x`・`y`、基準点 `anchor`（`top_left`、`top`、`top_right`、`left`、`center`、`right`、`bottom_left`、`bottom`、`bottom_right`）、拡大縮小 `scale`（数か `[横, 縦]`）、回転 `rotation`（度）、不透明度 `opacity`（0〜1）、反転 `flip`（`h`、`v`、`hv`）、合成 `blend`（`normal`、`add`、`multiply`）、色を掛ける `tint`、`visible`。ドットを崩さないため、位置は整数ピクセルにそろえ、拡大は最近傍で描く（`smooth: true` でなめらかに描く）。
 - **動き（トゥイーン）**：`sprite.set` に `duration`（秒）と `ease`（`linear`、`in`、`out`、`in_out`）を書くと、今の値からなめらかに変える。`loop`（回数、`-1` で終わりなし）と `yoyo`（行って戻る）で繰り返せ、`path`（座標の配列）で順に移動できる（浮かぶ、点滅する、歩いて横切るなど）。
 - **コマ送りアニメーション**：マニフェストに、並べた画像（スプライトシート）の切り方 `grid` とアニメーション `anims` を書く（`{"grid": [4, 1], "anims": {"walk": {"frames": [0, 1, 2, 1], "fps": 8, "loop": true}}}`）。連番の差分（`name@1`、`name@2`…）を `frames` に並べてもよい。`sprite.show` の `anim` か `sprite.anim` で再生する。
-- **GIF**：素材の画像に `.gif` を使える（背景、スプライト、装飾画像、カーソルのどれにも）。Godot には GIF を読む機能がないため、アドオンの読み込み部品（エディタのインポート）がエディタ上で Godot の画像に変換する（書き出したゲームは GIF を読まない）。静止画は普通の画像として扱う。アニメーション GIF は、各コマと表示時間、繰り返し回数をコマ送りアニメーション `default` にし、出すだけで GIF のとおりに動く（コマごとに違う表示時間もそのまま使う）。GIF の透明色はそのまま透明にする。コマの重ね方（残す・背景に戻す・前に戻す）とインターレースにも対応する。
+- **アニメーション画像（GIF、APNG、MNG）**：素材の画像に `.gif`、`.apng`（アニメーション PNG。拡張子が `.png` のものは普通の PNG として扱う）、`.mng` を使える（背景、スプライト、装飾画像、カーソルのどれにも）。Godot にはこれらを読む機能がないため、アドオンの読み込み部品（エディタのインポート）がエディタ上で Godot の画像の並びに変換する（書き出したゲームは元の形式を読まない）。静止画は普通の画像として扱い、アニメーションは各コマと表示時間、繰り返し回数をコマ送りアニメーション `default` にし、出すだけで元のとおりに動く（コマごとに違う表示時間もそのまま使う）。透明色・アルファはそのまま透明にする。
+  - **GIF**：87a・89a。コマの重ね方（残す・背景に戻す・前に戻す）、インターレース、繰り返し回数（NETSCAPE2.0）に対応する。背景に戻すときは透明にする。
+  - **APNG**：コマの重ね方（dispose）と合成（blend）に対応する。
+  - **MNG**：MNG-LC・MNG-VLC の範囲（中に入った PNG・JNG のコマ、`FRAM` の表示時間、`TERM` の繰り返し、`MHDR` の時間の単位）に対応する。差分（Delta-PNG）などそれ以外の機能を使ったファイルは読まず、インポートと `validate` がエラー `ASSET_UNSUPPORTED` を出す。
 - **効果**：`sprite.effect` で、そのスプライトだけに効果をかける（`flash`、`shake`、`blink`、`mono`、`sepia`、`silhouette`、`mosaic`、自作のシェーダー）。表示と消去には `image.show` と同じ切り替え演出（`fade`、`wipe` など）を使える。減色など画面全体のフィルターは、スプライトを置いたあとの画面にかかる。
 - **調べられる場所との結び付け**：シーンの物に `"sprite": "スプライトID"` を書くと、そのスプライトの見えている範囲が調べられる場所（クリックの範囲、カーソルの形、調べられる場所の表示）になる。スプライトが動けば範囲も動き、消えれば範囲も消える（透明な部分は範囲に入れない）。
 - **シーンに置くスプライト**：JSON シナリオのシーンに `"sprites": [{ "id": "key", "image": "key", "layer": "fg", "x": 120, "y": 180, "when": "not got_key" }]` のように書くと、シーンに入ったときに条件に合うものを出す。条件はコマンドを処理するたびに見直し、合わなくなったものは消し、合うようになったものは出す（アイテムを取ると絵から消える、など）。出すときと消すときの切り替え演出も書ける（`show`、`hide`）。
@@ -1013,6 +1019,23 @@ godot --headless --path <プロジェクト> --script res://addons/adv80s/tools/
 - **シナリオからの指定**：出力イベント `cursor.set`（`kind` か `image`、`null` で自動に戻す）で、演出の間などに形を固定できる。セーブにも含める。
 - ゲームパッドやキーボードで操作している間はカーソルを隠し、マウスを動かすとまた出す。
 - 80年代の機種のテンプレートは、既定では `ui.cursors` を持たない（OS標準の矢印のまま）。`ui.cursors` を書いたテンプレートだけが形を変える。
+
+### 6.6 動画
+
+オープニングやイベントの動画を再生できる。絵の窓や画面全体で流すほか、スプライトとして置いて動く背景や飾りにも使える。
+
+- **形式**：Godot が標準で再生できる Ogg Theora（`.ogv`、音声は Vorbis）だけを使う（依存なしのため）。MP4、WebM、AVI などは、制作時に変換ツール（ffmpeg など）で `.ogv` にしてから置く。変換ツールはゲームに含めない。`validate` とマニフェストの自動生成は、`movie/` にある `.ogv` 以外の動画に警告 `ASSET_UNSUPPORTED` を出す。
+- **素材**：種類フォルダ `movie/` に置き、種類は `video`。機種別の差し替え（`presets/`）も画像と同じように使える。
+- **流す場所**：`video.play` の `area` が `picture`（既定。絵の窓いっぱい）か `screen`（画面全体。窓より前）。動画の縦横比を保って入る大きさにし、余白は黒にする（`fit`: `contain`、`cover`、`stretch`）。スプライトとして置くときは `sprite.show` の `image` に動画の素材IDを書き、位置や拡大縮小などは画像のスプライトと同じ。
+- **画面のフィルター**：動画にも減色や走査線などのフィルターがかかる（その時代らしい見た目になる）。`filters: false` で外せる。
+- **待ち方と飛ばし**：既定は再生が終わるまで待つ（`wait: end`）。`skippable`（既定 true）なら、クリックや決定ボタンで飛ばせる。既読スキップ中は、一度見た動画を飛ばす（見た動画は進行の記録に残す）。`loop: true` の動画は待たずに流し続け、`video.stop` で止める。
+- **音**：動画の音は BGM の音量に従う。画面全体や絵の窓で流すとき、BGM は既定で一時停止し、終わったら再開する（`bgm`: `pause`、`keep`、`stop`）。スプライトの動画は既定で音を出さない（`mute: false` で出す）。
+- **セーブ**：終わりを待つ動画の再生中はセーブできない。繰り返しの動画とスプライトの動画はセーブに含め、読み込んだときに最初から流し直す。
+
+| イベント | 引数 | 既定の `wait` |
+| --- | --- | --- |
+| `video.play` | `id`（素材ID）、`area?`（`picture`、`screen`）、`fit?`、`loop?`、`skippable?`、`volume?`、`bgm?`、`filters?`、`transition?` | `loop` なら `none`、それ以外は `end` |
+| `video.stop` | `transition?` | `none` |
 
 ## 7. フィルター
 
