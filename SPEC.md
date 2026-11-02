@@ -476,7 +476,7 @@ Inkはinkle社が公開している分岐ストーリー用のスクリプト言
 | 分類 | イベント | 用途 |
 | --- | --- | --- |
 | テキスト | `text.show`、`text.append`、`text.clear` | メッセージ表示（話者、本文、表示する窓） |
-| 画像 | `image.show`、`image.hide`、`effect.play` | 背景や立ち絵の層、切り替え演出、フラッシュや揺れ |
+| 画像 | `image.show`、`image.hide`、`effect.play` | 背景や立ち絵の層、切り替え演出、フラッシュや揺れ。スプライトと装飾画像は sprite.show など（6.4）、マウスカーソルは cursor.set（6.5） |
 | 音 | `bgm.play`、`bgm.stop`、`se.play`、`voice.play` | 音楽、効果音、ボイス |
 | 状態 | `state.set`、`item.add`、`item.remove` | フラグ、変数、所持品の変更 |
 | 進行 | `scene.goto`、`wait`、`group`、`choice.show`、`input.request`、`game.end` | シーン移動、待機、同時実行、選択肢、スロットの聞き返し |
@@ -501,6 +501,8 @@ Inkはinkle社が公開している分岐ストーリー用のスクリプト言
 | `text.clear` | `window?` | `none` |
 | `image.show` | `layer`、`id`、`pos?`、`transition?`（省略時はテンプレートの既定、なければ `cut`）、`duration?`（秒） | 切り替え演出ありは `end`（テンプレートの既定の演出も含む）、`cut` は `none` |
 | `image.hide` | `layer`、`id?`、`transition?`、`duration?` | 同上 |
+| `sprite.show`、`sprite.set`、`sprite.hide`、`sprite.anim`、`sprite.effect`、`sprite.clear` | 6.4 の表を参照 | 6.4 の表を参照 |
+| `cursor.set` | `kind` か `image`（null で自動に戻す。6.5） | `none` |
 | `effect.play` | `name`（`flash`、`shake`、`fade` など）、`duration?`、`params?` | `end` |
 | `bgm.play` | `id`、`loop?`（既定 true）、`fade?`（秒）、`volume?` | `none` |
 | `bgm.stop` | `fade?` | `none` |
@@ -604,6 +606,9 @@ Godot標準のBBCodeタグ（`[b]`、`[color]`、`[wave]` など）に加え、A
 | `file` | 既定のファイル（`base` からの相対パス） |
 | `by_preset` | 画面プリセットごとの差し替え。テンプレートを切り替えると、自動でその時代の素材に変わる |
 | `variants` | 表情差分などの派生。`image.show` で `variant` を指定する |
+| `color_key` | 透明にする色（カラーキー。"#ff00ff" かテンプレートのパレット番号）。アルファのない画像をスプライトや装飾画像に使うときに書く（6.4） |
+| `grid`、`anims` | スプライトシートの切り方 [横の数, 縦の数] と、コマ送りアニメーション（名前 → {frames, fps, loop}）（6.4） |
+| `hotspot` | カーソル画像の指す位置 [x, y]（6.5） |
 | 種類ごとの属性 | 画像は `pivot`（基準点）や `region`（切り出し範囲）、音は `loop_start`（ループの開始位置）や `volume` |
 
 **決定事項**
@@ -973,6 +978,40 @@ godot --headless --path <プロジェクト> --script res://addons/adv80s/tools/
 - **変数の一覧**：JSON シナリオの変数（宣言したもの、宣言せずに読み書きしているもの。読む場所・書く場所つき）、Ink の変数・定数・リスト（シナリオの `.ink.json` と同じ名前の `.ink` と、そこから INCLUDE しているものを読む。元の `.ink` がなければ `.ink.json` のグローバル変数）、条件式の組み込みの名前を一覧で見られる。JSON と Ink で同じ名前の変数（同期するもの）と、読んでいるのに宣言も変更もない変数には印をつける。
 - **継承した値**：テンプレートの編集では、書いていない項目に元のテンプレート（extends を解決したもの）の値を出し、中身も開いて見られる。足すと、その値の写しから上書きを始める。
 - アドオンの中のテンプレートとマニフェストは読むだけにする（直すときは extends して自分のテンプレートを作る）。
+
+### 6.4 スプライトと装飾画像
+
+背景などの層（`image.show`、層ごとに1枚）とは別に、名前（スプライトID）を付けた画像をいくつでも置き、重ねられる。アイテムや人物の絵、窓の飾りなどの装飾画像も、同じ仕組みで扱う。
+
+- **層**：スプライトは層に置く。絵の窓の中の層（テンプレートの `layout.layers`。座標は絵の窓の左上が原点で、窓の外は切り取る）と、画面全体の層（`layout.screen_layers`、既定 `["back", "front"]`。`back` は窓の後ろ、`front` は窓の前。座標は画面の左上が原点）。同じ層の中の重なりは `z`（大きいほど手前。同じなら後から置いたものが手前）。背景の画像もその層のいちばん奥にある。
+- **透明**：PNG などのアルファをそのまま使う。アルファのない画像は、カラーキー（指定した色を透明にする）で抜く。カラーキーはマニフェストの `color_key`（`"#ff00ff"` か、テンプレートのパレット番号）か、`sprite.show` の `color_key` で指定し、読み込むときに一度だけ抜く。`image.show` の画像にも効く。
+- **変えられるもの**：位置 `x`・`y`、基準点 `anchor`（`top_left`、`top`、`top_right`、`left`、`center`、`right`、`bottom_left`、`bottom`、`bottom_right`）、拡大縮小 `scale`（数か `[横, 縦]`）、回転 `rotation`（度）、不透明度 `opacity`（0〜1）、反転 `flip`（`h`、`v`、`hv`）、合成 `blend`（`normal`、`add`、`multiply`）、色を掛ける `tint`、`visible`。ドットを崩さないため、位置は整数ピクセルにそろえ、拡大は最近傍で描く（`smooth: true` でなめらかに描く）。
+- **動き（トゥイーン）**：`sprite.set` に `duration`（秒）と `ease`（`linear`、`in`、`out`、`in_out`）を書くと、今の値からなめらかに変える。`loop`（回数、`-1` で終わりなし）と `yoyo`（行って戻る）で繰り返せ、`path`（座標の配列）で順に移動できる（浮かぶ、点滅する、歩いて横切るなど）。
+- **コマ送りアニメーション**：マニフェストに、並べた画像（スプライトシート）の切り方 `grid` とアニメーション `anims` を書く（`{"grid": [4, 1], "anims": {"walk": {"frames": [0, 1, 2, 1], "fps": 8, "loop": true}}}`）。連番の差分（`name@1`、`name@2`…）を `frames` に並べてもよい。`sprite.show` の `anim` か `sprite.anim` で再生する。
+- **効果**：`sprite.effect` で、そのスプライトだけに効果をかける（`flash`、`shake`、`blink`、`mono`、`sepia`、`silhouette`、`mosaic`、自作のシェーダー）。表示と消去には `image.show` と同じ切り替え演出（`fade`、`wipe` など）を使える。減色など画面全体のフィルターは、スプライトを置いたあとの画面にかかる。
+- **調べられる場所との結び付け**：シーンの物に `"sprite": "スプライトID"` を書くと、そのスプライトの見えている範囲が調べられる場所（クリックの範囲、カーソルの形、調べられる場所の表示）になる。スプライトが動けば範囲も動き、消えれば範囲も消える（透明な部分は範囲に入れない）。
+- **シーンに置くスプライト**：JSON シナリオのシーンに `"sprites": [{ "id": "key", "image": "key", "layer": "fg", "x": 120, "y": 180, "when": "not got_key" }]` のように書くと、シーンに入ったときに条件に合うものを出す。条件はコマンドを処理するたびに見直し、合わなくなったものは消し、合うようになったものは出す（アイテムを取ると絵から消える、など）。出すときと消すときの切り替え演出も書ける（`show`、`hide`）。
+- **消えるとき**：シーンの `sprites` で出したものは、シーンを移ると消える。イベントで出したものは `sprite.hide`・`sprite.clear` で消すまで残る（`"keep": false` を書くとシーンを移ると消える）。
+- **セーブ**：表示中のスプライトの状態（画像、位置、大きさ、不透明度、アニメーション）はセーブと巻き戻しに含め、読み込んだときに出し直す。途中のトゥイーンは終わりの値で戻し、繰り返すものは繰り返しを始め直す。
+- **確認**：`validate` は、画像の素材ID、アニメーションの名前、層の名前、物が結び付けたスプライトID があるかを確かめる。
+
+| イベント | 引数 | 既定の `wait` |
+| --- | --- | --- |
+| `sprite.show` | `id`、`image`（素材ID）、`variant?`、`layer?`（既定 `char`）、`x`、`y`、`anchor?`、`z?`、`scale?`、`rotation?`、`opacity?`、`flip?`、`blend?`、`tint?`、`color_key?`、`anim?`、`transition?`、`duration?`、`keep?` | 切り替え演出があれば `end`、なければ `none` |
+| `sprite.set` | `id`、変える項目（上と同じ）、`duration?`、`ease?`、`loop?`、`yoyo?`、`path?` | `duration` があれば `end`（繰り返しは `none`） |
+| `sprite.hide` | `id`（配列も可）、`transition?`、`duration?` | `sprite.show` と同じ |
+| `sprite.anim` | `id`、`anim`（`null` で止める）、`loop?` | `none` |
+| `sprite.effect` | `id`、`name`、`duration?`、`params?` | `end` |
+| `sprite.clear` | `layer?`（省略するとすべて） | `none` |
+
+### 6.5 マウスカーソル
+
+- **種類**：カーソルは種類で指定する。`default`（通常）、`look`（調べられる物）、`talk`（話せる人物）、`take`、`use`、`exit`（出口・移動先）、`wait`（演出中など、操作を受け付けない間）、`next`（クリック待ち）、`text`（入力欄）。自作の種類も書ける。
+- **形**：テンプレートの `ui.cursors` に種類ごとの形を書く。画像（素材ID と、指す位置 `hotspot: [x, y]`。マニフェストにも書ける）か、OS標準の形（`arrow`、`pointing_hand`、`cross`、`help`、`move`、`busy`、`ibeam`）。書いていない種類は `default` を使い、`default` もなければOS標準の矢印。画像は画面の拡大率に合わせて整数倍に拡大する（ドットを崩さない）。カラーキーも使える。
+- **自動の切り替え**：調べられる場所にマウスを重ねると、その場所の `cursor`（物と出口に書ける）を使う。書いていなければ、人物は `talk`、出口は `exit`、ほかは `look`。演出中は `wait`、クリック待ちは `next`、入力欄の上は `text`。
+- **シナリオからの指定**：出力イベント `cursor.set`（`kind` か `image`、`null` で自動に戻す）で、演出の間などに形を固定できる。セーブにも含める。
+- ゲームパッドやキーボードで操作している間はカーソルを隠し、マウスを動かすとまた出す。
+- 80年代の機種のテンプレートは、既定では `ui.cursors` を持たない（OS標準の矢印のまま）。`ui.cursors` を書いたテンプレートだけが形を変える。
 
 ## 7. フィルター
 
