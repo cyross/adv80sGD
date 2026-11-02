@@ -1,10 +1,16 @@
 {
   "assets": {
     "image:hallway": {
+      "by_preset": {
+        "88": "presets/88/bg/hallway.png"
+      },
       "file": "bg/hallway.png",
       "type": "image"
     },
     "image:room": {
+      "by_preset": {
+        "88": "presets/88/bg/room.png"
+      },
       "file": "bg/room.png",
       "type": "image"
     }

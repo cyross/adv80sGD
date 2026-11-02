@@ -58,6 +58,63 @@ func _main() -> void:
 	await _shot("03_room_talk")
 	check(player.screen.message_label.get_parsed_text().contains("@マーク"), "dialogue last line")
 
+	# 切り替え演出と画面効果（すべての種類を一通り動かす）
+	for t in ["fade", "wipe", "blinds", "line_draw", "interlace", "plane_draw", "mosaic", "dissolve", "blocks", "iris", "fade_color"]:
+		player._run([{"type": "image.show", "args": {"layer": "bg", "id": "room", "transition": {"type": t, "duration": 0.1, "speed": 4000}}}])
+		await _settle()
+	check(player.screen.layers["bg"].get_child_count() == 1, "one image after transitions")
+	for e in ["flash", "shake", "invert", "raster", "scroll", "zoom"]:
+		player._run([{"type": "effect.play", "args": {"name": e, "duration": 0.1}}])
+		await _settle()
+	player._run([{"type": "effect.play", "args": {"name": "tint", "color": "#c08040", "amount": 0.8, "duration": 0.1}}])
+	await _settle()
+	await _shot("04_tint")
+	player._run([{"type": "effect.play", "args": {"name": "tint", "amount": 0.0, "duration": 0.05}},
+		{"type": "image.show", "args": {"layer": "bg", "id": "room"}}])
+	await _settle()
+	check(player.screen.layers["bg"].position == Vector2.ZERO, "layer reset after new image")
+
+	# レイアウトの切り替え
+	player._run([{"type": "layout.set", "args": {"layout": "fullscreen_cg"}}])
+	await _settle()
+	check(player.screen.picture.size == Vector2(640, 400), "named layout")
+	await _shot("05_fullscreen_cg")
+	player._run([{"type": "layout.set", "args": {"layout": ""}}])
+	await _settle()
+
+	# 88 のテンプレートに切り替える（素材は機種別の差し替えに変わる）
+	await player.switch_template("pc88_classic")
+	await _settle()
+	check(player.template.preset["id"] == "88.640x200", "switched to 88")
+	check(player.core.assets.resolve("image", "room").contains("presets/88"), "by_preset image for 88")
+	check(player.display.display_scale().y == player.display.display_scale().x * 2.0, "88 line doubling")
+	player.submit_text("あゆみと はなす")
+	await _settle()
+	await _shot("06_pc88")
+	# 自作フィルター（*.effect.json）を足す
+	player.display.set_filters(AdvVisuals.resolve_filters(player.template, {"mode": "append", "list": [{"type": "sepia", "amount": 0.9}]}))
+	await _settle()
+	check(player.display._passes.size() == 2, "custom filter pass added")
+	await _shot("07_pc88_sepia")
+	player.set_filters_enabled(false)
+	await _shot("08_pc88_nofilter")
+
+	# キー入力が SubViewport の中の入力欄に届くか
+	player.screen.command_line.grab_focus()
+	for ch in "あゆみ みる":
+		var k := InputEventKey.new()
+		k.pressed = true
+		k.unicode = ch.unicode_at(0)
+		Input.parse_input_event(k)
+		await process_frame
+	var enter := InputEventKey.new()
+	enter.pressed = true
+	enter.keycode = KEY_ENTER
+	enter.physical_keycode = KEY_ENTER
+	Input.parse_input_event(enter)
+	await _settle()
+	check(player.screen.message_label.get_parsed_text().contains("ながい かみ"), "typed command reaches the parser: %s" % player.screen.message_label.get_parsed_text())
+
 	print("ui failed: %d" % _failed)
 	quit(1 if _failed > 0 else 0)
 

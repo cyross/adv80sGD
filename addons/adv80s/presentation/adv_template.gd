@@ -82,13 +82,17 @@ func set_layout(name: String) -> void:
 
 
 ## 区割りの矩形（テンプレートの元の解像度のピクセル）。なければ空の Rect2i。
+## 名前付きのレイアウトで "visible": false にした区割りも空になる（その窓を隠す）。
 func region_rect(name: String) -> Rect2i:
 	var layout: Dictionary = data.get("layout", {})
 	var regions: Dictionary = layout.get("regions", {})
 	if _layout_name != "":
 		var named: Dictionary = layout.get("named", {}).get(_layout_name, {})
 		regions = AdvJson.merge(regions, named.get("regions", {}))
-	var r: Array = regions.get(name, {}).get("rect", [])
+	var reg = regions.get(name, {})
+	if not reg is Dictionary or not bool(reg.get("visible", true)):
+		return Rect2i()
+	var r: Array = reg.get("rect", [])
 	if r.size() < 4:
 		return Rect2i()
 	return Rect2i(int(r[0]), int(r[1]), int(r[2]), int(r[3]))

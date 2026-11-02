@@ -1,25 +1,1109 @@
 {
   "presets_version": 1,
   "groups": {
-    "pc80": { "name": "80年代パソコン", "ruby": "paren" }
+    "pc80": {
+      "name": "80年代パソコン",
+      "ruby": "paren",
+      "filters": [
+        {
+          "type": "scanline",
+          "intensity": 0.35
+        },
+        {
+          "type": "reduce"
+        },
+        {
+          "type": "crt",
+          "curvature": 0.0,
+          "vignette": 0.15
+        }
+      ]
+    },
+    "pc90": {
+      "name": "90年代パソコン",
+      "ruby": "above",
+      "filters": [
+        {
+          "type": "crt",
+          "curvature": 0.01,
+          "vignette": 0.08
+        }
+      ]
+    },
+    "console": {
+      "name": "家庭用ゲーム機",
+      "ruby": "above",
+      "filters": [
+        {
+          "type": "reduce"
+        },
+        {
+          "type": "bleed",
+          "amount": 0.5
+        },
+        {
+          "type": "scanline",
+          "intensity": 0.25
+        }
+      ]
+    },
+    "handheld": {
+      "name": "携帯機",
+      "ruby": "above",
+      "filters": [
+        {
+          "type": "reduce"
+        },
+        {
+          "type": "lcd",
+          "grid": 0.25
+        }
+      ]
+    },
+    "modern": {
+      "name": "現代",
+      "ruby": "above",
+      "filters": []
+    }
   },
   "machines": {
+    "88": {
+      "group": "pc80",
+      "default_mode": "640x200",
+      "modes": {
+        "640x200": {
+          "size": [
+            640,
+            200
+          ],
+          "colors": "512色中8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "bits": [
+            3,
+            3,
+            3
+          ],
+          "line_double": true,
+          "pixel_aspect": 0.83
+        },
+        "640x400": {
+          "size": [
+            640,
+            400
+          ],
+          "colors": "512色中2色",
+          "palette": [
+            "#000000",
+            "#ffffff"
+          ],
+          "pixel_aspect": 0.83
+        }
+      }
+    },
     "98": {
       "group": "pc80",
       "default_mode": "640x400",
       "modes": {
         "640x400": {
-          "size": [640, 400], "colors": "4096色中16色", "pixel_aspect": 0.83,
-          "palette": ["#000000", "#0000ff", "#ff0000", "#ff00ff", "#00ff00", "#00ffff", "#ffff00", "#ffffff",
-                      "#777777", "#000077", "#770000", "#770077", "#007700", "#007777", "#777700", "#aaaaaa"]
+          "size": [
+            640,
+            400
+          ],
+          "colors": "4096色中16色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff",
+            "#777777",
+            "#000077",
+            "#770000",
+            "#770077",
+            "#007700",
+            "#007777",
+            "#777700",
+            "#aaaaaa"
+          ],
+          "bits": [
+            4,
+            4,
+            4
+          ],
+          "pixel_aspect": 0.83
         },
         "640x400_8": {
-          "size": [640, 400], "colors": "デジタル8色", "pixel_aspect": 0.83,
-          "palette": ["#000000", "#0000ff", "#ff0000", "#ff00ff", "#00ff00", "#00ffff", "#ffff00", "#ffffff"]
+          "size": [
+            640,
+            400
+          ],
+          "colors": "デジタル8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "pixel_aspect": 0.83
         },
         "640x200": {
-          "size": [640, 200], "colors": "8色", "pixel_aspect": 0.83, "line_double": true,
-          "palette": ["#000000", "#0000ff", "#ff0000", "#ff00ff", "#00ff00", "#00ffff", "#ffff00", "#ffffff"]
+          "size": [
+            640,
+            200
+          ],
+          "colors": "8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "line_double": true,
+          "pixel_aspect": 0.83
+        }
+      }
+    },
+    "SX1": {
+      "group": "pc80",
+      "default_mode": "640x200",
+      "modes": {
+        "640x200": {
+          "size": [
+            640,
+            200
+          ],
+          "colors": "8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "line_double": true,
+          "pixel_aspect": 0.83
+        },
+        "320x200": {
+          "size": [
+            320,
+            200
+          ],
+          "colors": "8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "pixel_aspect": 1.67
+        }
+      }
+    },
+    "SX1T": {
+      "group": "pc80",
+      "default_mode": "640x400",
+      "modes": {
+        "640x400": {
+          "size": [
+            640,
+            400
+          ],
+          "colors": "8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "pixel_aspect": 0.83
+        },
+        "640x200": {
+          "size": [
+            640,
+            200
+          ],
+          "colors": "8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "line_double": true,
+          "pixel_aspect": 0.83
+        }
+      }
+    },
+    "SX1TZ": {
+      "group": "pc80",
+      "default_mode": "320x200",
+      "modes": {
+        "320x200": {
+          "size": [
+            320,
+            200
+          ],
+          "colors": "4096色",
+          "bits": [
+            4,
+            4,
+            4
+          ],
+          "pixel_aspect": 1.67
+        },
+        "640x400": {
+          "size": [
+            640,
+            400
+          ],
+          "colors": "8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "pixel_aspect": 0.83
+        },
+        "640x200": {
+          "size": [
+            640,
+            200
+          ],
+          "colors": "8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "line_double": true,
+          "pixel_aspect": 0.83
+        }
+      }
+    },
+    "F7": {
+      "group": "pc80",
+      "default_mode": "640x200",
+      "modes": {
+        "640x200": {
+          "size": [
+            640,
+            200
+          ],
+          "colors": "8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "line_double": true,
+          "pixel_aspect": 0.83
+        }
+      }
+    },
+    "F77A": {
+      "group": "pc80",
+      "default_mode": "320x200",
+      "modes": {
+        "320x200": {
+          "size": [
+            320,
+            200
+          ],
+          "colors": "4096色",
+          "bits": [
+            4,
+            4,
+            4
+          ],
+          "pixel_aspect": 1.67
+        },
+        "320x200_262144": {
+          "size": [
+            320,
+            200
+          ],
+          "colors": "26万色",
+          "bits": [
+            6,
+            6,
+            6
+          ],
+          "pixel_aspect": 1.67
+        },
+        "640x400": {
+          "size": [
+            640,
+            400
+          ],
+          "colors": "8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "pixel_aspect": 0.83
+        },
+        "640x200": {
+          "size": [
+            640,
+            200
+          ],
+          "colors": "8色",
+          "palette": [
+            "#000000",
+            "#0000ff",
+            "#ff0000",
+            "#ff00ff",
+            "#00ff00",
+            "#00ffff",
+            "#ffff00",
+            "#ffffff"
+          ],
+          "line_double": true,
+          "pixel_aspect": 0.83
+        }
+      }
+    },
+    "MX": {
+      "group": "pc80",
+      "default_mode": "256x192",
+      "modes": {
+        "256x192": {
+          "size": [
+            256,
+            192
+          ],
+          "colors": "固定16色",
+          "palette": [
+            "#000000",
+            "#000000",
+            "#21c842",
+            "#5edc78",
+            "#5455ed",
+            "#7d76fc",
+            "#d4524d",
+            "#42ebf5",
+            "#fc5554",
+            "#ff7978",
+            "#d4c154",
+            "#e6ce80",
+            "#21b03b",
+            "#c95bba",
+            "#cccccc",
+            "#ffffff"
+          ],
+          "pixel_aspect": 1.0
+        }
+      }
+    },
+    "MX2": {
+      "group": "pc80",
+      "default_mode": "256x212",
+      "modes": {
+        "256x212": {
+          "size": [
+            256,
+            212
+          ],
+          "colors": "512色中16色",
+          "bits": [
+            3,
+            3,
+            3
+          ],
+          "pixel_aspect": 1.1
+        },
+        "256x212_256": {
+          "size": [
+            256,
+            212
+          ],
+          "colors": "256色",
+          "bits": [
+            3,
+            3,
+            2
+          ],
+          "pixel_aspect": 1.1
+        },
+        "512x212": {
+          "size": [
+            512,
+            212
+          ],
+          "colors": "512色中16色",
+          "bits": [
+            3,
+            3,
+            3
+          ],
+          "pixel_aspect": 0.55
+        }
+      }
+    },
+    "M2P": {
+      "group": "pc80",
+      "default_mode": "256x212",
+      "modes": {
+        "256x212": {
+          "size": [
+            256,
+            212
+          ],
+          "colors": "19268色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.1
+        },
+        "256x212_12499": {
+          "size": [
+            256,
+            212
+          ],
+          "colors": "12499色＋16色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.1
+        },
+        "256x212_16": {
+          "size": [
+            256,
+            212
+          ],
+          "colors": "512色中16色",
+          "bits": [
+            3,
+            3,
+            3
+          ],
+          "pixel_aspect": 1.1
+        },
+        "256x212_256": {
+          "size": [
+            256,
+            212
+          ],
+          "colors": "256色",
+          "bits": [
+            3,
+            3,
+            2
+          ],
+          "pixel_aspect": 1.1
+        },
+        "512x212": {
+          "size": [
+            512,
+            212
+          ],
+          "colors": "512色中16色",
+          "bits": [
+            3,
+            3,
+            3
+          ],
+          "pixel_aspect": 1.1
+        }
+      }
+    },
+    "X68K": {
+      "group": "pc90",
+      "default_mode": "768x512",
+      "modes": {
+        "768x512": {
+          "size": [
+            768,
+            512
+          ],
+          "colors": "65536色中16色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 0.89
+        },
+        "512x512": {
+          "size": [
+            512,
+            512
+          ],
+          "colors": "65536色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.33
+        },
+        "256x256": {
+          "size": [
+            256,
+            256
+          ],
+          "colors": "65536色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.33
+        }
+      }
+    },
+    "FTNS": {
+      "group": "pc90",
+      "default_mode": "640x480",
+      "modes": {
+        "640x480": {
+          "size": [
+            640,
+            480
+          ],
+          "colors": "1677万色中256色",
+          "pixel_aspect": 1.0
+        },
+        "640x480_16": {
+          "size": [
+            640,
+            480
+          ],
+          "colors": "4096色中16色",
+          "bits": [
+            4,
+            4,
+            4
+          ],
+          "pixel_aspect": 1.0
+        },
+        "320x240": {
+          "size": [
+            320,
+            240
+          ],
+          "colors": "32768色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.0
+        }
+      }
+    },
+    "MTR": {
+      "group": "pc90",
+      "default_mode": "256x212",
+      "modes": {
+        "256x212": {
+          "size": [
+            256,
+            212
+          ],
+          "colors": "19268色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.1
+        },
+        "256x212_12499": {
+          "size": [
+            256,
+            212
+          ],
+          "colors": "12499色＋16色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.1
+        },
+        "256x212_16": {
+          "size": [
+            256,
+            212
+          ],
+          "colors": "512色中16色",
+          "bits": [
+            3,
+            3,
+            3
+          ],
+          "pixel_aspect": 1.1
+        },
+        "256x212_256": {
+          "size": [
+            256,
+            212
+          ],
+          "colors": "256色",
+          "bits": [
+            3,
+            3,
+            2
+          ],
+          "pixel_aspect": 1.1
+        },
+        "512x212": {
+          "size": [
+            512,
+            212
+          ],
+          "colors": "512色中16色",
+          "bits": [
+            3,
+            3,
+            3
+          ],
+          "pixel_aspect": 1.1
+        }
+      }
+    },
+    "VGA": {
+      "group": "pc90",
+      "default_mode": "640x480",
+      "modes": {
+        "640x480": {
+          "size": [
+            640,
+            480
+          ],
+          "colors": "262144色中16色",
+          "bits": [
+            6,
+            6,
+            6
+          ],
+          "pixel_aspect": 1.0
+        },
+        "320x200": {
+          "size": [
+            320,
+            200
+          ],
+          "colors": "256色",
+          "bits": [
+            6,
+            6,
+            6
+          ],
+          "pixel_aspect": 0.83
+        }
+      }
+    },
+    "WIN": {
+      "group": "pc90",
+      "default_mode": "640x480",
+      "modes": {
+        "640x480": {
+          "size": [
+            640,
+            480
+          ],
+          "colors": "1677万色中256色",
+          "pixel_aspect": 1.0
+        },
+        "640x480_65536": {
+          "size": [
+            640,
+            480
+          ],
+          "colors": "65536色",
+          "bits": [
+            5,
+            6,
+            5
+          ],
+          "pixel_aspect": 1.0
+        },
+        "800x600": {
+          "size": [
+            800,
+            600
+          ],
+          "colors": "1677万色中256色",
+          "pixel_aspect": 1.0
+        },
+        "800x600_65536": {
+          "size": [
+            800,
+            600
+          ],
+          "colors": "65536色",
+          "bits": [
+            5,
+            6,
+            5
+          ],
+          "pixel_aspect": 1.0
+        },
+        "1024x768": {
+          "size": [
+            1024,
+            768
+          ],
+          "colors": "1677万色中256色",
+          "pixel_aspect": 1.0
+        },
+        "1024x768_65536": {
+          "size": [
+            1024,
+            768
+          ],
+          "colors": "65536色",
+          "bits": [
+            5,
+            6,
+            5
+          ],
+          "pixel_aspect": 1.0
+        },
+        "1280x1024": {
+          "size": [
+            1280,
+            1024
+          ],
+          "colors": "1677万色中256色",
+          "pixel_aspect": 1.0
+        },
+        "1280x1024_65536": {
+          "size": [
+            1280,
+            1024
+          ],
+          "colors": "65536色",
+          "bits": [
+            5,
+            6,
+            5
+          ],
+          "pixel_aspect": 1.0
+        }
+      }
+    },
+    "FC": {
+      "group": "console",
+      "default_mode": "256x240",
+      "modes": {
+        "256x240": {
+          "size": [
+            256,
+            240
+          ],
+          "colors": "約52色中25色",
+          "bits": [
+            2,
+            2,
+            2
+          ],
+          "visible": [
+            0,
+            8,
+            256,
+            224
+          ],
+          "pixel_aspect": 1.143
+        }
+      }
+    },
+    "PCE": {
+      "group": "console",
+      "default_mode": "256x224",
+      "modes": {
+        "256x224": {
+          "size": [
+            256,
+            224
+          ],
+          "colors": "512色中482色",
+          "bits": [
+            3,
+            3,
+            3
+          ],
+          "pixel_aspect": 1.143
+        },
+        "336x224": {
+          "size": [
+            336,
+            224
+          ],
+          "colors": "512色中482色",
+          "bits": [
+            3,
+            3,
+            3
+          ],
+          "pixel_aspect": 0.87
+        },
+        "512x224": {
+          "size": [
+            512,
+            224
+          ],
+          "colors": "512色中482色",
+          "bits": [
+            3,
+            3,
+            3
+          ],
+          "pixel_aspect": 0.57
+        }
+      }
+    },
+    "SFC": {
+      "group": "console",
+      "default_mode": "256x224",
+      "modes": {
+        "256x224": {
+          "size": [
+            256,
+            224
+          ],
+          "colors": "32768色中256色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.143
+        },
+        "512x448": {
+          "size": [
+            512,
+            448
+          ],
+          "colors": "32768色中256色（インターレース）",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.143
+        }
+      }
+    },
+    "PS1": {
+      "group": "console",
+      "default_mode": "320x240",
+      "modes": {
+        "320x240": {
+          "size": [
+            320,
+            240
+          ],
+          "colors": "1677万色",
+          "pixel_aspect": 1.0
+        },
+        "256x224": {
+          "size": [
+            256,
+            224
+          ],
+          "colors": "1677万色",
+          "pixel_aspect": 1.143
+        },
+        "640x480": {
+          "size": [
+            640,
+            480
+          ],
+          "colors": "1677万色（インターレース）",
+          "pixel_aspect": 1.0
+        }
+      }
+    },
+    "PS2": {
+      "group": "console",
+      "default_mode": "640x480",
+      "modes": {
+        "640x480": {
+          "size": [
+            640,
+            480
+          ],
+          "colors": "RGBA各8ビット",
+          "pixel_aspect": 1.0
+        },
+        "1920x1080": {
+          "size": [
+            1920,
+            1080
+          ],
+          "colors": "RGBA各8ビット（1080i）",
+          "pixel_aspect": 1.0
+        },
+        "1280x1024": {
+          "size": [
+            1280,
+            1024
+          ],
+          "colors": "RGBA各8ビット（VESA）",
+          "pixel_aspect": 1.0
+        }
+      }
+    },
+    "GB": {
+      "group": "handheld",
+      "default_mode": "160x144",
+      "modes": {
+        "160x144": {
+          "size": [
+            160,
+            144
+          ],
+          "colors": "4階調",
+          "palette": [
+            "#0f380f",
+            "#306230",
+            "#8bac0f",
+            "#9bbc0f"
+          ],
+          "pixel_aspect": 1.0
+        }
+      }
+    },
+    "GBC": {
+      "group": "handheld",
+      "default_mode": "160x144",
+      "modes": {
+        "160x144": {
+          "size": [
+            160,
+            144
+          ],
+          "colors": "32768色中56色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.0
+        }
+      }
+    },
+    "GBA": {
+      "group": "handheld",
+      "default_mode": "240x160",
+      "modes": {
+        "240x160": {
+          "size": [
+            240,
+            160
+          ],
+          "colors": "32768色",
+          "bits": [
+            5,
+            5,
+            5
+          ],
+          "pixel_aspect": 1.0
+        }
+      }
+    },
+    "HD": {
+      "group": "modern",
+      "default_mode": "1280x720",
+      "modes": {
+        "1280x720": {
+          "size": [
+            1280,
+            720
+          ],
+          "colors": "フルカラー",
+          "pixel_aspect": 1.0
+        }
+      }
+    },
+    "FHD": {
+      "group": "modern",
+      "default_mode": "1920x1080",
+      "modes": {
+        "1920x1080": {
+          "size": [
+            1920,
+            1080
+          ],
+          "colors": "フルカラー",
+          "pixel_aspect": 1.0
+        }
+      }
+    },
+    "4K": {
+      "group": "modern",
+      "default_mode": "3840x2160",
+      "modes": {
+        "3840x2160": {
+          "size": [
+            3840,
+            2160
+          ],
+          "colors": "フルカラー",
+          "pixel_aspect": 1.0
         }
       }
     }

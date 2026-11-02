@@ -14,7 +14,9 @@ extends RefCounted
 ##   "lang": "ja",
 ##   "dictionaries": [], "slot_mode": "named", "intent_schema": { "entry", "layers" },
 ##   "event_defaults": { "text.show": { "wait": "click" } },
-##   "features": { "hint": { "allow": true, "default": false, "options": {} } }
+##   "features": { "hint": { "allow": true, "default": false, "options": {} } },
+##   "transitions": { "named": { "door_open": { "type": "wipe", "direction": "right", "duration": 0.8 } } },
+##   "effects": ["res://game/effects/sepia.effect.json"]   // 自作のフィルター、切り替え演出、画面効果
 ## }
 
 const DEFAULT_PATH := "res://adv80s.project.json"
@@ -33,6 +35,8 @@ const DEFAULTS := {
 	"slot_mode": "named",
 	"event_defaults": {},
 	"features": {},
+	"transitions": {},
+	"effects": [],
 }
 
 var data: Dictionary = DEFAULTS.duplicate(true)

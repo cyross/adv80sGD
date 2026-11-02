@@ -219,7 +219,7 @@ SKIN = obj({
     "image": STR, "margins": {"type": "array", "items": INT, "minItems": 4, "maxItems": 4},
 }, extra=False)
 
-REGION = obj({"rect": RECT, "window": STR}, extra=False)
+REGION = obj({"rect": RECT, "window": STR, "visible": {"type": "boolean", "description": t("false でこの区割りを隠す（名前付きのレイアウト用）", "false hides this region (for named layouts)")}}, extra=False)
 
 TEMPLATE = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -238,7 +238,7 @@ TEMPLATE = {
         }, extra=False),
         "palette": obj({"source": {"enum": ["preset", "colors"]},
                         "colors": {"type": "array", "items": {"type": "string", "pattern": "^#?[0-9a-fA-F]{6}$"}}}, extra=False),
-        "fonts": mapof({"type": ["object", "null"], "properties": {"asset": STR, "size": INT}, "additionalProperties": False},
+        "fonts": mapof({"type": ["object", "null"], "properties": {"asset": STR, "size": INT, "line_height": INT}, "additionalProperties": False},
                        t("フォント（main、readable）", "Fonts (main, readable)")),
         "layout": obj({
             "background": {"type": "integer", "description": t("背景のパレット番号", "Background palette index")},
@@ -256,12 +256,26 @@ TEMPLATE = {
             "color": INT, "name_color": INT,
             "denied_tags": STRS,
         }, extra=False),
-        "filters": obj({"mode": {"enum": ["default", "append", "replace", "none"]}, "list": {"type": "array"}}, extra=False),
+        "filters": {"anyOf": [
+            obj({"mode": {"enum": ["default", "append", "replace", "none"]},
+                 "list": {"type": "array", "items": {"$ref": "#/definitions/filter"}}}, extra=False),
+            {"type": "array", "items": {"$ref": "#/definitions/filter"}, "description": t("配列で書くと replace と同じ", "An array means replace")}]},
         "transitions": obj({"default": STR, "named": {"type": "object"}, "replace": mapof(STR)}, extra=False),
         "features": {"type": "object", "description": t("モダン機能の既定値の上書き", "Override modern feature defaults")},
         "assets": obj({"root": STR, "manifest": STR}, extra=False),
         "ui": obj({"window_skin": SKIN, "cursor": STR, "highlight": INT}),
     }, required=["template_version", "id"]),
+    "definitions": {
+        "filter": {"anyOf": [
+            {"type": "string"},
+            {"type": "object", "required": ["type"], "description": t("フィルター（type と引数）", "Filter (type and arguments)"),
+             "properties": {
+                 "type": {"type": "string", "description": t("scanline、reduce、dither、bleed、crt、rgb_mask、mono、lcd、aspect、または自作のID",
+                                                             "scanline, reduce, dither, bleed, crt, rgb_mask, mono, lcd, aspect, or a custom ID")},
+                 "intensity": NUM, "amount": NUM, "curvature": NUM, "vignette": NUM, "grid": NUM,
+                 "color": STR, "bits": {"type": "array", "items": INT}, "colors": STRS, "dither": NUM}},
+        ]},
+    },
 }
 
 # ---------------------------------------------------------------- intent_schema
@@ -346,6 +360,9 @@ PROJECT = {
                      "patternProperties": {"^x\\.": FEATURE}, "additionalProperties": False,
                      "description": t("モダン機能（許可、既定値、細かい設定）", "Modern features (allow, default, options)")},
         "seed": INT,
+        "transitions": obj({"named": mapof({"anyOf": [STR, {"type": "object", "properties": {"type": STR}}]},
+                                           t("名前付きの切り替え演出（名前 → 演出と引数）", "Named transitions (name -> type and arguments)"))}, extra=False),
+        "effects": {**STRS, "description": t("自作のフィルター・切り替え演出・画面効果の定義ファイル（*.effect.json）", "Custom filter / transition / effect definitions (*.effect.json)")},
     }),
     "definitions": COND_DEFS,
 }

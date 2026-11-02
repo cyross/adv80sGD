@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_manifest()
 	_test_schema()
 	_test_features()
+	_test_visuals()
 	_test_stage1_scenario()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
@@ -190,6 +191,43 @@ func _test_features() -> void:
 	check(not f.is_on("hint"), "project deny wins over template")
 	check(not f.is_on("rewind") and _codes(diags).has("FEATURE_DEPENDENCY"), "rewind needs message_log")
 	check(f.is_on("skip") and not f.is_on("era_switch"), "defaults")
+
+
+# ---------------------------------------------------------------- 表示（プリセット、フィルター、切り替え演出）
+
+func _test_visuals() -> void:
+	var p := AdvPresets.resolve("88")
+	eq(p["id"], "88.640x200", "88 default mode")
+	check(p["line_double"] and p["palette"].size() == 8, "88 line double and 8 colors")
+	eq(AdvPresets.resolve("X68K.512x512")["size"], Vector2i(512, 512), "X68K mode")
+	eq(AdvPresets.resolve("FC")["visible"], Rect2i(0, 8, 256, 224), "FC visible area")
+	eq(AdvPresets.resolve("GB")["group"], "handheld", "GB group")
+	check(AdvPresets.resolve("21").is_empty(), "21 is not included")
+	eq(AdvPresets.machines().size(), 26, "26 machines")
+
+	var t98 := AdvTemplate.load_template("pc98_classic")
+	var t88 := AdvTemplate.load_template("pc88_classic")
+	eq(t88.screen_size, Vector2i(640, 200), "88 template size")
+	eq(String(t88.get_section("ui").get("cursor", "")), "ui.cursor", "88 inherits ui from 98")
+	eq(t88.region_rect("message"), Rect2i(16, 128, 416, 46), "88 overrides regions")
+	t88.set_layout("fullscreen_cg")
+	check(t88.region_rect("message").size == Vector2i.ZERO and t88.region_rect("picture").size == Vector2i(640, 200), "named layout hides windows")
+	t88.set_layout("")
+
+	var types := func(list: Array) -> Array: return list.map(func(f): return f["type"])
+	eq(types.call(AdvVisuals.resolve_filters(t98)), ["scanline", "reduce", "crt"], "default filters for pc80")
+	eq(types.call(AdvVisuals.resolve_filters(t98, {"mode": "append", "list": [{"type": "rgb_mask"}]})), ["scanline", "reduce", "crt", "rgb_mask"], "append filters")
+	eq(types.call(AdvVisuals.resolve_filters(t98, [{"type": "mono", "color": "amber"}])), ["mono"], "array means replace")
+	eq(AdvVisuals.resolve_filters(t98, {"mode": "none"}).size(), 0, "no filters")
+
+	eq(AdvVisuals.resolve_transition(null, t98)["type"], "line_draw", "template default transition")
+	eq(AdvVisuals.resolve_transition(null, t98, {}, false)["type"], "cut", "no default when not wanted")
+	eq(AdvVisuals.resolve_transition("fade", t98)["type"], "dissolve", "replace table (fade -> dissolve)")
+	var named := AdvVisuals.resolve_transition("door_open", t98, {"door_open": {"type": "wipe", "direction": "left", "duration": 0.8}})
+	check(named["type"] == "wipe" and named["direction"] == "left" and is_equal_approx(float(named["duration"]), 0.8), "named transition: %s" % str(named))
+	var ld := AdvVisuals.resolve_transition({"type": "line_draw", "speed": 124}, t98)
+	check(is_equal_approx(float(ld["duration"]), 2.0), "line_draw duration from speed: %s" % str(ld))
+	eq(AdvVisuals.resolve_transition("nonsense", t98)["type"], "cut", "unknown transition -> cut")
 
 
 # ---------------------------------------------------------------- 段階1のシナリオ

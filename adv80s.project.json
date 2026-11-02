@@ -1,12 +1,33 @@
 {
   "project_version": 1,
   "template": "pc98_classic",
-  "templates": ["pc98_classic"],
-  "scenarios": ["res://tests/stage1/scenario/stage1.scenario.json"],
-  "asset_roots": ["res://tests/stage1/assets"],
+  "templates": [
+    "pc98_classic"
+  ],
+  "scenarios": [
+    "res://tests/stage1/scenario/stage1.scenario.json"
+  ],
+  "asset_roots": [
+    "res://tests/stage1/assets"
+  ],
   "missing_asset": "placeholder",
   "lang": "ja",
   "features": {
-    "hint": { "allow": true, "default": false }
+    "hint": {
+      "allow": true,
+      "default": false
+    }
+  },
+  "effects": [
+    "res://tests/stage1/effects/sepia.effect.json"
+  ],
+  "transitions": {
+    "named": {
+      "door_open": {
+        "type": "wipe",
+        "direction": "right",
+        "duration": 0.8
+      }
+    }
   }
 }

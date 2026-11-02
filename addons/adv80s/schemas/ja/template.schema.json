@@ -77,6 +77,9 @@
           },
           "size": {
             "type": "integer"
+          },
+          "line_height": {
+            "type": "integer"
           }
         },
         "additionalProperties": false
@@ -115,6 +118,10 @@
                   },
                   "window": {
                     "type": "string"
+                  },
+                  "visible": {
+                    "type": "boolean",
+                    "description": "false でこの区割りを隠す（名前付きのレイアウト用）"
                   }
                 },
                 "additionalProperties": false
@@ -149,6 +156,10 @@
                         },
                         "window": {
                           "type": "string"
+                        },
+                        "visible": {
+                          "type": "boolean",
+                          "description": "false でこの区割りを隠す（名前付きのレイアウト用）"
                         }
                       },
                       "additionalProperties": false
@@ -228,21 +239,35 @@
       "additionalProperties": false
     },
     "filters": {
-      "type": "object",
-      "properties": {
-        "mode": {
-          "enum": [
-            "default",
-            "append",
-            "replace",
-            "none"
-          ]
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "enum": [
+                "default",
+                "append",
+                "replace",
+                "none"
+              ]
+            },
+            "list": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/filter"
+              }
+            }
+          },
+          "additionalProperties": false
         },
-        "list": {
-          "type": "array"
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/filter"
+          },
+          "description": "配列で書くと replace と同じ"
         }
-      },
-      "additionalProperties": false
+      ]
     },
     "transitions": {
       "type": "object",
@@ -346,5 +371,60 @@
   "required": [
     "template_version",
     "id"
-  ]
+  ],
+  "definitions": {
+    "filter": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "description": "フィルター（type と引数）",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "scanline、reduce、dither、bleed、crt、rgb_mask、mono、lcd、aspect、または自作のID"
+            },
+            "intensity": {
+              "type": "number"
+            },
+            "amount": {
+              "type": "number"
+            },
+            "curvature": {
+              "type": "number"
+            },
+            "vignette": {
+              "type": "number"
+            },
+            "grid": {
+              "type": "number"
+            },
+            "color": {
+              "type": "string"
+            },
+            "bits": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "colors": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "dither": {
+              "type": "number"
+            }
+          }
+        }
+      ]
+    }
+  }
 }

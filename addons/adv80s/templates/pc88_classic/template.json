@@ -1,0 +1,24 @@
+{
+  "template_version": 1,
+  "id": "pc88_classic",
+  "name": "88 クラシック",
+  "extends": "pc98_classic",
+
+  "display": { "preset": "88" },
+
+  "layout": {
+    "regions": {
+      "picture":  { "rect": [16, 4, 608, 120] },
+      "message":  { "rect": [16, 128, 416, 46], "window": "main" },
+      "input":    { "rect": [16, 176, 416, 22] },
+      "commands": { "rect": [440, 128, 184, 70], "window": "main" }
+    },
+    "named": {
+      "fullscreen_cg": { "regions": { "picture": { "rect": [0, 0, 640, 200] }, "message": { "visible": false }, "input": { "visible": false }, "commands": { "visible": false } } }
+    }
+  },
+
+  "text": { "speed": 30, "color": 7, "name_color": 6 },
+  "ui": { "highlight": 1 },
+  "transitions": { "default": "line_draw", "replace": { "fade": "dissolve", "mosaic": "blocks", "iris": "blinds" } }
+}

@@ -22,7 +22,7 @@
       "commands": { "rect": [440, 264, 184, 128], "window": "main" }
     },
     "named": {
-      "fullscreen_cg": { "regions": { "picture": { "rect": [0, 0, 640, 400] } } }
+      "fullscreen_cg": { "regions": { "picture": { "rect": [0, 0, 640, 400] }, "message": { "visible": false }, "input": { "visible": false }, "commands": { "visible": false } } }
     }
   },
 
@@ -36,7 +36,7 @@
   },
 
   "filters":     { "mode": "default", "list": [] },
-  "transitions": { "default": "line_draw", "named": {}, "replace": {} },
+  "transitions": { "default": "line_draw", "named": {}, "replace": { "fade": "dissolve", "mosaic": "blocks" } },
   "features":    {},
   "assets":      { "root": "assets/", "manifest": "manifest.json" },
   "ui": {

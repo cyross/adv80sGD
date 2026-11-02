@@ -2,7 +2,7 @@
 
 80年代風アドベンチャーゲームを作るための Godot 4 アドオン。仕様はリポジトリ直下の `SPEC.md` を参照。
 
-## 現在の段階：段階2「データまわり」まで
+## 現在の段階：段階3「表示まわり」まで
 
 | 範囲 | 内容 |
 | --- | --- |
@@ -28,7 +28,18 @@
 | モダン機能 | 機能キーの解決（プロジェクトの許可 → テンプレート → 実行時）と依存の確認（FEATURE_DEPENDENCY） |
 | 出力イベント | `event_defaults`（イベント → シナリオ → プロジェクト → 標準 の順） |
 
-まだないもの：選択肢（choice）、Ink アダプタ、フィルター、切り替え演出、音、セーブファイル、メッセージログ、モダン機能の画面。
+段階3で加えたもの：
+
+| 範囲 | 内容 |
+| --- | --- |
+| プリセット | 7.1 の全26機種（略称）とモード。色（固定パレットかビット数）、ピクセルの縦横比、縦2倍表示、見える範囲、既定のフィルター。`presets.json` は `tools/build_presets.py` で書き出す |
+| 表示 | 元の解像度の SubViewport に描き、整数倍に拡大。640x200 などは縦2倍、縦横比補正（`display.aspect_correction` かフィルター `aspect`）は縦を伸ばす |
+| フィルター | 標準：`scanline`、`reduce`（パレットかビット数）、`dither`、`bleed`、`crt`（曲面と周辺の暗さ）、`rgb_mask`、`mono`、`lcd`、`aspect`。`default` / `append` / `replace` / `none`、配列は replace。自作は `*.effect.json`（kind: filter）で画面を読み直す段として重ねる。`set_filters_enabled()` でまとめて無効化 |
+| 切り替え演出 | `cut`、`fade`、`fade_color`、`wipe`、`blinds`、`line_draw`、`interlace`、`plane_draw`、`mosaic`、`dissolve`、`blocks`、`iris`、`mask`。テンプレートの既定、名前付きの組み合わせ（プロジェクトとテンプレート）、置き換え表、自作（kind: transition）。元の解像度でかけてからフィルターを通す |
+| 画面効果 | `flash`、`shake`、`invert`、`tint`（続けてかけ、amount 0 で戻る）、`scroll`、`zoom`、`raster` |
+| テンプレート | `pc88_classic`（`pc98_classic` を継承）を追加。名前付きのレイアウト（`layout.set`）、テンプレートの切り替え（`template.switch`、機種別の素材に差し替わる）、フォントの行の高さ（`fonts.main.line_height`）、`nine_patch` の窓 |
+
+まだないもの：選択肢（choice）、Ink アダプタ、音、セーブファイル、メッセージログ、スキップとオート送り、モダン機能の画面、`palette_cycle`。
 
 ## 使い方（最小）
 
@@ -45,7 +56,8 @@
 3. シーンに `Control` を置き、スクリプトに `res://addons/adv80s/adv_player.gd` を設定する。
 4. 素材は種類フォルダに置く（`bg/hallway.png` は画像ID `hallway`、`chara/ayumi@smile.png` は `ayumi` の差分 `smile`）。
    エディタが `manifest.auto.json` を自動で書き出すので、コミットしておく。
-5. 表示設定は 640x400、拡大方式 integer、テクスチャのフィルター Nearest を推奨。
+5. 表示設定は、基本の大きさ 640x400、ストレッチモード `canvas_items`、アスペクト `keep`、拡大方式 `integer` を推奨。
+   フィルターは実際の画面の解像度で描くので、`canvas_items` にすると走査線などがきれいに出る。
 
 サンプルは `res://tests/stage1/` にある。
 
@@ -65,6 +77,14 @@ godot --headless --path . --script res://addons/adv80s/tools/manifest_cli.gd -- 
 
 - 一度も読み込んでいないプロジェクト（CI で取り出した直後など）では、先に自動でインポートしてから実行する。
 - 仕様の引数に加えて `--project <ファイル>` でプロジェクト設定のファイルを指定できる。
+
+## 段階3の決めごと
+
+- 自作のフィルター、切り替え演出、画面効果は、プロジェクト設定の `effects` に `*.effect.json` を並べて登録する。フィルターのシェーダーは `hint_screen_texture` で画面を読み直す canvas_item シェーダーとして書く（例：`tests/stage1/effects/`）。
+- 名前付きの切り替え演出は、プロジェクト設定の `transitions.named` とテンプレートの `transitions.named` に書く（テンプレートが優先）。
+- `image.show` で切り替え演出が `cut` 以外になったとき（テンプレートの既定を含む）、`wait` を省略すると `end` になる。
+- 名前付きのレイアウトで窓を隠すときは、その区割りに `"visible": false` を書く（`null` は継承で「取り除く」意味になるため）。
+- 縦横比補正は縦を伸ばして行う（横は整数倍のまま）。
 
 ## 段階2の決めごと
 
