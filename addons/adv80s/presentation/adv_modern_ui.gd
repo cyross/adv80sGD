@@ -140,6 +140,23 @@ func _fill_settings(m: AdvMenuPanel) -> void:
 		m.add_button("もじの はやさ：%s" % label, func():
 			player.set_text_speed(_next(speeds, cur))
 			refill.call())
+		var sizes := [1.0, 1.5, 2.0]
+		var cur_size := float(s.get_value("text_size", 1.0))
+		m.add_button("もじの おおきさ：x%s" % str(cur_size), func():
+			player.set_text_option("text_size", _next(sizes, cur_size))
+			refill.call())
+		var colors := [-1, 7, 6, 5, 4]
+		var color_names := {-1: "ひょうじゅん", 7: "しろ", 6: "きいろ", 5: "みずいろ", 4: "みどり"}
+		var cur_color := int(s.get_value("text_color", -1))
+		m.add_button("もじの いろ：%s" % color_names.get(cur_color, str(cur_color)), func():
+			var i := colors.find(cur_color)
+			player.set_text_option("text_color", colors[(i + 1) % colors.size()])
+			refill.call())
+		var opacities := [1.0, 0.75, 0.5, 0.25]
+		var cur_op := float(s.get_value("window_opacity", 1.0))
+		m.add_button("まどの こさ：%d%%" % int(round(cur_op * 100)), func():
+			player.set_text_option("window_opacity", _next(opacities, cur_op))
+			refill.call())
 	if _on("auto_advance"):
 		var delays := [0.6, 1.2, 2.0, 3.0]
 		var cur := float(s.get_value("auto_delay", 1.2))

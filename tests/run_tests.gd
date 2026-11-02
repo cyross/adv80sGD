@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_ink_story()
 	_test_ink_conformance()
 	_test_ink_adapter()
+	_test_editor_form()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -626,3 +627,31 @@ func _test_ink_adapter() -> void:
 	c3.load_scenario(["res://tests/ink/bad.scenario.json", "res://tests/ink/list.ink.json"])
 	var codes := _codes(c3.validate())
 	check("INK_MISSING_KNOT" in codes and "INK_LIST" in codes, "ink validate codes: %s" % str(codes))
+
+
+# ---------------------------------------------------------------- エディタの編集フォーム
+
+func _test_editor_form() -> void:
+	var f := AdvSchemaForm.new()
+	var schema := AdvSchemaValidator.load_schema("template")
+	var data := {"template_version": 1, "id": "t", "fonts": {"main": [{"asset": "dot16", "size": 16}]}}
+	f.setup(schema, data)
+	var fonts_main = f._schema_at(["fonts", "main"])
+	eq(f.kind_of(f.pick_branch(fonts_main, data["fonts"]["main"])), "array", "form: anyOf picks array for a list")
+	eq(f.kind_of(f.pick_branch(fonts_main, {"asset": "x"})), "object", "form: anyOf picks object")
+	eq(f.kind_of(f.pick_branch(fonts_main, null)), "object", "form: default branch skips null")
+	f.set_at(["fonts", "main", 0, "size"], 12)
+	eq(data["fonts"]["main"][0]["size"], 12, "form: set_at")
+	f.remove_at(["fonts", "main", 0, "size"])
+	check(not data["fonts"]["main"][0].has("size"), "form: remove_at")
+	eq(AdvSchemaForm.pointer(["assets", "se:knock/x"]), "/assets/se:knock~1x", "form: JSON Pointer escape")
+	eq(AdvSchemaForm.normalize({"a": 1.0, "b": null, "c": [2.5]}), {"a": 1, "b": null, "c": [2.5]}, "form: normalize keeps null")
+	var ps := AdvSchemaValidator.load_schema("project")
+	f.setup(ps, {})
+	eq(f.default_for(f.pick_branch(f._schema_at(["missing_asset"]), null)), "placeholder", "form: enum default")
+	check(f.get_root() != null and f.get_root().get_child_count() > 5, "form: absent properties listed")
+	f.free()
+	var scr = load("res://addons/adv80s/editor/adv_editor_screen.gd")
+	eq(scr.entry_for_file("res://g/assets/bgm/town@night.ogg", "res://g/assets", AdvAssets.DEFAULT_FOLDERS),
+		{"key": "bgm:town", "value": {"type": "bgm", "file": "bgm/town@night.ogg"}}, "editor: entry from file in a kind folder")
+	eq(scr.entry_for_file("res://other/logo.png", "res://g/assets", AdvAssets.DEFAULT_FOLDERS)["key"], "image:logo", "editor: entry by extension")

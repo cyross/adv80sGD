@@ -102,6 +102,39 @@ func build(template: AdvTemplate) -> void:
 func set_readable(on: bool) -> void:
 	readable = on
 	theme = _make_theme()
+	set_text_style(_style_size, _style_color, _style_opacity)
+
+
+var _style_size: float = 1.0
+var _style_color: int = -1
+var _style_opacity: float = 1.0
+
+
+## 文章の表示調整（モダン機能 text_options）：文字の大きさの倍率、色（パレットの番号、-1 でテンプレートの色）、窓の背景の不透明度。
+## ドットのフォントは整数倍でないと形が崩れるので、倍率は 1.0、1.5、2.0 のように選ばせる（1.5 は読みやすいフォント向け）。
+func set_text_style(size_scale: float, color_index: int, opacity: float) -> void:
+	_style_size = size_scale
+	_style_color = color_index
+	_style_opacity = opacity
+	if message_label == null:
+		return
+	var fsize := int(round(font_size * size_scale))
+	for key in ["normal_font_size", "bold_font_size", "italics_font_size", "bold_italics_font_size", "mono_font_size"]:
+		if is_equal_approx(size_scale, 1.0):
+			message_label.remove_theme_font_size_override(key)
+		else:
+			message_label.add_theme_font_size_override(key, fsize)
+	if color_index < 0:
+		message_label.remove_theme_color_override("default_color")
+	else:
+		message_label.add_theme_color_override("default_color", tpl.color(color_index))
+	var sb = _msg_win.get_theme_stylebox("panel")
+	if sb is StyleBoxFlat:
+		var c: Color = (sb as StyleBoxFlat).bg_color
+		c.a = clampf(opacity, 0.0, 1.0)
+		(sb as StyleBoxFlat).bg_color = c
+	elif sb is StyleBoxTexture:
+		_msg_win.self_modulate.a = clampf(opacity, 0.0, 1.0)
 
 
 ## 区割りを今のレイアウトに合わせて置き直す（layout.set で切り替えたときにも呼ぶ）。

@@ -149,6 +149,7 @@ func _build_screen() -> void:
 	screen.hotspot_layer.hotspot_clicked.connect(_on_hotspot_clicked)
 	if features.is_on("readable_font") and template.get_section("fonts").has("readable"):
 		screen.set_readable(true)
+	apply_text_style()
 
 
 ## 画面テンプレートを切り替える（旧表示と新表示の切り替えなど）。状態はそのままで、画面を作り直す。
@@ -193,6 +194,24 @@ func set_filters_enabled(on: bool) -> void:
 	display.set_filters_enabled(on)
 	settings.set_value("filters", on)
 	_save_settings()
+
+
+## 文章の表示調整を設定から反映する（モダン機能 text_options。オフなら標準の見た目）。
+func apply_text_style() -> void:
+	if screen == null:
+		return
+	if features != null and not features.is_on("text_options"):
+		screen.set_text_style(1.0, -1, 1.0)
+		return
+	screen.set_text_style(float(settings.get_value("text_size", 1.0)), int(settings.get_value("text_color", -1)),
+		float(settings.get_value("window_opacity", 1.0)))
+
+
+## 文章の表示調整のひとつを変えて保存する（key は text_size、text_color、window_opacity）。
+func set_text_option(key: String, value: Variant) -> void:
+	settings.set_value(key, value)
+	_save_settings()
+	apply_text_style()
 
 
 ## 文字速度の倍率を変える（モダン機能 text_options）。

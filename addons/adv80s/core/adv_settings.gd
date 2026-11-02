@@ -14,6 +14,9 @@ var data: Dictionary = {
 	"se_volume": 1.0,
 	"voice_volume": 1.0,
 	"voice_stop_on_advance": true,  ## 次の文章に進んだらボイスを止める
+	"text_size": 1.0,       ## 文章の文字の大きさの倍率（モダン機能 text_options）
+	"text_color": -1,       ## 文章の色（パレットの番号。-1 ならテンプレートの text.color）
+	"window_opacity": 1.0,  ## 文章の窓の背景の不透明度
 	"features": {},         ## モダン機能の実行時の切り替え（キー → bool）
 }
 

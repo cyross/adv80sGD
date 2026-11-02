@@ -5,15 +5,18 @@ extends EditorPlugin
 ## - 確認の結果をドック「adv80s」に一覧表示する（エラーと警告を区別）
 ## - ゲームの書き出しに JSON（シナリオ、マニフェストなど）を必ず含める
 ## - VS Code 用の JSON Schema の結び付け設定を書き出す
+## - 上の「adv80s」画面で、プロジェクト設定・テンプレート・マニフェストを作って編集する
 
 const DOCK_SCRIPT := preload("res://addons/adv80s/editor/adv_dock.gd")
 const EXPORT_SCRIPT := preload("res://addons/adv80s/editor/adv_export_plugin.gd")
+const SCREEN_SCRIPT := preload("res://addons/adv80s/editor/adv_editor_screen.gd")
 
 const MENU_GENERATE := "adv80s: マニフェストを生成"
 const MENU_VSCODE := "adv80s: VS Code の設定を書き出す"
 const MENU_KEY := "adv80s: セーブの鍵を生成"
 
 var _dock: Control
+var _screen: Control
 var _export: EditorExportPlugin
 var _timer: Timer
 var _busy := false
@@ -24,6 +27,11 @@ func _enter_tree() -> void:
 	_dock.name = "adv80s"
 	_dock.generate_requested.connect(generate)
 	add_control_to_dock(DOCK_SLOT_RIGHT_UL, _dock)
+
+	_screen = SCREEN_SCRIPT.new()
+	_screen.name = "adv80s"
+	EditorInterface.get_editor_main_screen().add_child(_screen)
+	_screen.visible = false
 
 	_export = EXPORT_SCRIPT.new()
 	_export.plugin = self
@@ -54,10 +62,32 @@ func _exit_tree() -> void:
 	if _export != null:
 		remove_export_plugin(_export)
 		_export = null
+	if _screen != null:
+		_screen.queue_free()
+		_screen = null
 	if _dock != null:
 		remove_control_from_docks(_dock)
 		_dock.queue_free()
 		_dock = null
+
+
+func _has_main_screen() -> bool:
+	return true
+
+
+func _make_visible(visible: bool) -> void:
+	if _screen != null:
+		_screen.visible = visible
+		if visible:
+			_screen.on_shown()
+
+
+func _get_plugin_name() -> String:
+	return "adv80s"
+
+
+func _get_plugin_icon() -> Texture2D:
+	return EditorInterface.get_editor_theme().get_icon("FileList", "EditorIcons")
 
 
 func _on_filesystem_changed() -> void:

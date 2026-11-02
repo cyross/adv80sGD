@@ -319,6 +319,23 @@ func _main() -> void:
 	await _settle()
 	check(int(player.display._material.get_shader_parameter("cycle_len")) == 0, "palette cycle stopped")
 
+	# ---- 文章の表示調整（text_options）
+	player.set_text_option("text_size", 2.0)
+	player.set_text_option("text_color", 6)
+	player.set_text_option("window_opacity", 0.5)
+	await _settle()
+	var ml := player.screen.message_label
+	check(ml.get_theme_font_size("normal_font_size") == player.screen.font_size * 2, "text size x2: %d" % ml.get_theme_font_size("normal_font_size"))
+	check(ml.get_theme_color("default_color") == player.template.color(6), "text color")
+	var msb = player.screen._msg_win.get_theme_stylebox("panel")
+	check(msb is StyleBoxFlat and is_equal_approx(msb.bg_color.a, 0.5), "window opacity")
+	await _shot("19_text_options")
+	player.set_text_option("text_size", 1.0)
+	player.set_text_option("text_color", -1)
+	player.set_text_option("window_opacity", 1.0)
+	await _settle()
+	check(ml.get_theme_color("default_color") == player.template.color(int(player.template.get_section("text").get("color", 7))), "text color back to template")
+
 	# ---- 段階6：聞き返し
 	await player.load_game("auto1")
 	await _settle()
