@@ -32,7 +32,8 @@
                 "se",
                 "voice",
                 "font",
-                "shader"
+                "shader",
+                "video"
               ]
             },
             "file": {
@@ -96,6 +97,71 @@
             },
             "volume": {
               "type": "number"
+            },
+            "color_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "description": "Color made transparent (\"#ff00ff\" or palette index)"
+            },
+            "grid": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "Sprite sheet grid [columns, rows]"
+            },
+            "anims": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "frames": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  },
+                  "fps": {
+                    "type": "number"
+                  },
+                  "loop": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "description": "Frame animations (name -> frames, fps, loop)"
+            },
+            "hotspot": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "Cursor image hotspot"
             },
             "ext": {
               "type": "object",

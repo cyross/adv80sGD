@@ -32,7 +32,8 @@
                 "se",
                 "voice",
                 "font",
-                "shader"
+                "shader",
+                "video"
               ]
             },
             "file": {
@@ -96,6 +97,71 @@
             },
             "volume": {
               "type": "number"
+            },
+            "color_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "description": "透明にする色（\"#ff00ff\" かパレット番号）"
+            },
+            "grid": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "スプライトシートの切り方 [横の数, 縦の数]"
+            },
+            "anims": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "frames": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  },
+                  "fps": {
+                    "type": "number"
+                  },
+                  "loop": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "description": "コマ送りアニメーション（名前 → frames、fps、loop）"
+            },
+            "hotspot": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "カーソル画像の指す位置"
             },
             "ext": {
               "type": "object",

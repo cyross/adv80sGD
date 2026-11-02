@@ -532,7 +532,8 @@ static func entry_for_file(path: String, root: String, folders: Dictionary) -> D
 		id_parts = parts.slice(1)
 	else:
 		match path.get_extension().to_lower():
-			"png", "jpg", "jpeg", "webp", "svg": kind = "image"
+			"png", "jpg", "jpeg", "webp", "svg", "gif", "apng", "mng": kind = "image"
+			"ogv": kind = "video"
 			"wav", "ogg", "mp3": kind = "se"
 			"ttf", "otf", "woff", "woff2", "fnt": kind = "font"
 			"gdshader": kind = "shader"

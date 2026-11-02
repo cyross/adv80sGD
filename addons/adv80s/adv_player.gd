@@ -64,6 +64,10 @@ var _history: Array = []                   ## 巻き戻し用の記録 [{data, l
 var _show_all_hotspots: bool = false
 var _last_voice: String = ""            ## 直前の voice.play（次の text.show のログに付ける）
 var _request: Dictionary = {}          ## 聞き返し中（input.request）の引数
+var _sprites: Dictionary = {}          ## スプライトID → いまの状態（sprite.show の引数に変更を重ねたもの。セーブと表示し直しに使う）
+var _video: Dictionary = {}            ## 繰り返しの動画の引数（セーブと表示し直しに使う）
+var _cursor_forced: Variant = null     ## cursor.set で固定した形（種類の文字列か {image, hotspot}）
+var _cursor_kind: String = ""          ## いま出しているカーソルの種類
 
 
 func _ready() -> void:
@@ -148,6 +152,9 @@ func _build_screen() -> void:
 		screen.command_line.command_entered.connect(submit_text)
 	if not screen.hotspot_layer.hotspot_clicked.is_connected(_on_hotspot_clicked):
 		screen.hotspot_layer.hotspot_clicked.connect(_on_hotspot_clicked)
+	screen.hotspot_layer.sprite_lookup = screen.sprite
+	_cursor_kind = ""
+	_apply_text_cursor()
 	if features.is_on("readable_font") and template.get_section("fonts").has("readable"):
 		screen.set_readable(true)
 	apply_text_style()
@@ -185,6 +192,12 @@ func _redraw_view() -> void:
 	for layer in _images:
 		var im: Dictionary = _images[layer]
 		screen.show_image(layer, im["id"], core.assets.resolve("image", im["id"], im.get("variant", "")))
+	screen.clear_sprites()
+	for id in _sprites:
+		_restore_sprite(_sprites[id])
+	screen.stop_video()
+	if not _video.is_empty():
+		_start_video(_video)
 	if _last_text.is_empty():
 		screen.clear_text()
 	else:
@@ -426,6 +439,9 @@ func _on_hotspot_clicked(h: Dictionary) -> void:
 		screen.command_select.pick_target(t)
 		return
 	var verb := String(template.get_section("inputs").get("click_verb", "EXAMINE"))
+	if t["type"] == "exit":
+		verb = "MOVE"
+		t["type"] = "scene"
 	submit_intent({"verb": verb, "slots": {"target": {"type": t["type"], "id": t["id"]}}, "source": "click",
 		"ext": {"label": "%s %s" % [t["label"], core.dictionary.verb_label(verb)]}})
 
@@ -515,6 +531,11 @@ func _play(ev: Dictionary) -> void:
 				screen.play_effect(name, args)
 		"scene.goto":
 			_scene_transition = args.get("transition")
+			# "keep": false のスプライトはシーンを移ると消える（6.4）
+			for id in _sprites.keys():
+				if _sprites[id].get("keep", true) == false and not _sprites[id].has("scene"):
+					_sprites.erase(id)
+					screen.remove_sprite(String(id))
 			if features.is_on("autosave") and "scene" in _autosave_on():
 				_autosave_pending = true
 			wait = "none"
@@ -571,6 +592,67 @@ func _play(ev: Dictionary) -> void:
 		"save.request":
 			await open_save_menu("save")
 			wait = "none"
+		"sprite.show":
+			var s := _show_sprite(args)
+			if s != null:
+				var tr := _sprite_transition(args)
+				if wait is String and wait == "end":
+					await screen.reveal_sprite(s, tr)
+				else:
+					screen.reveal_sprite(s, tr)
+			wait = "none"
+		"sprite.set":
+			await _set_sprite(args, wait is String and wait == "end")
+			wait = "none"
+		"sprite.hide":
+			var ids: Array = args["id"] if args.get("id") is Array else [args.get("id", "")]
+			var tr := _sprite_transition(args)
+			for id in ids:
+				_sprites.erase(String(id))
+				if wait is String and wait == "end" and id == ids.back():
+					await screen.remove_sprite(String(id), tr)
+				else:
+					screen.remove_sprite(String(id), tr)
+			wait = "none"
+		"sprite.anim":
+			var s := screen.sprite(String(args.get("id", "")))
+			if s != null:
+				var an = args.get("anim")
+				if not s.play_anim(String(an) if an != null else "", args.get("loop")):
+					AdvDiag.debug_warn("MISSING_TARGET", "スプライトのアニメーションがありません: %s" % an, "Sprite animation not found: %s" % an)
+				_sync_sprite_state(s)
+			wait = "none"
+		"sprite.effect":
+			var s := screen.sprite(String(args.get("id", "")))
+			if s != null and not skipping:
+				var job := s.play_effect.bind(String(args.get("name", "")), float(args.get("duration", -1.0)), args.get("params", {}))
+				if wait is String and wait == "end":
+					await job.call()
+				else:
+					job.call()
+				_sync_sprite_state(s)
+			wait = "none"
+		"sprite.clear":
+			var layer := String(args.get("layer", ""))
+			for id in _sprites.keys():
+				if layer == "" or String(_sprites[id].get("layer", "char")) == layer:
+					_sprites.erase(id)
+			screen.clear_sprites(layer)
+		"cursor.set":
+			_cursor_forced = args.get("image") if args.get("image") != null else args.get("kind")
+			if args.get("image") != null:
+				_cursor_forced = {"image": args["image"], "hotspot": args.get("hotspot", [0, 0])}
+			_cursor_kind = ""
+		"video.play":
+			if skipping and progress.read.has("video:" + String(args.get("id", ""))):
+				wait = "none"
+			else:
+				await _play_video(args, wait)
+				wait = "none"
+		"video.stop":
+			_video = {}
+			screen.stop_video()
+			audio.resume_bgm()
 		"layout.set":
 			template.set_layout(String(args.get("layout", "")))
 			screen.apply_layout()
@@ -591,6 +673,247 @@ func _play(ev: Dictionary) -> void:
 	if skipping and type == "wait":
 		return
 	await _wait(wait)
+
+
+# ---------------------------------------------------------------- スプライト（6.4）
+
+const _SPRITE_NOT_PROPS := ["id", "image", "variant", "layer", "transition", "duration", "anim", "keep", "scene",
+	"color_key", "wait", "ease", "loop", "yoyo", "path"]
+
+
+## スプライトを作って出す（演出はかけない）。作れなければ null。
+func _show_sprite(args: Dictionary) -> AdvSprite:
+	var id := String(args.get("id", ""))
+	var img := String(args.get("image", ""))
+	if id == "" or img == "":
+		AdvDiag.debug_warn("SCHEMA_VIOLATION", "sprite.show には id と image が必要です", "sprite.show needs id and image")
+		return null
+	var kind := "video" if core.assets.has("video", img) else "image"
+	var variant := String(args.get("variant", ""))
+	var path := core.assets.resolve(kind, img, variant)
+	if path == "":
+		core.assets.report_missing("image", img)
+		return null
+	var entry := core.assets.entry(kind, img)
+	var ck = AdvImages.key_color(args.get("color_key", entry.get("color_key")), template)
+	var res := AdvImages.load_visual(path, ck)
+	var s := screen.add_sprite(id, String(args.get("layer", "char")))
+	if s == null:
+		return null
+	var loader := func(fid: String) -> Texture2D:
+		var at := fid.find("@")
+		var base := fid.substr(0, at) if at >= 0 else fid
+		var v := fid.substr(at + 1) if at >= 0 else ""
+		return AdvImages.first_texture(AdvImages.load_visual(core.assets.resolve("image", base, v), ck))
+	s.set_visual(res, entry, loader)
+	var props := {}
+	for k in args:
+		if not k in _SPRITE_NOT_PROPS:
+			props[k] = args[k]
+	s.apply(props)
+	if args.has("anim"):
+		if args["anim"] != null:
+			s.play_anim(String(args["anim"]))
+	elif "default" in s.anim_names():
+		s.play_anim("default")
+	var keep := args.duplicate(true)
+	for k in ["transition", "duration", "wait"]:
+		keep.erase(k)
+	_sprites[id] = keep
+	_sync_sprite_state(s)
+	return s
+
+
+## スプライトの出し入れの演出。指定がなければ演出なし（cut）。duration で長さを変えられる。
+func _sprite_transition(args: Dictionary) -> Dictionary:
+	if not args.has("transition") or skipping:
+		return {"type": "cut"}
+	var tr := _transition_for(args["transition"])
+	if args.has("duration"):
+		tr["duration"] = float(args["duration"])
+	return tr
+
+
+func _sync_sprite_state(s: AdvSprite) -> void:
+	if not _sprites.has(s.sprite_id):
+		return
+	var st: Dictionary = _sprites[s.sprite_id]
+	for k in s.state:
+		st[k] = s.state[k]
+	for k in ["effect", "_motion"]:
+		if not s.state.has(k):
+			st.erase(k)
+	st["anim"] = s.state.get("anim")
+
+
+## sprite.set：すぐに、または duration をかけて変える。
+func _set_sprite(args: Dictionary, wait_end: bool) -> void:
+	var id := String(args.get("id", ""))
+	var s := screen.sprite(id)
+	if s == null:
+		AdvDiag.debug_warn("MISSING_TARGET", "スプライトがありません: %s" % id, "Sprite not found: %s" % id)
+		return
+	if args.has("image") or args.has("variant"):
+		var spec: Dictionary = _sprites.get(id, {}).duplicate(true)
+		for k in ["image", "variant", "color_key"]:
+			if args.has(k):
+				spec[k] = args[k]
+		s = _show_sprite(spec)
+		if s == null:
+			return
+	var dur := 0.0 if skipping else float(args.get("duration", 0.0))
+	if dur > 0.0 or args.has("path"):
+		s.stop_motion()
+		var loop := int(args.get("loop", 1))
+		var tw := s.tween_to(args, maxf(dur, 0.01), String(args.get("ease", "linear")), loop, bool(args.get("yoyo", false)))
+		_sync_sprite_state(s)
+		if wait_end and loop == 1:
+			await tw.finished
+	else:
+		var props := {}
+		for k in args:
+			if not k in _SPRITE_NOT_PROPS:
+				props[k] = args[k]
+		s.apply(props)
+		if args.has("anim"):
+			s.play_anim(String(args["anim"]) if args["anim"] != null else "")
+		_sync_sprite_state(s)
+
+
+## セーブやテンプレートの切り替えのあとに、スプライトを出し直す（繰り返しの動きと効果も）。
+func _restore_sprite(spec: Dictionary) -> void:
+	var s := _show_sprite(spec)
+	if s == null:
+		return
+	if spec.has("anim") and spec["anim"] != null:
+		s.play_anim(String(spec["anim"]))
+	var m = spec.get("_motion")
+	if m is Dictionary:
+		s.tween_to(m["args"], float(m["duration"]), String(m["ease"]), int(m["loop"]), bool(m["yoyo"]))
+	var ef = spec.get("effect")
+	if ef is Dictionary:
+		s.play_effect(String(ef["name"]), -1.0, ef.get("params", {}))
+	_sync_sprite_state(s)
+
+
+# ---------------------------------------------------------------- 動画（6.6）
+
+func _play_video(args: Dictionary, wait: Variant) -> void:
+	var loop := bool(args.get("loop", false))
+	if not _start_video(args):
+		return
+	if loop:
+		_video = args.duplicate(true)
+		return
+	var vid := String(args.get("id", ""))
+	var skippable := bool(args.get("skippable", true))
+	_click_pending = false
+	while screen.video_player != null and is_instance_valid(screen.video_player) and screen.video_player.is_playing():
+		if skippable and (_click_pending or _skip_held()):
+			break
+		await get_tree().process_frame
+	_click_pending = false
+	screen.stop_video()
+	if String(args.get("bgm", "pause")) == "pause":
+		audio.resume_bgm()
+	progress.read["video:" + vid] = true
+	core.state.read["video:" + vid] = true
+
+
+## 動画を流し始める。流せなければ false。
+func _start_video(args: Dictionary) -> bool:
+	var vid := String(args.get("id", ""))
+	var path := core.assets.resolve("video", vid)
+	if path == "":
+		core.assets.report_missing("video", vid)
+		return false
+	var stream := load(path) as VideoStream
+	if stream == null:
+		push_warning("[adv80s] ASSET_UNSUPPORTED: 動画を読めません: %s" % path)
+		return false
+	match String(args.get("bgm", "pause")):
+		"pause": audio.pause_bgm()
+		"stop": audio.stop_bgm()
+	var vol := float(args.get("volume", 1.0)) * float(settings.get_value("bgm_volume", 1.0))
+	var parent: Control = null if bool(args.get("filters", true)) else display.unfiltered_overlay()
+	screen.play_video(stream, String(args.get("area", "picture")), String(args.get("fit", "contain")),
+		bool(args.get("loop", false)), linear_to_db(maxf(vol, 0.0001)), parent)
+	return true
+
+
+# ---------------------------------------------------------------- マウスカーソル（6.5）
+
+const CURSOR_SHAPES := {"arrow": Input.CURSOR_ARROW, "pointing_hand": Input.CURSOR_POINTING_HAND, "cross": Input.CURSOR_CROSS,
+	"help": Input.CURSOR_HELP, "move": Input.CURSOR_MOVE, "busy": Input.CURSOR_BUSY, "ibeam": Input.CURSOR_IBEAM, "wait": Input.CURSOR_WAIT}
+
+
+## いまのカーソルの種類（固定 → 演出中・クリック待ち → 調べられる場所 → 通常）。
+func current_cursor_kind() -> String:
+	if _cursor_forced is String:
+		return _cursor_forced
+	if _cursor_forced is Dictionary:
+		return "_forced_image"
+	if busy and _overlay == null:
+		return "next" if screen.wait_mark.visible else "wait"
+	if screen != null and _overlay == null:
+		var h := screen.hotspot_layer.hovered()
+		if not h.is_empty():
+			if h.has("cursor"):
+				return String(h["cursor"])
+			match String(h.get("type", "object")):
+				"character": return "talk"
+				"exit": return "exit"
+			return "look"
+	return "default"
+
+
+func _process(_delta: float) -> void:
+	if template == null or screen == null:
+		return
+	var cursors: Dictionary = template.get_section("ui").get("cursors", {})
+	if cursors.is_empty() and _cursor_forced == null:
+		return
+	var k := current_cursor_kind()
+	if k == _cursor_kind:
+		return
+	_cursor_kind = k
+	var def = _cursor_forced if k == "_forced_image" else cursors.get(k, cursors.get("default"))
+	_apply_cursor(def, Input.CURSOR_ARROW)
+
+
+func _apply_cursor(def: Variant, shape: int) -> void:
+	if def is Dictionary and def.has("image"):
+		var tex := _cursor_texture(String(def["image"]))
+		var hs: Array = def.get("hotspot", core.assets.entry("image", String(def["image"])).get("hotspot", [0, 0]))
+		if tex != null:
+			var k := maxi(1, int(display.display_scale().x))
+			var img := tex.get_image()
+			if k > 1:
+				img.resize(img.get_width() * k, img.get_height() * k, Image.INTERPOLATE_NEAREST)
+			Input.set_custom_mouse_cursor(ImageTexture.create_from_image(img), shape, Vector2(float(hs[0]), float(hs[1])) * k)
+			return
+	Input.set_custom_mouse_cursor(null, shape)
+	if shape == Input.CURSOR_ARROW:
+		Input.set_default_cursor_shape(CURSOR_SHAPES.get(String(def) if def is String else "arrow", Input.CURSOR_ARROW))
+
+
+func _cursor_texture(id: String) -> Texture2D:
+	var path := core.assets.resolve("image", id)
+	if path == "":
+		return null
+	var e := core.assets.entry("image", id)
+	return AdvImages.first_texture(AdvImages.load_visual(path, AdvImages.key_color(e.get("color_key"), template)))
+
+
+## 入力欄の上のカーソル（種類 text）と、テンプレートを切り替えたときの片付け。
+func _apply_text_cursor() -> void:
+	var cursors: Dictionary = template.get_section("ui").get("cursors", {}) if template != null else {}
+	Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	if cursors.has("text"):
+		_apply_cursor(cursors["text"], Input.CURSOR_IBEAM)
+	else:
+		Input.set_custom_mouse_cursor(null, Input.CURSOR_IBEAM)
 
 
 ## 切り替え演出を決める（スキップ中は cut）。mask のルール画像は素材IDかパスで指定する。
@@ -685,6 +1008,12 @@ func is_blocked_input(event: InputEvent) -> bool:
 
 
 func _input(event: InputEvent) -> void:
+	# ゲームパッドやキーボードで操作している間はカーソルを隠し、マウスを動かすとまた出す（6.5）
+	if (event is InputEventJoypadButton or (event is InputEventKey and event.pressed)) and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE \
+			and not template.get_section("ui").get("cursors", {}).is_empty():
+		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
+	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_HIDDEN:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	# 無効にした機器の操作は、画面の部品に届く前に止める（_input は GUI より先に呼ばれる）
 	if is_blocked_input(event):
 		get_viewport().set_input_as_handled()
@@ -851,8 +1180,18 @@ func _make_save_data() -> Dictionary:
 		"core": core.save_state(),
 		"log": message_log.to_array(),
 		"view": {"template": template.id, "layout": template._layout_name, "images": _images.duplicate(true),
-			"text": _last_text.duplicate(), "bgm": audio.current_bgm.duplicate()},
+			"text": _last_text.duplicate(), "bgm": audio.current_bgm.duplicate(), "sprites": _sprites_for_save(),
+			"video": _video.duplicate(true), "cursor": _cursor_forced},
 	}
+
+
+## セーブに入れるスプライトの状態（動いている途中のものは終わりの値）。
+func _sprites_for_save() -> Dictionary:
+	for id in _sprites:
+		var s := screen.sprite(String(id))
+		if s != null:
+			_sync_sprite_state(s)
+	return _sprites.duplicate(true)
 
 
 ## セーブする。実行中（busy）は、選択肢の入力待ちのときだけセーブできる。
@@ -910,6 +1249,10 @@ func _apply_save_data(data: Dictionary) -> void:
 	var view: Dictionary = data.get("view", {})
 	_images = view.get("images", {}).duplicate(true)
 	_last_text = view.get("text", {}).duplicate()
+	_sprites = view.get("sprites", {}).duplicate(true)
+	_video = view.get("video", {}).duplicate(true)
+	_cursor_forced = view.get("cursor")
+	_cursor_kind = ""
 	var tid := String(view.get("template", template.id))
 	if tid != template.id:
 		await switch_template(tid)

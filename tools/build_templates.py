@@ -219,6 +219,24 @@ def frame(style, scale):
 
 # ---------------------------------------------------------------- 書き出し
 
+# 標準のマウスカーソル（アドオンの素材 ui/cursor_*.png。tools/build_cursors.py で作る）。
+# マウスが当たり前になった 90年代のパソコンと、家庭用・携帯機・現代の機種のテンプレートで使う
+CURSORS = {
+    "default": {"image": "cursor_arrow", "hotspot": [0, 0]},
+    "look": {"image": "cursor_look", "hotspot": [5, 6]},
+    "talk": {"image": "cursor_talk", "hotspot": [6, 5]},
+    "take": {"image": "cursor_hand", "hotspot": [5, 0]},
+    "use": {"image": "cursor_hand", "hotspot": [5, 0]},
+    "exit": {"image": "cursor_exit", "hotspot": [13, 8]},
+    "wait": {"image": "cursor_wait", "hotspot": [6, 7]},
+    "next": {"image": "cursor_next", "hotspot": [5, 7]},
+    "text": "ibeam",
+}
+CURSOR_TEMPLATES = {"x68k_classic", "ftns_classic", "mtr_classic", "vga_classic", "win_classic",
+                    "fc_classic", "pce_classic", "sfc_classic", "ps1_classic", "ps2_classic",
+                    "gb_classic", "gbc_classic", "gba_classic", "hd_modern", "fhd_modern", "4k_modern"}
+
+
 def compact(obj):
     """JSON を、数の配列だけ1行にまとめて整形する。"""
     text = json.dumps(obj, ensure_ascii=False, indent=2)
@@ -283,6 +301,8 @@ def main():
                 ui["window_padding"] = skin[1]
             else:
                 ui["window_skin"] = {"type": "box", "border": 1, "pal": idx["border"], "fill": idx["fill"]}
+            if tid in CURSOR_TEMPLATES:
+                ui["cursors"] = CURSORS
             d["ui"] = ui
         elif skin is not None:
             d["ui"] = {"window_skin": skin[0], "window_padding": skin[1]}

@@ -11,6 +11,10 @@
       "file": "bg/hallway.png",
       "type": "image"
     },
+    "image:lamp": {
+      "file": "sprite/lamp.gif",
+      "type": "image"
+    },
     "image:room": {
       "by_preset": {
         "88": "presets/88/bg/room.png"
@@ -18,9 +22,17 @@
       "file": "bg/room.png",
       "type": "image"
     },
+    "image:sparkle": {
+      "file": "sprite/sparkle.png",
+      "type": "image"
+    },
     "se:knock": {
       "file": "se/knock.wav",
       "type": "se"
+    },
+    "video:op_test": {
+      "file": "movie/op_test.ogv",
+      "type": "video"
     },
     "voice:ayumi_key_01": {
       "file": "voice/ayumi_key_01.wav",

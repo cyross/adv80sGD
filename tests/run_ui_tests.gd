@@ -243,7 +243,7 @@ func _main() -> void:
 	await _settle()
 	check(player.core.state.scene == "hallway", "back in hallway for click test")
 	var hl := player.screen.hotspot_layer
-	check(hl.hotspots.size() == 2, "hotspots shown: %d" % hl.hotspots.size())
+	check(hl.hotspots.size() == 3, "hotspots shown: %d" % hl.hotspots.size())
 	hl.hotspot_clicked.emit(hl.hotspots.filter(func(h): return h["id"] == "plant")[0])
 	await _settle()
 	check(player.screen.message_label.get_parsed_text().contains("もう なにも ない"), "click examines: %s" % player.screen.message_label.get_parsed_text())
@@ -379,8 +379,80 @@ func _main() -> void:
 	await _settle()
 	check(_buttons(player.screen.command_select).has("しらべる"), "cancel request")
 
+	# ---- 段階9：スプライト、マウスカーソル、動画（6.4〜6.6）
+	await player.load_game("auto1")
+	await _settle()
+	if player.core.state.scene != "hallway":
+		player.submit_text("ろうかへ いく")
+		await _settle()
+	var lamp := player.screen.sprite("lamp")
+	check(lamp != null and lamp.is_animating(), "scene sprite (animated gif) shown")
+	check(player.screen.sprite("sparkle") == null, "sparkle gone after the key was taken")
+	check(lamp != null and lamp.bounds().size == Vector2(32, 48), "lamp scaled x2: %s" % (str(lamp.bounds()) if lamp else ""))
+	check(lamp != null and not lamp.is_opaque_at(lamp.bounds().position + Vector2(1, 1)), "color key: corner is transparent")
+	var lamp_h: Dictionary = player.screen.hotspot_layer.hotspots.filter(func(h): return h["id"] == "lamp").front() if player.screen.hotspot_layer.hotspots.any(func(h): return h["id"] == "lamp") else {}
+	check(not lamp_h.is_empty() and player.screen.hotspot_layer.rect_of(lamp_h) == lamp.bounds(), "sprite hotspot follows the sprite")
+	_run_ev([AdvEvents.make("sprite.show", {"id": "deco", "image": "sparkle", "x": 300, "y": 40, "scale": 3, "layer": "front", "anim": "default"}),
+		AdvEvents.make("sprite.set", {"id": "deco", "x": 340, "duration": 0.2}),
+		AdvEvents.make("sprite.effect", {"id": "lamp", "name": "sepia"}),
+		AdvEvents.make("cursor.set", {"kind": "wait"})])
+	await _settle()
+	var deco := player.screen.sprite("deco")
+	check(deco != null and deco.get_parent().name == "Sprites_front", "screen layer sprite: %s" % (str(deco.get_parent().name) if deco else "none"))
+	check(deco != null and is_equal_approx(deco.position.x, 340.0), "sprite.set tween reached target: %s" % (str(deco.position) if deco else ""))
+	check(player.current_cursor_kind() == "wait", "cursor.set forces the cursor")
+	await _shot("20_sprites")
+	check(player.save_game("03") == OK, "save with sprites")
+	_run_ev([AdvEvents.make("sprite.clear", {}), AdvEvents.make("cursor.set", {"kind": null})])
+	await _settle()
+	check(player.screen.sprite("deco") == null and player.screen.sprite("lamp") == null, "sprite.clear")
+	check(player.current_cursor_kind() != "wait", "cursor back to automatic")
+	check(await player.load_game("03") == "", "load with sprites")
+	await _settle()
+	deco = player.screen.sprite("deco")
+	lamp = player.screen.sprite("lamp")
+	check(deco != null and is_equal_approx(deco.position.x, 340.0) and deco.scale == Vector2(3, 3), "sprite restored from save")
+	check(lamp != null and lamp.state.get("effect", {}).get("name", "") == "sepia" and lamp._body.material is ShaderMaterial, "effect restored from save")
+	check(player.current_cursor_kind() == "wait", "forced cursor restored")
+	await player.switch_template("fhd_modern")
+	await _settle()
+	check(player.screen.sprite("deco") != null and player.screen.sprite("lamp") != null, "sprites survive template switch")
+	check(player.template.get_section("ui").has("cursors"), "modern template has cursors")
+	_run_ev([AdvEvents.make("cursor.set", {"kind": null})])
+	await _settle()
+	check(player.current_cursor_kind() in ["default", "look"], "cursor default: %s" % player.current_cursor_kind())
+	# 動画（6.6）：クリックで飛ばせる、繰り返しは裏で流れ続ける
+	player.auto_click = false
+	_run_ev([AdvEvents.make("video.play", {"id": "op_test"})])
+	await _settle_frames(2)
+	check(player.screen.video_player != null and player.screen.video_player.is_playing(), "video playing: %s %s" % [player.screen.video_player, player.screen.video_player.stream_position if player.screen.video_player else -1.0])
+	check(player.audio._bgm[player.audio._bgm_index].stream_paused, "bgm paused during video")
+	player._click_pending = true
+	await _settle()
+	check(player.screen.video_player == null or not is_instance_valid(player.screen.video_player), "video skipped by click")
+	check(not player.audio._bgm[player.audio._bgm_index].stream_paused, "bgm resumed")
+	check(player.progress.read.has("video:op_test"), "video marked as seen")
+	_run_ev([AdvEvents.make("video.play", {"id": "op_test", "loop": true, "bgm": "keep"})])
+	await _settle()
+	check(player.screen.video_player != null and player.screen.video_player.loop, "loop video keeps playing")
+	_run_ev([AdvEvents.make("video.stop", {})])
+	await _settle()
+	check(player.screen.video_player == null or not is_instance_valid(player.screen.video_player), "video.stop")
+	player.auto_click = true
+	await player.switch_template("pc98_classic")
+	await _settle()
+
 	print("ui failed: %d" % _failed)
 	quit(1 if _failed > 0 else 0)
+
+
+func _run_ev(events: Array) -> void:
+	player._run(events)
+
+
+func _settle_frames(n: int) -> void:
+	for i in n:
+		await process_frame
 
 
 func _settle() -> void:

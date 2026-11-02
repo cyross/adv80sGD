@@ -1,0 +1,14 @@
+[remap]
+
+importer="adv80s.anim_image"
+type="Resource"
+uid="uid://btjplag14h65w"
+path="res://.godot/imported/lamp.gif-bc7c13c0ae762719ce24d9d2ae0adbc3.res"
+
+[deps]
+
+source_file="res://tests/media/lamp.gif"
+dest_files=["res://.godot/imported/lamp.gif-bc7c13c0ae762719ce24d9d2ae0adbc3.res"]
+
+[params]
+

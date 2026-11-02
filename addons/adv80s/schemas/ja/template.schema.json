@@ -99,6 +99,13 @@
           },
           "description": "画像の層（奥から順）"
         },
+        "screen_layers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "画面全体のスプライトの層。名前が back で始まる層は絵の窓より奥、ほかは窓より前（既定 [\"back\", \"front\"]）"
+        },
         "regions": {
           "type": "object",
           "additionalProperties": {
@@ -348,6 +355,43 @@
         },
         "highlight": {
           "type": "integer"
+        },
+        "cursors": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "enum": [
+                  "arrow",
+                  "pointing_hand",
+                  "cross",
+                  "help",
+                  "move",
+                  "busy",
+                  "ibeam",
+                  "wait"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "image": {
+                    "type": "string"
+                  },
+                  "hotspot": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "マウスカーソルの形（種類 → OS標準の形か {image, hotspot}）"
         },
         "window_padding": {
           "type": "array",

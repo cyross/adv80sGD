@@ -50,6 +50,12 @@ func build(template: AdvTemplate) -> void:
 	bg.size = Vector2(sz)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
+	sprite_layers.clear()
+	# 画面全体の層のうち、名前が back で始まるものは絵の窓より奥
+	var screen_layer_names: Array = tpl.get_section("layout").get("screen_layers", ["back", "front"])
+	for n in screen_layer_names:
+		if String(n).begins_with("back"):
+			_add_sprite_layer(self, String(n), true)
 
 	picture = Control.new()
 	picture.name = "Picture"
@@ -62,6 +68,7 @@ func build(template: AdvTemplate) -> void:
 		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		picture.add_child(l)
 		layers[String(layer_name)] = l
+		_add_sprite_layer(picture, String(layer_name), false)
 	hotspot_layer = AdvHotspotLayer.new()
 	hotspot_layer.name = "Hotspots"
 	hotspot_layer.tpl = tpl
@@ -91,6 +98,9 @@ func build(template: AdvTemplate) -> void:
 		command_line.name = "CommandLine"
 		add_child(command_line)
 
+	for n in screen_layer_names:
+		if not String(n).begins_with("back"):
+			_add_sprite_layer(self, String(n), true)
 	_overlay = Control.new()
 	_overlay.name = "Effects"
 	_overlay.size = Vector2(sz)
@@ -521,6 +531,156 @@ func _effect_rect(mode: int) -> ColorRect:
 
 
 ## 画像の層の位置と拡大を元に戻す（scroll、zoom の後、新しい背景にしたとき）。
+# ---------------------------------------------------------------- スプライト（6.4）
+
+## 層の名前 → スプライトを置く Node2D。絵の窓の層は絵の窓の座標、画面全体の層は画面の座標。
+var sprite_layers: Dictionary = {}
+var _screen_space: Dictionary = {}
+
+
+func _add_sprite_layer(parent: Control, name: String, screen_space: bool) -> void:
+	var n := Node2D.new()
+	n.name = "Sprites_" + name
+	parent.add_child(n)
+	sprite_layers[name] = n
+	_screen_space[name] = screen_space
+
+
+func is_screen_layer(name: String) -> bool:
+	return bool(_screen_space.get(name, false))
+
+
+func sprite(id: String) -> AdvSprite:
+	for l in sprite_layers.values():
+		var s: Node = (l as Node).get_node_or_null(_sprite_node_name(id))
+		if s != null and not s.is_queued_for_deletion():
+			return s as AdvSprite
+	return null
+
+
+static func _sprite_node_name(id: String) -> String:
+	return "S_" + id.replace("/", "_").replace(":", "_").replace(".", "_").replace("@", "_")
+
+
+## スプライトを作る（同じIDがあれば置き換える）。層がなければ char、それもなければ最初の層。
+func add_sprite(id: String, layer: String) -> AdvSprite:
+	var old := sprite(id)
+	if old != null:
+		old.get_parent().remove_child(old)
+		old.queue_free()
+	var l: Node2D = sprite_layers.get(layer)
+	if l == null:
+		l = sprite_layers.get("char", sprite_layers.values()[0] if not sprite_layers.is_empty() else null)
+	if l == null:
+		return null
+	var s := AdvSprite.new()
+	s.name = _sprite_node_name(id)
+	s.sprite_id = id
+	s.layer_name = layer
+	l.add_child(s)
+	return s
+
+
+## スプライトを消す。transition が fade（などの演出）なら薄くしてから消す。
+func remove_sprite(id: String, tr: Dictionary = {"type": "cut"}) -> void:
+	var s := sprite(id)
+	if s == null:
+		return
+	s.stop_motion()
+	var dur := float(tr.get("duration", AdvVisuals.DEFAULT_DURATION))
+	if String(tr.get("type", "cut")) != "cut" and dur > 0.0:
+		var tw := s.create_tween()
+		tw.tween_property(s, "modulate:a", 0.0, dur)
+		await tw.finished
+	if is_instance_valid(s):
+		s.get_parent().remove_child(s)
+		s.queue_free()
+
+
+## スプライトを出す演出（いまは fade だけ。そのほかの演出も薄く出す）。
+func reveal_sprite(s: AdvSprite, tr: Dictionary) -> void:
+	var dur := float(tr.get("duration", AdvVisuals.DEFAULT_DURATION))
+	if String(tr.get("type", "cut")) == "cut" or dur <= 0.0:
+		return
+	var a := s.modulate.a
+	s.modulate.a = 0.0
+	var tw := s.create_tween()
+	tw.tween_property(s, "modulate:a", a, dur)
+	await tw.finished
+
+
+func clear_sprites(layer: String = "") -> void:
+	for name in sprite_layers:
+		if layer != "" and name != layer:
+			continue
+		for c in sprite_layers[name].get_children():
+			c.queue_free()
+
+
+func sprite_ids() -> Array:
+	var out := []
+	for l in sprite_layers.values():
+		for c in l.get_children():
+			if c is AdvSprite and not c.is_queued_for_deletion():
+				out.append(c.sprite_id)
+	return out
+
+
+# ---------------------------------------------------------------- 動画（6.6）
+
+var video_player: VideoStreamPlayer
+var _video_back: ColorRect
+
+
+## 動画を流す。area は picture か screen。parent を渡すとそこに置く（フィルターをかけないとき）。
+func play_video(stream: VideoStream, area: String, fit: String, loop: bool, volume_db: float, parent: Control = null) -> VideoStreamPlayer:
+	stop_video()
+	var rect := Rect2(Vector2.ZERO, Vector2(tpl.screen_size))
+	if area != "screen":
+		rect = Rect2(picture.position, picture.size)
+	var host: Control = parent if parent != null else (self if area == "screen" else picture)
+	var origin := rect.position if host != picture else Vector2.ZERO
+	_video_back = ColorRect.new()
+	_video_back.color = Color.BLACK
+	_video_back.position = origin
+	_video_back.size = rect.size
+	_video_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_video_back.clip_contents = true
+	host.add_child(_video_back)
+	if host == picture:
+		picture.move_child(_video_back, hotspot_layer.get_index())
+	elif host == self and _overlay != null:
+		move_child(_video_back, _overlay.get_index())
+	video_player = VideoStreamPlayer.new()
+	video_player.stream = stream
+	video_player.loop = loop
+	video_player.volume_db = volume_db
+	video_player.expand = true
+	video_player.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_video_back.add_child(video_player)
+	video_player.play()
+	var tex := video_player.get_video_texture()
+	var vs := Vector2(tex.get_size()) if tex != null and tex.get_width() > 0 else rect.size
+	var sz := rect.size
+	match fit:
+		"stretch":
+			sz = rect.size
+		"cover":
+			sz = vs * maxf(rect.size.x / vs.x, rect.size.y / vs.y)
+		_:
+			sz = vs * minf(rect.size.x / vs.x, rect.size.y / vs.y)
+	video_player.size = sz.round()
+	video_player.position = ((rect.size - sz) * 0.5).round()
+	return video_player
+
+
+func stop_video() -> void:
+	if _video_back != null and is_instance_valid(_video_back):
+		_video_back.queue_free()
+	_video_back = null
+	video_player = null
+
+
 func reset_layer(layer: String) -> void:
 	var l: Control = layers.get(layer)
 	if l != null:

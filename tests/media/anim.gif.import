@@ -1,0 +1,14 @@
+[remap]
+
+importer="adv80s.anim_image"
+type="Resource"
+uid="uid://44476kra7pa3"
+path="res://.godot/imported/anim.gif-89bdef1125f77b912d03cf20494f797e.res"
+
+[deps]
+
+source_file="res://tests/media/anim.gif"
+dest_files=["res://.godot/imported/anim.gif-89bdef1125f77b912d03cf20494f797e.res"]
+
+[params]
+

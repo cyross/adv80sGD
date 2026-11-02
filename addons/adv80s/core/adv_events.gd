@@ -32,8 +32,14 @@ static func default_wait(ev: Dictionary) -> Variant:
 	match String(ev.get("type", "")):
 		"text.show", "text.append":
 			return "click"
-		"image.show", "image.hide":
+		"image.show", "image.hide", "sprite.show", "sprite.hide":
 			return "end" if args.has("transition") else "none"
+		"sprite.set":
+			return "end" if args.has("duration") and int(args.get("loop", 1)) == 1 else "none"
+		"sprite.effect":
+			return "end"
+		"video.play":
+			return "none" if bool(args.get("loop", false)) else "end"
 		"effect.play", "scene.goto", "group", "template.switch", "layout.set":
 			return "end"
 		"choice.show", "input.request", "save.request":

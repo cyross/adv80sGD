@@ -23,6 +23,34 @@
     "font:tekuplus_bold": {
       "file": "font/tekuplus_bold.ttf",
       "type": "font"
+    },
+    "image:cursor_arrow": {
+      "file": "ui/cursor_arrow.png",
+      "type": "image"
+    },
+    "image:cursor_exit": {
+      "file": "ui/cursor_exit.png",
+      "type": "image"
+    },
+    "image:cursor_hand": {
+      "file": "ui/cursor_hand.png",
+      "type": "image"
+    },
+    "image:cursor_look": {
+      "file": "ui/cursor_look.png",
+      "type": "image"
+    },
+    "image:cursor_next": {
+      "file": "ui/cursor_next.png",
+      "type": "image"
+    },
+    "image:cursor_talk": {
+      "file": "ui/cursor_talk.png",
+      "type": "image"
+    },
+    "image:cursor_wait": {
+      "file": "ui/cursor_wait.png",
+      "type": "image"
     }
   },
   "generated": true,

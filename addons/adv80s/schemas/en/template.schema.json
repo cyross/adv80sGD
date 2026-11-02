@@ -99,6 +99,13 @@
           },
           "description": "Image layers (back to front)"
         },
+        "screen_layers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Screen-space sprite layers; names starting with back are behind the picture, others in front of windows"
+        },
         "regions": {
           "type": "object",
           "additionalProperties": {
@@ -348,6 +355,43 @@
         },
         "highlight": {
           "type": "integer"
+        },
+        "cursors": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "enum": [
+                  "arrow",
+                  "pointing_hand",
+                  "cross",
+                  "help",
+                  "move",
+                  "busy",
+                  "ibeam",
+                  "wait"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "image": {
+                    "type": "string"
+                  },
+                  "hotspot": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "Mouse cursor shapes (kind -> OS shape or {image, hotspot})"
         },
         "window_padding": {
           "type": "array",

@@ -138,9 +138,36 @@ func display_scale() -> Vector2:
 	return Vector2(k, k * ld * ac)
 
 
+## フィルターをかけない重ね物（filters: false の動画など）を置く場所。画面と同じ座標（元の解像度）で、表示の倍率で拡大する。
+func unfiltered_overlay() -> Control:
+	var o := get_node_or_null("Unfiltered") as Control
+	if o == null:
+		o = Control.new()
+		o.name = "Unfiltered"
+		o.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		o.clip_contents = true
+		add_child(o)
+	move_child(o, get_child_count() - 1)
+	_place_overlay(o)
+	return o
+
+
+func _place_overlay(o: Control) -> void:
+	if tpl == null:
+		return
+	var s := display_scale()
+	var vis: Rect2i = tpl.preset.get("visible", Rect2i(Vector2i.ZERO, tpl.screen_size))
+	o.position = frame.position - Vector2(vis.position) * s
+	o.size = Vector2(tpl.screen_size)
+	o.scale = s
+
+
 func _relayout() -> void:
 	if tpl == null:
 		return
+	var uo := get_node_or_null("Unfiltered") as Control
+	if uo != null:
+		_place_overlay(uo)
 	var s := display_scale()
 	var vis: Rect2i = tpl.preset.get("visible", Rect2i(Vector2i.ZERO, tpl.screen_size))
 	var out := Vector2(vis.size) * s

@@ -10,6 +10,7 @@ extends EditorPlugin
 const DOCK_SCRIPT := preload("res://addons/adv80s/editor/adv_dock.gd")
 const EXPORT_SCRIPT := preload("res://addons/adv80s/editor/adv_export_plugin.gd")
 const SCREEN_SCRIPT := preload("res://addons/adv80s/editor/adv_editor_screen.gd")
+const ANIM_IMPORTER := preload("res://addons/adv80s/editor/adv_anim_importer.gd")
 
 const MENU_GENERATE := "adv80s: マニフェストを生成"
 const MENU_VSCODE := "adv80s: VS Code の設定を書き出す"
@@ -17,12 +18,16 @@ const MENU_KEY := "adv80s: セーブの鍵を生成"
 
 var _dock: Control
 var _screen: Control
+var _gif: EditorImportPlugin
 var _export: EditorExportPlugin
 var _timer: Timer
 var _busy := false
 
 
 func _enter_tree() -> void:
+	_gif = ANIM_IMPORTER.new()
+	add_import_plugin(_gif)
+
 	_dock = DOCK_SCRIPT.new()
 	_dock.name = "adv80s"
 	_dock.generate_requested.connect(generate)
@@ -62,6 +67,9 @@ func _exit_tree() -> void:
 	if _export != null:
 		remove_export_plugin(_export)
 		_export = null
+	if _gif != null:
+		remove_import_plugin(_gif)
+		_gif = null
 	if _screen != null:
 		_screen.queue_free()
 		_screen = null

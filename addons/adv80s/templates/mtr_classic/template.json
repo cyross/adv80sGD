@@ -84,6 +84,41 @@
       "border": 1,
       "pal": 7,
       "fill": 0
+    },
+    "cursors": {
+      "default": {
+        "image": "cursor_arrow",
+        "hotspot": [0, 0]
+      },
+      "look": {
+        "image": "cursor_look",
+        "hotspot": [5, 6]
+      },
+      "talk": {
+        "image": "cursor_talk",
+        "hotspot": [6, 5]
+      },
+      "take": {
+        "image": "cursor_hand",
+        "hotspot": [5, 0]
+      },
+      "use": {
+        "image": "cursor_hand",
+        "hotspot": [5, 0]
+      },
+      "exit": {
+        "image": "cursor_exit",
+        "hotspot": [13, 8]
+      },
+      "wait": {
+        "image": "cursor_wait",
+        "hotspot": [6, 7]
+      },
+      "next": {
+        "image": "cursor_next",
+        "hotspot": [5, 7]
+      },
+      "text": "ibeam"
     }
   },
   "assets": {

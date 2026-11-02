@@ -5,6 +5,29 @@
       "type": "bgm",
       "loop_start": 9.6,
       "volume": 0.8
+    },
+    "sparkle": {
+      "type": "image",
+      "grid": [
+        3,
+        1
+      ],
+      "anims": {
+        "default": {
+          "frames": [
+            0,
+            1,
+            2,
+            1
+          ],
+          "fps": 6,
+          "loop": true
+        }
+      }
+    },
+    "lamp": {
+      "type": "image",
+      "color_key": "#000000"
     }
   }
 }

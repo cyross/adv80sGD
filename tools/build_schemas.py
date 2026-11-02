@@ -60,7 +60,9 @@ EVENT_TYPES = ["text.show", "text.append", "text.clear", "image.show", "image.hi
                "bgm.play", "bgm.stop", "se.play", "voice.play", "state.set", "item.add", "item.remove",
                "scene.goto", "wait", "group", "choice.show", "input.request", "game.end", "verbs.update",
                "hotspots.update", "input.mode", "notebook.add", "objective.set", "hint.set", "flow.mark",
-               "checkpoint", "template.switch", "layout.set", "save.request"]
+               "checkpoint", "template.switch", "layout.set", "save.request",
+               "sprite.show", "sprite.set", "sprite.hide", "sprite.anim", "sprite.effect", "sprite.clear",
+               "cursor.set", "video.play", "video.stop"]
 WAIT = {"anyOf": [{"type": "string", "enum": ["none", "click", "end", "input"]}, {"type": "number", "minimum": 0}],
         "description": t("次に進む条件。none、click、end、input、または秒数", "When to continue: none, click, end, input, or seconds")}
 
@@ -171,13 +173,26 @@ scene_props = {
         "names": {**STRS, "description": t("コマンド入力で認識する呼び名", "Names recognized by the parser")},
         "label": {"type": "string", "description": t("コマンド選択に出す名前", "Label shown in command select")},
         "region": RECT,
+        "sprite": {"type": "string", "description": t("結び付けるスプライトID（見えている範囲が調べられる場所になる）", "Sprite ID whose visible area becomes the hotspot")},
+        "cursor": {"type": "string", "description": t("マウスを重ねたときのカーソルの種類", "Cursor kind on hover")},
         "character": {"type": "string", "description": t("人物として扱うときの話者ID", "Speaker ID when this is a character")},
         "when": {"$ref": "#/definitions/condition", "description": t("表示する条件", "Visible when")},
         "on": ON_MAP,
     }), t("シーンの中の物や人物", "Objects and characters in the scene")),
     "exits": mapof({"anyOf": [{"type": "boolean"}, obj({
-        "names": STRS, "label": STR, "when": {"$ref": "#/definitions/condition"}, "on": ON_MAP})]},
+        "names": STRS, "label": STR, "when": {"$ref": "#/definitions/condition"}, "on": ON_MAP,
+        "region": RECT, "sprite": STR, "cursor": STR})]},
         t("出口（行き先のシーンID → 設定）", "Exits (target scene ID -> settings)")),
+    "sprites": {"type": "array", "description": t("シーンに置くスプライト（条件に合うものを出し、合わなくなったら消す）", "Sprites placed in the scene (shown while when holds)"),
+                "items": {"type": "object", "required": ["id", "image"], "properties": {
+                    "id": STR, "image": STR, "variant": STR, "layer": STR, "x": NUM, "y": NUM, "anchor": STR, "z": INT,
+                    "scale": {"anyOf": [NUM, {"type": "array", "items": NUM}]}, "rotation": NUM, "opacity": NUM,
+                    "flip": STR, "blend": {"enum": ["normal", "add", "multiply"]}, "tint": STR, "smooth": BOOL,
+                    "color_key": {"anyOf": [STR, INT]}, "anim": {"type": ["string", "null"]},
+                    "when": {"$ref": "#/definitions/condition"},
+                    "show": {"description": t("出すときの切り替え演出", "Transition when shown")},
+                    "hide": {"description": t("消すときの切り替え演出", "Transition when hidden")}},
+                    "additionalProperties": False}},
     "on": ON_MAP,
 }
 
@@ -253,6 +268,7 @@ TEMPLATE = {
         "layout": obj({
             "background": {"type": "integer", "description": t("背景のパレット番号", "Background palette index")},
             "layers": {**STRS, "description": t("画像の層（奥から順）", "Image layers (back to front)")},
+            "screen_layers": {**STRS, "description": t("画面全体のスプライトの層。名前が back で始まる層は絵の窓より奥、ほかは窓より前（既定 [\"back\", \"front\"]）", "Screen-space sprite layers; names starting with back are behind the picture, others in front of windows")},
             "regions": mapof({"anyOf": [REGION, {"type": "null"}]}, t("画面の区割り", "Screen regions")),
             "named": mapof(obj({"regions": mapof({"anyOf": [REGION, {"type": "null"}]})}, extra=False), t("名前付きのレイアウト", "Named layouts")),
         }, extra=False),
@@ -275,6 +291,9 @@ TEMPLATE = {
         "features": {"type": "object", "description": t("モダン機能の既定値の上書き", "Override modern feature defaults")},
         "assets": obj({"root": STR, "manifest": STR}, extra=False),
         "ui": obj({"window_skin": SKIN, "cursor": STR, "highlight": INT,
+                   "cursors": mapof({"anyOf": [{"enum": ["arrow", "pointing_hand", "cross", "help", "move", "busy", "ibeam", "wait"]},
+                                               obj({"image": STR, "hotspot": {"type": "array", "items": INT, "minItems": 2, "maxItems": 2}}, extra=False)]},
+                                    t("マウスカーソルの形（種類 → OS標準の形か {image, hotspot}）", "Mouse cursor shapes (kind -> OS shape or {image, hotspot})")),
                    "window_padding": {"type": "array", "items": INT, "minItems": 2, "maxItems": 2,
                                       "description": t("窓の内側の余白 [横, 縦]（既定 [8, 4]）", "Inner padding of windows [x, y] (default [8, 4])")}}),
     }, required=["template_version", "id"]),
@@ -323,7 +342,7 @@ INTENT_SCHEMA = {
 
 def asset_entry():
     return obj({
-        "type": {"enum": ["image", "bgm", "se", "voice", "font", "shader"]},
+        "type": {"enum": ["image", "bgm", "se", "voice", "font", "shader", "video"]},
         "file": {"type": "string", "description": t("既定のファイル（base からの相対パス）", "Default file (relative to base)")},
         "by_preset": mapof({"anyOf": [STR, obj({"file": STR, "variants": mapof(STR)}, extra=False)]},
                            t("機種別の差し替え（プリセットID、機種ID、グループID）", "Per-preset overrides (preset, machine or group ID)")),
@@ -332,6 +351,12 @@ def asset_entry():
         "region": RECT,
         "loop_start": {"type": "number", "minimum": 0, "description": t("ループの開始位置（秒）", "Loop start (seconds)")},
         "volume": NUM,
+        "color_key": {"anyOf": [STR, INT], "description": t("透明にする色（\"#ff00ff\" かパレット番号）", "Color made transparent (\"#ff00ff\" or palette index)")},
+        "grid": {"type": "array", "items": INT, "minItems": 2, "maxItems": 2, "description": t("スプライトシートの切り方 [横の数, 縦の数]", "Sprite sheet grid [columns, rows]")},
+        "anims": mapof(obj({"frames": {"type": "array", "items": {"anyOf": [INT, STR]}}, "fps": NUM,
+                            "loop": {"anyOf": [BOOL, INT]}}, extra=False),
+                       t("コマ送りアニメーション（名前 → frames、fps、loop）", "Frame animations (name -> frames, fps, loop)")),
+        "hotspot": {"type": "array", "items": INT, "minItems": 2, "maxItems": 2, "description": t("カーソル画像の指す位置", "Cursor image hotspot")},
     })
 
 

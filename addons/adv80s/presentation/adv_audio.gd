@@ -92,6 +92,15 @@ func stop_bgm(fade: float = 0.0) -> void:
 		p.stop()
 
 
+## 動画を流す間、BGM を一時停止する（6.6）。resume_bgm で続きから鳴らす。
+func pause_bgm() -> void:
+	_bgm[_bgm_index].stream_paused = true
+
+
+func resume_bgm() -> void:
+	_bgm[_bgm_index].stream_paused = false
+
+
 func play_se(path: String, volume: float = 1.0) -> void:
 	var s := load(path) as AudioStream
 	if s == null:

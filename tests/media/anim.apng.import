@@ -1,0 +1,14 @@
+[remap]
+
+importer="adv80s.anim_image"
+type="Resource"
+uid="uid://diopbppoa4ruf"
+path="res://.godot/imported/anim.apng-07ce4f21056229c0d0dc5f9ddc449289.res"
+
+[deps]
+
+source_file="res://tests/media/anim.apng"
+dest_files=["res://.godot/imported/anim.apng-07ce4f21056229c0d0dc5f9ddc449289.res"]
+
+[params]
+

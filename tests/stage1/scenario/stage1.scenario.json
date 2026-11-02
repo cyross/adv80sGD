@@ -72,6 +72,26 @@
     "hallway": {
       "name": "ろうか",
       "image": "hallway",
+      "sprites": [
+        {
+          "id": "lamp",
+          "image": "lamp",
+          "layer": "char",
+          "x": 214,
+          "y": 70,
+          "scale": 2
+        },
+        {
+          "id": "sparkle",
+          "image": "sparkle",
+          "layer": "char",
+          "x": 96,
+          "y": 222,
+          "scale": 2,
+          "when": "not got_key",
+          "hide": "fade"
+        }
+      ],
       "first": [
         {
           "bgm.play": {
@@ -222,6 +242,29 @@
               ]
             },
             "TAKE": "おもくて もてない。"
+          },
+          "cursor": "take"
+        },
+        "lamp": {
+          "names": [
+            "ランプ",
+            "あかり",
+            "lamp",
+            "light"
+          ],
+          "sprite": "lamp",
+          "on": {
+            "LOOK": "かべの ランプが ゆらゆらと ゆれている。",
+            "EXAMINE": [
+              {
+                "sprite.effect": {
+                  "id": "lamp",
+                  "name": "flash"
+                }
+              },
+              "さわってみた。 あつい！ あわてて てを ひっこめた。"
+            ],
+            "TAKE": "かべに しっかり とめてある。"
           }
         }
       },

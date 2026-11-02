@@ -1,0 +1,14 @@
+[remap]
+
+importer="adv80s.anim_image"
+type="Resource"
+uid="uid://cra8jf3mwlfun"
+path="res://.godot/imported/lamp.gif-455bd661287bef21e8374c9f28faa154.res"
+
+[deps]
+
+source_file="res://tests/stage1/assets/sprite/lamp.gif"
+dest_files=["res://.godot/imported/lamp.gif-455bd661287bef21e8374c9f28faa154.res"]
+
+[params]
+

@@ -24,6 +24,7 @@ func _initialize() -> void:
 	_test_ink_adapter()
 	_test_editor_form()
 	_test_templates()
+	_test_media()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -327,6 +328,11 @@ func _test_stage1_scenario() -> void:
 	eq(ev[1]["type"], "image.show", "start: image.show")
 	check(_bodies(ev).contains("うすぐらい"), "start: first text")
 	eq(core.state.scene, "hallway", "scene is hallway")
+	# シーンのスプライト（6.4）
+	var shows := ev.filter(func(e): return e["type"] == "sprite.show").map(func(e): return e["args"]["id"])
+	eq(shows, ["lamp", "sparkle"], "scene sprites shown")
+	var lamp_ev: Dictionary = ev.filter(func(e): return e["type"] == "sprite.show")[0]
+	check(lamp_ev["args"]["keep"] == false and lamp_ev["args"]["scene"] == "hallway" and not lamp_ev["args"].has("when"), "sprite.show args: %s" % str(lamp_ev["args"]))
 	# モダン機能の記録と問い合わせ
 	eq(core.query("objective")["text"], "ここから でる ほうほうを さがす", "objective")
 	var hints: Array = core.query("hints")
@@ -339,15 +345,17 @@ func _test_stage1_scenario() -> void:
 	var verb_ids: Array = core.query("verbs").map(func(v): return v["id"])
 	check("GIVE" in verb_ids and "THINK" in verb_ids and not "PUSH" in verb_ids, "extended verbs from config: %s" % str(verb_ids))
 	var hs: Array = core.query("hotspots")
-	check(hs.size() == 2 and hs.all(func(h): return h["new"]), "hotspots new")
+	check(hs.size() == 3 and hs.all(func(h): return h["new"]), "hotspots new")
+	check(hs.any(func(h): return h["id"] == "lamp" and h.get("sprite") == "lamp"), "sprite hotspot: %s" % str(hs))
+	check(hs.any(func(h): return h["id"] == "plant" and h.get("cursor") == "take"), "hotspot cursor")
 	check(_bodies(_say("かんがえる")).contains("きになる"), "THINK (extended verb)")
 	check(_bodies(_say("プッシュ")).contains("わからない"), "PUSH not in dictionary words")
 	core._commit([AdvEvents.make("verbs.update", {"verbs": ["THINK"], "mode": "remove"}),
 		AdvEvents.make("hotspots.update", {"objects": ["plant"], "mode": "remove"})])
 	check(not "THINK" in core.query("verbs").map(func(v): return v["id"]), "verbs.update remove")
-	eq(core.query("hotspots").size(), 1, "hotspots.update remove")
+	eq(core.query("hotspots").size(), 2, "hotspots.update remove")
 	core._commit([AdvEvents.make("verbs.update", {"verbs": ["THINK"], "mode": "add"}), AdvEvents.make("hotspots.update", {"objects": ["plant"], "mode": "add"})])
-	check("THINK" in core.query("verbs").map(func(v): return v["id"]) and core.query("hotspots").size() == 2, "updates add back")
+	check("THINK" in core.query("verbs").map(func(v): return v["id"]) and core.query("hotspots").size() == 3, "updates add back")
 
 	var t := _bodies(_say("ドア しらべる"))
 	check(t.contains("かぎが かかっている"), "ドア しらべる → %s" % t)
@@ -362,8 +370,12 @@ func _test_stage1_scenario() -> void:
 	check(t.contains("どう するのか"), "no verb → %s" % t)
 	t = _bodies(_say("かぎ つかう"))
 	check(t.contains("そんな ものは ない"), "no key yet → %s" % t)
-	t = _bodies(_say("うえきばちを シラベル"))
+	var key_ev := _say("うえきばちを シラベル")
+	t = _bodies(key_ev)
 	check(t.contains("かぎを みつけた"), "find key → %s" % t)
+	var hides := key_ev.filter(func(e): return e["type"] == "sprite.hide")
+	check(hides.size() == 1 and hides[0]["args"]["id"] == "sparkle" and hides[0]["args"]["transition"] == "fade", "sprite hidden when condition fails: %s" % str(hides))
+	eq(_bodies(_say("ランプを しらべる")).contains("あつい"), true, "sprite object reacts")
 	check(core.state.has_item("key"), "has key")
 	eq(core.query("notebook")[0]["title"], "ふるい かぎ", "notebook entry")
 	eq(core.query("hints")[0]["revealed"], 0, "hint.set replaced hints")
@@ -374,8 +386,10 @@ func _test_stage1_scenario() -> void:
 	t = _bodies(_say("かぎを ドアに つかう"))
 	check(t.contains("カチリ"), "use key on door → %s" % t)
 	check(core.state.get_var("door_unlocked") == true, "door unlocked")
-	t = _bodies(_say("ドアをあける"))
+	var open_ev := _say("ドアをあける")
+	t = _bodies(open_ev)
 	check(t.contains("ドアを あけた") and t.contains("ほこりっぽい"), "open door (no space) → %s" % t)
+	check(open_ev.any(func(e): return e["type"] == "sprite.hide" and e["args"]["id"] == "lamp"), "scene sprites leave with the scene")
 	eq(core.state.scene, "room", "scene is room")
 	var ev2 := _say("しょうじょと はなす")
 	t = _bodies(ev2)
@@ -736,3 +750,47 @@ func _test_templates() -> void:
 		check(found, "template %s: a bundled font is found" % id)
 	for m in AdvPresets.machines():
 		check(machines.has(m), "template for machine %s" % m)
+
+
+# ---------------------------------------------------------------- アニメーション画像とスプライト（6.4）
+
+func _test_media() -> void:
+	for f in ["anim.gif", "anim.apng", "anim.mng"]:
+		var fr: AdvImageFrames = AdvGif.load_frames("res://tests/media/" + f) if f.ends_with(".gif") else AdvPngAnim.load_frames("res://tests/media/" + f)
+		check(fr != null and fr.frames.size() == 3, "%s: 3 frames" % f)
+		if fr != null:
+			check(is_equal_approx(fr.delays[0], 0.1) and is_equal_approx(fr.delays[2], 0.3) and fr.loop_count == 0, "%s: delays and loop %s" % [f, str(fr.delays)])
+	var st: AdvImageFrames = AdvGif.load_frames("res://tests/media/static.gif")
+	check(st != null and st.frames.size() == 1 and st.loop_count == 1, "static gif")
+	var lamp: AdvImageFrames = AdvGif.load_frames("res://tests/media/lamp.gif")
+	eq(lamp.size, Vector2i(16, 24), "lamp size")
+	# 取り込み（.import）を通すと AdvImageFrames になる
+	var imported = load("res://tests/media/lamp.gif")
+	check(imported is AdvImageFrames and imported.frames.size() == 4, "imported gif is AdvImageFrames")
+	# カラーキー：黒を抜く
+	var keyed = AdvImages.load_visual("res://tests/media/lamp.gif", Color.BLACK)
+	var img: Image = (keyed as AdvImageFrames).frames[0].get_image()
+	eq(img.get_pixel(0, 0).a, 0.0, "color key makes black transparent")
+	eq(AdvImages.key_color("#ff00ff"), Color(1, 0, 1), "key color from hex")
+	eq(AdvImages.key_color(null), null, "no key color")
+	# スプライト
+	var s := AdvSprite.new()
+	s.set_visual(keyed, {}, Callable())
+	s.apply({"x": 10, "y": 20, "scale": 2, "opacity": 0.5, "anchor": "bottom"})
+	eq(s.frame_size(), Vector2(16, 24), "sprite frame size")
+	eq(s.bounds().size, Vector2(32, 48), "sprite bounds scaled")
+	check(is_equal_approx(s.modulate.a, 0.5), "sprite opacity")
+	check("default" in s.anim_names(), "animated image gets default anim")
+	check(s.play_anim("default") and s.is_animating(), "play anim")
+	s.free()
+	# スプライトシート（grid と anims）
+	var sheet := AdvSprite.new()
+	sheet.set_visual(load("res://tests/stage1/assets/sprite/sparkle.png"),
+		{"grid": [3, 1], "anims": {"twinkle": {"frames": [0, 1, 2], "fps": 6, "loop": true}}}, Callable())
+	eq(sheet.frame_size(), Vector2(8, 8), "grid frame size")
+	check("twinkle" in sheet.anim_names(), "manifest anims")
+	sheet.free()
+	# マニフェストの生成：動画と、再生できない動画
+	check("ogv" in AdvManifestGenerator.ASSET_EXT and "gif" in AdvManifestGenerator.ASSET_EXT, "manifest generator knows gif/ogv")
+	eq(preload("res://addons/adv80s/editor/adv_editor_screen.gd").entry_for_file("res://x/movie/op.ogv", "res://x", AdvAssets.DEFAULT_FOLDERS)["key"], "video:op", "editor entry for video")
+	eq(preload("res://addons/adv80s/editor/adv_editor_screen.gd").entry_for_file("res://x/a.gif", "res://x", {})["key"], "image:a", "editor entry for gif outside folders")

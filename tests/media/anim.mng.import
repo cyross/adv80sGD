@@ -1,0 +1,14 @@
+[remap]
+
+importer="adv80s.anim_image"
+type="Resource"
+uid="uid://c7fwoi2sb1er"
+path="res://.godot/imported/anim.mng-0ac23ef5fe5bff043e15bf7ded3b7f68.res"
+
+[deps]
+
+source_file="res://tests/media/anim.mng"
+dest_files=["res://.godot/imported/anim.mng-0ac23ef5fe5bff043e15bf7ded3b7f68.res"]
+
+[params]
+

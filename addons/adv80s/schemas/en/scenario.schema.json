@@ -60,6 +60,14 @@
             "maxItems": 4,
             "description": "[x, y, width, height] in native pixels"
           },
+          "sprite": {
+            "type": "string",
+            "description": "Sprite ID whose visible area becomes the hotspot"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor kind on hover"
+          },
           "character": {
             "type": "string",
             "description": "Speaker ID when this is a character"
@@ -124,6 +132,21 @@
                 },
                 "additionalProperties": false
               },
+              "region": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 4,
+                "maxItems": 4,
+                "description": "[x, y, width, height] in native pixels"
+              },
+              "sprite": {
+                "type": "string"
+              },
+              "cursor": {
+                "type": "string"
+              },
               "ext": {
                 "type": "object",
                 "description": "Extension area. Free-form"
@@ -139,6 +162,104 @@
         ]
       },
       "description": "Exits (target scene ID -> settings)"
+    },
+    "sprites": {
+      "type": "array",
+      "description": "Sprites placed in the scene (shown while when holds)",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "image"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          },
+          "layer": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "anchor": {
+            "type": "string"
+          },
+          "z": {
+            "type": "integer"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                }
+              }
+            ]
+          },
+          "rotation": {
+            "type": "number"
+          },
+          "opacity": {
+            "type": "number"
+          },
+          "flip": {
+            "type": "string"
+          },
+          "blend": {
+            "enum": [
+              "normal",
+              "add",
+              "multiply"
+            ]
+          },
+          "tint": {
+            "type": "string"
+          },
+          "smooth": {
+            "type": "boolean"
+          },
+          "color_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "anim": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "when": {
+            "$ref": "#/definitions/condition"
+          },
+          "show": {
+            "description": "Transition when shown"
+          },
+          "hide": {
+            "description": "Transition when hidden"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "on": {
       "type": "object",
@@ -287,6 +408,14 @@
                   "maxItems": 4,
                   "description": "[x, y, width, height] in native pixels"
                 },
+                "sprite": {
+                  "type": "string",
+                  "description": "Sprite ID whose visible area becomes the hotspot"
+                },
+                "cursor": {
+                  "type": "string",
+                  "description": "Cursor kind on hover"
+                },
                 "character": {
                   "type": "string",
                   "description": "Speaker ID when this is a character"
@@ -351,6 +480,21 @@
                       },
                       "additionalProperties": false
                     },
+                    "region": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "minItems": 4,
+                      "maxItems": 4,
+                      "description": "[x, y, width, height] in native pixels"
+                    },
+                    "sprite": {
+                      "type": "string"
+                    },
+                    "cursor": {
+                      "type": "string"
+                    },
                     "ext": {
                       "type": "object",
                       "description": "Extension area. Free-form"
@@ -366,6 +510,104 @@
               ]
             },
             "description": "Exits (target scene ID -> settings)"
+          },
+          "sprites": {
+            "type": "array",
+            "description": "Sprites placed in the scene (shown while when holds)",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "image"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "variant": {
+                  "type": "string"
+                },
+                "layer": {
+                  "type": "string"
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "anchor": {
+                  "type": "string"
+                },
+                "z": {
+                  "type": "integer"
+                },
+                "scale": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  ]
+                },
+                "rotation": {
+                  "type": "number"
+                },
+                "opacity": {
+                  "type": "number"
+                },
+                "flip": {
+                  "type": "string"
+                },
+                "blend": {
+                  "enum": [
+                    "normal",
+                    "add",
+                    "multiply"
+                  ]
+                },
+                "tint": {
+                  "type": "string"
+                },
+                "smooth": {
+                  "type": "boolean"
+                },
+                "color_key": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "anim": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "when": {
+                  "$ref": "#/definitions/condition"
+                },
+                "show": {
+                  "description": "Transition when shown"
+                },
+                "hide": {
+                  "description": "Transition when hidden"
+                }
+              },
+              "additionalProperties": false
+            }
           },
           "on": {
             "type": "object",
@@ -1021,7 +1263,16 @@
                 "checkpoint",
                 "template.switch",
                 "layout.set",
-                "save.request"
+                "save.request",
+                "sprite.show",
+                "sprite.set",
+                "sprite.hide",
+                "sprite.anim",
+                "sprite.effect",
+                "sprite.clear",
+                "cursor.set",
+                "video.play",
+                "video.stop"
               ]
             },
             {

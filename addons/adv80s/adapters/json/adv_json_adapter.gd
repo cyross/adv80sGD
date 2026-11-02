@@ -52,6 +52,7 @@ var _occurrence: Dictionary = {}
 var _stack: Array = []        ## 実行中の手順 [{steps, i, path, kind}]。入力待ちで止まっても残る
 var _choice: Dictionary = {}  ## 選択肢の入力待ち {id, path, options: {項目ID: 手順}, args}
 var _suspended: bool = false  ## ほかのアダプタ（Ink）に処理を渡して止まっている
+var _shown_sprites: Dictionary = {}  ## シーンの sprites で出しているもの（スプライトID → シーンID）
 
 
 # ---------------------------------------------------------------- 読み込み
@@ -118,6 +119,13 @@ func _put(table: Dictionary, id: String, value: Variant, path: String, json_path
 # ---------------------------------------------------------------- 実行
 
 func start(entry: String) -> Array[Dictionary]:
+	_shown_sprites = {}
+	_start_inner(entry)
+	_sync_sprites()
+	return _out
+
+
+func _start_inner(entry: String) -> void:
 	_begin()
 	_stack.clear()
 	_choice = {}
@@ -125,10 +133,15 @@ func start(entry: String) -> Array[Dictionary]:
 	var id := entry if entry != "" else start_scene
 	_goto_scene(id)
 	_resume()
-	return _out
 
 
 func handle_intent(intent: Dictionary) -> Array[Dictionary]:
+	_handle_intent_inner(intent)
+	_sync_sprites()
+	return _out
+
+
+func _handle_intent_inner(intent: Dictionary) -> Array[Dictionary]:
 	_begin()
 	var verb := String(intent.get("verb", ""))
 	var slots: Dictionary = intent.get("slots", {})
@@ -190,6 +203,7 @@ func resume(_result: Dictionary = {}) -> Array[Dictionary]:
 	_begin()
 	_suspended = false
 	_resume()
+	_sync_sprites()
 	return _out
 
 
@@ -198,6 +212,49 @@ func _begin() -> void:
 	_out = []
 	_steps_run = 0
 	_occurrence = {}
+
+
+## シーンの sprites（6.4）を、いまのシーンと条件に合わせて出し入れする。
+## 合わなくなったものは sprite.hide、合うようになったものは sprite.show を出す。
+const _SPRITE_SKIP := ["when", "show", "hide"]
+
+
+func _sync_sprites() -> void:
+	if _scratch == null:
+		return
+	var want := {}
+	var defs := {}
+	for d in scenes.get(_scratch.scene, {}).get("sprites", []):
+		if d is Dictionary and d.has("id") and ctx.eval(d.get("when", true), _scratch):
+			want[String(d["id"])] = true
+			defs[String(d["id"])] = d
+	for id in _shown_sprites.keys():
+		if not want.has(id) or _shown_sprites[id] != _scratch.scene:
+			var hide_args := {"id": id}
+			var old_def = _sprite_def(String(_shown_sprites[id]), id)
+			if old_def is Dictionary and old_def.has("hide") and _shown_sprites[id] == _scratch.scene:
+				hide_args["transition"] = old_def["hide"]
+			_emit(AdvEvents.make("sprite.hide", hide_args))
+			_shown_sprites.erase(id)
+	for id in want:
+		if _shown_sprites.has(id):
+			continue
+		var d: Dictionary = defs[id]
+		var args := {"keep": false, "scene": _scratch.scene}
+		for k in d:
+			if not k in _SPRITE_SKIP:
+				args[k] = d[k]
+		if d.has("show"):
+			args["transition"] = d["show"]
+		_emit(AdvEvents.make("sprite.show", args))
+		_shown_sprites[id] = _scratch.scene
+
+
+func _sprite_def(scene_id: String, id: String) -> Variant:
+	for d in scenes.get(scene_id, {}).get("sprites", []):
+		if d is Dictionary and String(d.get("id", "")) == id:
+			return d
+	return null
 
 
 func _find_on(on: Dictionary, verb: String, with_v: Variant) -> Variant:
@@ -366,6 +423,7 @@ func _goto_scene(id: String) -> void:
 	var sc: Dictionary = scenes[id]
 	if sc.has("image"):
 		_emit(AdvEvents.make("image.show", {"layer": "bg", "id": String(sc["image"])}))
+	_sync_sprites()
 	if first and sc.has("first"):
 		_push(sc["first"], "%s/first" % id, "scene")
 	elif sc.has("enter"):
@@ -492,11 +550,32 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 			var list := []
 			for id in scenes.get(ctx.state.scene, {}).get("objects", {}):
 				var obj = scenes[ctx.state.scene]["objects"][id]
-				if obj is Dictionary and obj.has("region") and ctx.eval(obj.get("when", true)):
+				if obj is Dictionary and (obj.has("region") or obj.has("sprite")) and ctx.eval(obj.get("when", true)):
 					var is_char: bool = obj.has("character")
 					var target := String(obj["character"]) if is_char else String(id)
-					list.append({"id": id, "target": target, "type": "character" if is_char else "object",
-						"label": _object_label(String(id), obj), "region": obj["region"], "rect": obj["region"]})
+					var h := {"id": id, "target": target, "type": "character" if is_char else "object",
+						"label": _object_label(String(id), obj)}
+					if obj.has("region"):
+						h["region"] = obj["region"]
+						h["rect"] = obj["region"]
+					for k in ["sprite", "cursor"]:
+						if obj.has(k):
+							h[k] = obj[k]
+					list.append(h)
+			# 出口も、範囲かスプライトがあれば調べられる場所にする（クリックで移動）
+			var exits: Dictionary = scenes.get(ctx.state.scene, {}).get("exits", {})
+			for eid in exits:
+				var ex = exits[eid]
+				if ex is Dictionary and (ex.has("region") or ex.has("sprite")) and ctx.eval(ex.get("when", true)):
+					var h := {"id": "exit:" + String(eid), "target": eid, "type": "exit",
+						"label": String(ex.get("label", scenes.get(eid, {}).get("name", eid)))}
+					if ex.has("region"):
+						h["region"] = ex["region"]
+						h["rect"] = ex["region"]
+					for k in ["sprite", "cursor"]:
+						if ex.has(k):
+							h[k] = ex[k]
+					list.append(h)
 			return list
 		"flow_structure":
 			return flow if not flow["nodes"].is_empty() else null
@@ -614,13 +693,15 @@ func _all_names() -> Array:
 # ---------------------------------------------------------------- セーブ
 
 func save_state() -> Dictionary:
-	return {"stack": _stack.duplicate(true), "choice": _choice.duplicate(true), "suspended": _suspended}
+	return {"stack": _stack.duplicate(true), "choice": _choice.duplicate(true), "suspended": _suspended,
+		"sprites": _shown_sprites.duplicate()}
 
 
 func load_state(data: Dictionary) -> Error:
 	_stack = data.get("stack", []).duplicate(true)
 	_choice = data.get("choice", {}).duplicate(true)
 	_suspended = bool(data.get("suspended", false))
+	_shown_sprites = data.get("sprites", {}).duplicate()
 	for f in _stack:
 		f["i"] = int(f.get("i", 0))
 	return OK
@@ -629,7 +710,7 @@ func load_state(data: Dictionary) -> Error:
 # ---------------------------------------------------------------- 確認
 
 ## 出力イベントで参照している素材の種類（イベントの種類 → 素材の種類）
-const _ASSET_EVENTS := {"image.show": "image", "bgm.play": "bgm", "se.play": "se", "voice.play": "voice"}
+const _ASSET_EVENTS := {"image.show": "image", "bgm.play": "bgm", "se.play": "se", "voice.play": "voice", "video.play": "video"}
 
 # validate の作業用
 var _v_reads: Dictionary = {}     ## 読んでいる変数 → 最初に見つかった場所 [file, path]
@@ -661,7 +742,11 @@ func validate() -> Array[Dictionary]:
 	_walk_all()
 
 	for ref in _v_refs:
-		if not ctx.has_asset(ref["kind"], ref["id"]):
+		var found := false
+		for k in String(ref["kind"]).split("|"):
+			if ctx.has_asset(k, ref["id"]):
+				found = true
+		if not found:
 			_v_out.append(AdvDiag.make("warning", "ASSET_NOT_FOUND", "素材が見つかりません: %s（%s）" % [ref["id"], ref["kind"]],
 				"Asset not found: %s (%s)" % [ref["id"], ref["kind"]], ref["file"], ref["path"]))
 	for name in _v_reads:
@@ -701,6 +786,22 @@ func _walk_all() -> void:
 		for key in ["first", "enter"]:
 			if sc.has(key):
 				_walk_step(sc[key], "%s/%s" % [jp, key], f, false)
+		var sprite_ids := {}
+		var sl = sc.get("sprites", [])
+		if sl is Array:
+			for i in sl.size():
+				var d = sl[i]
+				if not d is Dictionary:
+					continue
+				sprite_ids[String(d.get("id", ""))] = true
+				_v_refs.append({"kind": "image|video", "id": String(d.get("image", "")), "file": f, "path": "%s/sprites/%d/image" % [jp, i]})
+				_walk_cond(d.get("when"), "%s/sprites/%d/when" % [jp, i], f)
+		for table in ["objects", "exits"]:
+			for oid in sc.get(table, {}):
+				var o = sc[table][oid]
+				if o is Dictionary and o.has("sprite") and not sprite_ids.has(String(o["sprite"])):
+					_v_out.append(AdvDiag.make("info", "MISSING_TARGET", "シーンの sprites にないスプライトに結び付けています（イベントで出すなら問題ありません）: %s" % o["sprite"],
+						"Linked sprite is not in the scene's sprites (fine if shown by an event): %s" % o["sprite"], f, "%s/%s/%s/sprite" % [jp, table, oid]))
 		_walk_on(sc.get("on", {}), jp + "/on", f)
 		for oid in sc.get("objects", {}):
 			var obj = sc["objects"][oid]
@@ -833,6 +934,8 @@ func _walk_step(step: Variant, jp: String, f: String, in_dialogue: bool) -> void
 			ap = "%s/%s" % [jp, _ptr(type)]
 		if type == "state.set" and args is Dictionary:
 			_mark_write(String(args.get("name", args.get("var", args.get("flag", "")))), f, ap)
+		if type == "sprite.show" and args is Dictionary and args.has("image"):
+			_v_refs.append({"kind": "image|video", "id": String(args["image"]), "file": f, "path": ap + "/image"})
 		if _ASSET_EVENTS.has(type) and args is Dictionary and args.has("id"):
 			_v_refs.append({"kind": _ASSET_EVENTS[type], "id": String(args["id"]), "file": f, "path": ap + "/id"})
 		if type == "scene.goto" and args is Dictionary:

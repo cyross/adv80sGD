@@ -19,8 +19,11 @@ extends RefCounted
 
 const AUTO_NAME := "manifest.auto.json"
 const MANUAL_NAME := "manifest.json"
-const ASSET_EXT := ["png", "jpg", "jpeg", "webp", "bmp", "svg", "tga", "ktx", "dds",
+const ASSET_EXT := ["png", "jpg", "jpeg", "webp", "bmp", "svg", "tga", "ktx", "dds", "gif", "apng", "mng", "ogv",
 	"ogg", "wav", "mp3", "ttf", "otf", "woff", "woff2", "fnt", "font", "gdshader"]
+
+## Godot が再生できない動画の拡張子（.ogv に変換してから置く）
+const UNSUPPORTED_VIDEO_EXT := ["mp4", "m4v", "webm", "avi", "mov", "mkv", "mpg", "mpeg", "wmv", "flv"]
 
 static var _name_re: RegEx
 
@@ -41,6 +44,10 @@ static func scan(root: String, folders: Dictionary = AdvAssets.DEFAULT_FOLDERS) 
 	var origin: Dictionary = {}     # "kind:id" → 最初に見つかった種類フォルダ（重複の判定用）
 	var warned_folders: Dictionary = {}
 	for rel in files:
+		if String(rel).begins_with("!"):
+			diags.append(_diag("warning", "ASSET_UNSUPPORTED", "この形式の動画は再生できません。Ogg Theora（.ogv）に変換してください: %s" % String(rel).substr(1),
+				"This video format cannot be played; convert it to Ogg Theora (.ogv): %s" % String(rel).substr(1), r, String(rel).substr(1)))
+			continue
 		var parts: PackedStringArray = String(rel).split("/")
 		var preset_key := ""
 		if parts[0] == "presets":
@@ -132,7 +139,11 @@ static func _walk(dir_path: String, rel: String, out: Array) -> void:
 	for file in dir.get_files():
 		if file.begins_with("_") or file.begins_with("."):
 			continue
-		if not file.get_extension().to_lower() in ASSET_EXT:
+		var ext := file.get_extension().to_lower()
+		if ext in UNSUPPORTED_VIDEO_EXT:
+			out.append("!" + (rel + "/" + file).trim_prefix("/"))   # 使えない動画（scan で警告する）
+			continue
+		if not ext in ASSET_EXT:
 			continue
 		out.append((rel + "/" + file).trim_prefix("/"))
 

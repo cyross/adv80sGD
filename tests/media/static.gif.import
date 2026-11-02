@@ -1,0 +1,14 @@
+[remap]
+
+importer="adv80s.anim_image"
+type="Resource"
+uid="uid://chf15vlebuyf5"
+path="res://.godot/imported/static.gif-a5ba15815165b62f824ba8fff7cd9f4b.res"
+
+[deps]
+
+source_file="res://tests/media/static.gif"
+dest_files=["res://.godot/imported/static.gif-a5ba15815165b62f824ba8fff7cd9f4b.res"]
+
+[params]
+

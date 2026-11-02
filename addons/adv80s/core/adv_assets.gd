@@ -9,7 +9,7 @@ extends RefCounted
 ## 最上位フォルダ名 → 種類（プロジェクト設定 asset_folders で追加・変更できる）
 const DEFAULT_FOLDERS := {
 	"bg": "image", "chara": "image", "cg": "image", "ui": "image",
-	"bgm": "bgm", "se": "se", "voice": "voice", "font": "font", "shader": "shader",
+	"sprite": "image", "bgm": "bgm", "se": "se", "voice": "voice", "font": "font", "shader": "shader", "movie": "video",
 }
 
 ## アドオンが持つ素材フォルダ（標準のフォント）。いちばん下に重ねる
