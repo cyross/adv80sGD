@@ -19,6 +19,8 @@ const BTN_SWITCH := 3
 var schema_root: Dictionary = {}
 var data: Variant = {}
 var read_only: bool = false
+## 文字列の項目の候補を返す関数 func(path: Array) -> Array。候補があれば、その項目は一覧から選ぶ形になる
+var suggest: Callable
 
 var _expanded: Dictionary = {}      ## JSON Pointer → 開いているか
 var _key_dialog: ConfirmationDialog
@@ -335,6 +337,8 @@ func _build_item(parent: TreeItem, key: String, value: Variant, s: Variant, path
 	var it := create_item(parent)
 	var b := pick_branch(s, value)
 	var k := kind_of(b)
+	if k == "null" and suggest.is_valid() and not suggest.call(path).is_empty():
+		k = "string"   # null も選べる候補つきの項目（extends など）は一覧で出す
 	it.set_text(0, key)
 	var desc := String(b.get("description", resolve(s).get("description", "")))
 	if unknown:
@@ -355,9 +359,31 @@ func _build_item(parent: TreeItem, key: String, value: Variant, s: Variant, path
 			var ptr := pointer(path)
 			it.collapsed = not _expanded.get(ptr, path.size() <= 1)
 		"string":
-			it.set_cell_mode(1, TreeItem.CELL_MODE_STRING)
-			it.set_text(1, str(value))
-			it.set_editable(1, not read_only)
+			var choices: Array = suggest.call(path) if suggest.is_valid() else []
+			if not choices.is_empty():
+				# 候補から選ぶ（いまの値が候補になければ足しておく）
+				var list: Array = choices.duplicate()
+				if value is String and value != "" and not value in list:
+					list.push_front(value)
+				if value == null or value == "":
+					list.push_front("")
+				var m: Dictionary = it.get_metadata(0)
+				m["kind"] = "choice"
+				m["choices"] = list
+				it.set_metadata(0, m)
+				var labels := PackedStringArray()
+				for c in list:
+					# 一覧の書き方では「,」と「:」が区切りになるので、全角に置き換えて見せる
+					labels.append("（なし）" if c == "" else String(c).replace(",", "，").replace(":", "："))
+				it.set_cell_mode(1, TreeItem.CELL_MODE_RANGE)
+				it.set_text(1, ",".join(labels))
+				it.set_range(1, max(0, list.find(value if value != null else "")))
+				it.set_editable(1, not read_only)
+				it.set_tooltip_text(1, "一覧から選びます（ほかの値は右の JSON で書けます）")
+			else:
+				it.set_cell_mode(1, TreeItem.CELL_MODE_STRING)
+				it.set_text(1, str(value))
+				it.set_editable(1, not read_only)
 		"integer", "number":
 			it.set_cell_mode(1, TreeItem.CELL_MODE_RANGE)
 			var mn := float(b.get("minimum", -1000000))
@@ -425,6 +451,12 @@ func _on_edited() -> void:
 			it.set_text(1, "有効" if v else "無効")
 		"enum":
 			v = b["enum"][int(it.get_range(1))]
+		"choice":
+			v = m["choices"][int(it.get_range(1))]
+			if v == "":
+				for br in branches(m["schema"]):
+					if kind_of(br) == "null":
+						v = null
 		_:
 			var j := JSON.new()
 			if j.parse(it.get_text(1)) != OK:

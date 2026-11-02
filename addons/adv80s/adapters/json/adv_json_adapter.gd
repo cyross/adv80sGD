@@ -634,6 +634,8 @@ const _ASSET_EVENTS := {"image.show": "image", "bgm.play": "bgm", "se.play": "se
 # validate の作業用
 var _v_reads: Dictionary = {}     ## 読んでいる変数 → 最初に見つかった場所 [file, path]
 var _v_writes: Dictionary = {}    ## 書いている変数
+var _v_read_locs: Dictionary = {}  ## 変数 → 読んでいる場所の配列 [{file, path}]
+var _v_write_locs: Dictionary = {} ## 変数 → 書いている場所の配列
 var _v_targets: Dictionary = {}   ## goto・出口の行き先
 var _v_refs: Array = []           ## 素材の参照 [{kind, id, file, path}]
 var _v_ink_refs: Array = []       ## Ink への受け渡し [{entry, file, path}]
@@ -643,6 +645,8 @@ var _v_out: Array[Dictionary] = []
 func validate() -> Array[Dictionary]:
 	_v_reads = {}
 	_v_writes = {}
+	_v_read_locs = {}
+	_v_write_locs = {}
 	_v_targets = {}
 	_v_refs = []
 	_v_ink_refs = []
@@ -777,7 +781,7 @@ func _walk_step(step: Variant, jp: String, f: String, in_dialogue: bool) -> void
 					_walk_step(d[k], "%s/%s" % [jp, k], f, in_dialogue)
 		if d.has("set") and d["set"] is Dictionary:
 			for name in d["set"]:
-				_v_writes[name] = true
+				_mark_write(name, f, "%s/set/%s" % [jp, _ptr(name)])
 				var v = d["set"][name]
 				if v is String and String(v).begins_with("="):
 					_collect_expr(String(v).substr(1), "%s/set/%s" % [jp, name], f)
@@ -788,7 +792,7 @@ func _walk_step(step: Variant, jp: String, f: String, in_dialogue: bool) -> void
 					"Cannot parse let: %s" % d["let"], f, jp + "/let"))
 			else:
 				for st in stmts:
-					_v_writes[st[0]] = true
+					_mark_write(st[0], f, jp + "/let")
 					_collect_ast(st[1], jp + "/let", f)
 		if d.has("say"):
 			if not characters.has(String(d["say"])):
@@ -828,7 +832,7 @@ func _walk_step(step: Variant, jp: String, f: String, in_dialogue: bool) -> void
 			args = d[type]
 			ap = "%s/%s" % [jp, _ptr(type)]
 		if type == "state.set" and args is Dictionary:
-			_v_writes[String(args.get("name", args.get("var", args.get("flag", ""))))] = true
+			_mark_write(String(args.get("name", args.get("var", args.get("flag", "")))), f, ap)
 		if _ASSET_EVENTS.has(type) and args is Dictionary and args.has("id"):
 			_v_refs.append({"kind": _ASSET_EVENTS[type], "id": String(args["id"]), "file": f, "path": ap + "/id"})
 		if type == "scene.goto" and args is Dictionary:
@@ -913,6 +917,48 @@ func _collect_text_vars(s: String, jp: String, f: String) -> void:
 func _read(name: String, jp: String, f: String) -> void:
 	if not _v_reads.has(name):
 		_v_reads[name] = [f, jp]
+	if not _v_read_locs.has(name):
+		_v_read_locs[name] = []
+	_v_read_locs[name].append({"file": f, "path": jp})
+
+
+func _mark_write(name: String, f: String, jp: String) -> void:
+	_v_writes[name] = true
+	if not _v_write_locs.has(name):
+		_v_write_locs[name] = []
+	_v_write_locs[name].append({"file": f, "path": jp})
+
+
+## 変数の一覧（エディタの「変数の一覧」で使う）。宣言したもの、読んでいるもの、書いているものをまとめる。
+## [{name, type, default, declared: bool, file, path, reads: [{file, path}], writes: [{file, path}]}]
+func variables_info() -> Array:
+	validate()
+	var names: Array = []
+	for n in variables:
+		names.append(String(n))
+	for n in _v_read_locs:
+		if not String(n) in names:
+			names.append(String(n))
+	for n in _v_write_locs:
+		if not String(n) in names:
+			names.append(String(n))
+	var out := []
+	for n in names:
+		var def = variables.get(n)
+		var e := {"name": n, "declared": def != null, "reads": _v_read_locs.get(n, []).duplicate(), "writes": _v_write_locs.get(n, []).duplicate()}
+		if def is Dictionary:
+			e["type"] = String(def.get("type", ""))
+			e["default"] = def.get("default")
+			e["file"] = _file_of("variables", n)
+			e["path"] = "/variables/" + _ptr(n)
+		else:
+			var first: Array = e["writes"] if not e["writes"].is_empty() else e["reads"]
+			e["type"] = ""
+			e["default"] = null
+			e["file"] = first[0]["file"] if not first.is_empty() else ""
+			e["path"] = first[0]["path"] if not first.is_empty() else ""
+		out.append(e)
+	return out
 
 
 static func _ptr(k: String) -> String:

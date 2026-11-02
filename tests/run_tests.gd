@@ -654,4 +654,26 @@ func _test_editor_form() -> void:
 	var scr = load("res://addons/adv80s/editor/adv_editor_screen.gd")
 	eq(scr.entry_for_file("res://g/assets/bgm/town@night.ogg", "res://g/assets", AdvAssets.DEFAULT_FOLDERS),
 		{"key": "bgm:town", "value": {"type": "bgm", "file": "bgm/town@night.ogg"}}, "editor: entry from file in a kind folder")
+	# 候補（一覧から選ぶ項目）
+	check("pc98_classic" in scr.template_ids() and "pc88_classic" in scr.template_ids(), "editor: template ids")
+	check("98" in scr.preset_ids() and scr.preset_ids().any(func(p): return String(p).begins_with("98.")), "editor: preset ids")
+	check("res://tests/stage1/scenario/stage1_talk.ink.json" in scr.scenario_files(), "editor: scenario files")
+	var f2 := AdvSchemaForm.new()
+	f2.suggest = func(path): return ["a", "b"] if path == ["template"] else []
+	f2.setup(AdvSchemaValidator.load_schema("project"), {"template": "zzz"})
+	var row: TreeItem = null
+	for it in f2.get_root().get_children():
+		if it.get_text(0) == "template":
+			row = it
+	check(row != null and row.get_cell_mode(1) == TreeItem.CELL_MODE_RANGE and row.get_text(1) == "zzz,a,b", "form: suggestions as a dropdown keeping the current value")
+	f2.free()
+	# 変数の一覧
+	var vars := AdvVariableIndex.collect()
+	var by_name := {}
+	for v in vars:
+		by_name["%s/%s" % [v["source"], v["name"]]] = v
+	check(by_name.has("JSON/knocks") and by_name["JSON/knocks"]["declared"] and by_name["JSON/knocks"]["writes"].size() >= 1 and by_name["JSON/knocks"]["reads"].size() >= 1,
+		"vars: JSON variable with reads and writes")
+	check(by_name.has("Ink/saw_lights") and by_name["Ink/saw_lights"]["line"] > 0 and by_name["Ink/saw_lights"]["note"] == "JSON と同期", "vars: ink VAR from source, synced")
+	check(by_name.has("組み込み/has(アイテム)"), "vars: builtins")
 	eq(scr.entry_for_file("res://other/logo.png", "res://g/assets", AdvAssets.DEFAULT_FOLDERS)["key"], "image:logo", "editor: entry by extension")

@@ -11,7 +11,8 @@ extends VBoxContainer
 const KIND_PROJECT := 0
 const KIND_TEMPLATE := 1
 const KIND_MANIFEST := 2
-const KIND_NAMES := ["プロジェクト設定", "テンプレート", "マニフェスト"]
+const KIND_VARIABLES := 3
+const KIND_NAMES := ["プロジェクト設定", "テンプレート", "マニフェスト", "変数の一覧"]
 const SCHEMAS := ["project", "template", "manifest"]
 ## 新しく作るテンプレートを置くフォルダ（AdvTemplate.SEARCH_DIRS の最初）
 const TEMPLATE_DIR := "res://game/templates"
@@ -23,6 +24,12 @@ var _form: AdvSchemaForm
 var _diag_tree: Tree
 var _json: TextEdit
 var _add_files_btn: Button
+var _file_buttons: Array = []   ## ファイルを編集するときだけ出すボタン
+var _split: HSplitContainer
+var _vars_box: VBoxContainer
+var _vars_filter: LineEdit
+var _vars_tree: Tree
+var _vars: Array = []
 var _file_dialog: EditorFileDialog
 var _new_dialog: ConfirmationDialog
 var _new_id: LineEdit
@@ -58,6 +65,8 @@ func _init() -> void:
 		b.pressed.connect(spec[1])
 		b.tooltip_text = spec[2]
 		bar.add_child(b)
+		if spec[0] != "再読み込み":
+			_file_buttons.append(b)
 	_add_files_btn = Button.new()
 	_add_files_btn.text = "素材ファイルから追加…"
 	_add_files_btn.tooltip_text = "素材フォルダのファイルを選んで、マニフェストに項目を足します（loop_start や機種別の差し替えを書くため）"
@@ -74,7 +83,12 @@ func _init() -> void:
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	add_child(split)
+	_split = split
+	_vars_box = _make_vars_view()
+	_vars_box.visible = false
+	add_child(_vars_box)
 	_form = AdvSchemaForm.new()
+	_form.suggest = _suggest
 	_form.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_form.size_flags_stretch_ratio = 3
 	_form.changed.connect(_on_form_changed)
@@ -161,6 +175,15 @@ func _shortcut_input(event: InputEvent) -> void:
 
 func _refresh_files() -> void:
 	_add_files_btn.visible = _kind.selected == KIND_MANIFEST
+	var vars := _kind.selected == KIND_VARIABLES
+	_split.visible = not vars
+	_vars_box.visible = vars
+	_file.visible = not vars
+	for b in _file_buttons:
+		b.visible = not vars
+	if vars:
+		_refresh_vars()
+		return
 	_file.clear()
 	_paths.clear()
 	match _kind.selected:
@@ -237,6 +260,9 @@ func _initial_value() -> Dictionary:
 
 
 func _reload() -> void:
+	if _kind.selected == KIND_VARIABLES:
+		_refresh_vars()
+		return
 	_open(_path)
 
 
@@ -495,3 +521,189 @@ static func entry_for_file(path: String, root: String, folders: Dictionary) -> D
 	id_parts[id_parts.size() - 1] = last
 	var id := ".".join(id_parts)
 	return {"key": "%s:%s" % [kind, id], "value": {"type": kind, "file": rel}}
+
+
+# ---------------------------------------------------------------- 候補（一覧から選ぶ項目）
+
+## フォームの文字列の項目の候補。path は項目の場所（["templates", 0] など）。
+func _suggest(path: Array) -> Array:
+	var last = path[path.size() - 1] if not path.is_empty() else ""
+	match _kind.selected:
+		KIND_PROJECT:
+			if path == ["template"] or (path.size() == 2 and path[0] == "templates"):
+				return template_ids()
+			if path.size() == 2 and path[0] == "scenarios":
+				return scenario_files()
+			if path.size() == 2 and path[0] == "asset_roots":
+				return []
+		KIND_TEMPLATE:
+			if path == ["extends"]:
+				var own := String(_form.data.get("id", "")) if _form.data is Dictionary else ""
+				return template_ids().filter(func(t): return t != own)
+			if path == ["display", "preset"]:
+				return preset_ids()
+			if path.size() >= 2 and path[0] == "fonts" and last == "asset":
+				return asset_ids("font")
+		KIND_MANIFEST:
+			if path.size() >= 3 and path[0] == "assets" and String(path[path.size() - 2]) == "by_preset":
+				return []
+	return []
+
+
+## 使えるテンプレートのID（プロジェクトの game/templates と、アドオンの標準）。
+static func template_ids() -> Array:
+	var out := []
+	for dir in AdvTemplate.SEARCH_DIRS:
+		var d := DirAccess.open(dir)
+		if d == null:
+			continue
+		for sub in d.get_directories():
+			if FileAccess.file_exists("%s/%s/template.json" % [dir, sub]) and not sub in out:
+				out.append(sub)
+	return out
+
+
+## 画面プリセットのID（機種だけのものと「機種.画面モード」）。
+static func preset_ids() -> Array:
+	var out := []
+	for m in AdvPresets.machines():
+		out.append(m)
+		for mode in AdvPresets.modes(m):
+			out.append("%s.%s" % [m, mode])
+	return out
+
+
+## シナリオのファイル（res:// の下の *.scenario.json と *.ink.json。addons と隠しフォルダは除く）。
+static func scenario_files(dir: String = "res://") -> Array:
+	var out := []
+	var d := DirAccess.open(dir)
+	if d == null:
+		return out
+	for f in d.get_files():
+		if f.ends_with(".scenario.json") or f.ends_with(".ink.json"):
+			out.append(dir.path_join(f))
+	for sub in d.get_directories():
+		if sub.begins_with(".") or (dir == "res://" and sub == "addons"):
+			continue
+		out.append_array(scenario_files(dir.path_join(sub)))
+	return out
+
+
+## 素材のID（プロジェクトのすべての素材フォルダから、種類を指定して）。
+func asset_ids(kind: String) -> Array:
+	var diags: Array = []
+	var project := AdvProject.load_project(AdvProject.DEFAULT_PATH, diags)
+	var a := AdvAssets.new()
+	a.folders = project.asset_folders()
+	for root in AdvManifestGenerator.project_roots(project, diags):
+		a.add_manifest(AdvManifestGenerator.scan(root, a.folders)["manifest"], root)
+		var manual := String(root) + "/" + AdvManifestGenerator.MANUAL_NAME
+		if FileAccess.file_exists(manual):
+			var m = AdvJson.load_file(manual)
+			if m is Dictionary:
+				a.add_manifest(m, root)
+	var ids: Array = a._entries.get(kind, {}).keys()
+	ids.sort()
+	return ids
+
+
+# ---------------------------------------------------------------- 変数の一覧
+
+const VAR_COLUMNS := ["名前", "種類", "元", "型", "初期値", "定義した場所", "読む", "書く", "メモ"]
+
+
+func _make_vars_view() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var bar := HBoxContainer.new()
+	var l := Label.new()
+	l.text = "絞り込み"
+	bar.add_child(l)
+	_vars_filter = LineEdit.new()
+	_vars_filter.placeholder_text = "名前・種類・場所の一部"
+	_vars_filter.custom_minimum_size = Vector2(240, 0)
+	_vars_filter.text_changed.connect(func(_t): _fill_vars())
+	bar.add_child(_vars_filter)
+	var hint := Label.new()
+	hint.text = "ダブルクリックでファイルを選びます。読む・書くの数にマウスを重ねると場所が出ます"
+	hint.modulate = Color(0.7, 0.7, 0.7)
+	bar.add_child(hint)
+	box.add_child(bar)
+	_vars_tree = Tree.new()
+	_vars_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_vars_tree.columns = VAR_COLUMNS.size()
+	_vars_tree.column_titles_visible = true
+	_vars_tree.hide_root = true
+	for i in VAR_COLUMNS.size():
+		_vars_tree.set_column_title(i, VAR_COLUMNS[i])
+		_vars_tree.set_column_expand(i, i in [0, 4, 5, 8])
+		if not i in [0, 4, 5, 8]:
+			_vars_tree.set_column_custom_minimum_width(i, 64)
+	_vars_tree.item_activated.connect(_on_var_activated)
+	box.add_child(_vars_tree)
+	return box
+
+
+func _refresh_vars() -> void:
+	_vars = AdvVariableIndex.collect()
+	_fill_vars()
+	var n := _vars.filter(func(e): return e["kind"] != "組み込み").size()
+	_status.text = "変数・定数 %d 件（組み込み %d 件）" % [n, _vars.size() - n]
+
+
+func _fill_vars() -> void:
+	_vars_tree.clear()
+	var root := _vars_tree.create_item()
+	var q := _vars_filter.text.strip_edges().to_lower()
+	for e in _vars:
+		var where := String(e["file"])
+		if int(e.get("line", 0)) > 0:
+			where += ":%d" % int(e["line"])
+		elif String(e.get("path", "")) != "":
+			where += "  " + String(e["path"])
+		var row := [String(e["name"]), String(e["kind"]), String(e["source"]), String(e.get("type", "")),
+			_default_text(e),
+			where, str(e["reads"].size()) if e["kind"] != "組み込み" else "", str(e["writes"].size()) if e["kind"] != "組み込み" else "",
+			String(e.get("note", ""))]
+		if q != "" and not " ".join(PackedStringArray(row)).to_lower().contains(q):
+			continue
+		var it := _vars_tree.create_item(root)
+		for i in row.size():
+			it.set_text(i, row[i])
+		it.set_tooltip_text(0, row[0])
+		it.set_tooltip_text(5, where)
+		it.set_tooltip_text(8, row[8])
+		it.set_tooltip_text(6, _locs_text(e["reads"]))
+		it.set_tooltip_text(7, _locs_text(e["writes"]))
+		var note := String(e.get("note", ""))
+		if note.begins_with("宣言も"):
+			it.set_custom_color(8, Color(1, 0.8, 0.3))
+		if e["kind"] == "組み込み":
+			for i in row.size():
+				it.set_custom_color(i, Color(0.65, 0.75, 0.9))
+		it.set_metadata(0, String(e["file"]))
+
+
+static func _default_text(e: Dictionary) -> String:
+	var v = e.get("default")
+	if v == null:
+		return ""
+	if v is String and e["source"] == "Ink":
+		return v   # .ink に書いたままの値
+	return JSON.stringify(AdvSchemaForm.normalize(v))
+
+
+static func _locs_text(locs: Array) -> String:
+	var lines := PackedStringArray()
+	for l in locs:
+		lines.append("%s  %s" % [l["file"], l["path"]])
+	return "\n".join(lines) if not lines.is_empty() else "なし"
+
+
+func _on_var_activated() -> void:
+	var it := _vars_tree.get_selected()
+	if it == null:
+		return
+	var f := String(it.get_metadata(0))
+	if f.begins_with("res://") and FileAccess.file_exists(f):
+		EditorInterface.select_file(f)
