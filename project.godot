@@ -1,5 +1,10 @@
 ; Engine configuration file.
-; adv80sGD 開発用プロジェクト（アドオン本体は addons/adv80s/）
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
 
 config_version=5
 
@@ -17,7 +22,6 @@ window/size/viewport_height=400
 window/size/window_width_override=1280
 window/size/window_height_override=800
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
 window/stretch/scale_mode="integer"
 
 [editor_plugins]
@@ -26,6 +30,6 @@ enabled=PackedStringArray("res://addons/adv80s/plugin.cfg")
 
 [rendering]
 
+textures/canvas_textures/default_texture_filter=0
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-textures/canvas_textures/default_texture_filter=0
