@@ -136,7 +136,14 @@ godot --headless --path . --script res://addons/adv80s/tools/manifest_cli.gd -- 
 - 外部関数：`has_item`、`item_count`、`item_add`、`item_remove`、`get_var`、`set_var`、`visited`、`talked`、`cond`（条件式）、`event`（種類, 引数のJSON）、`goto_scene`。これ以外は Ink 側に同じ名前の関数があればそれを使い、なければ validate が `INK_EXTERNAL` を出す。
 - Ink に入るとき `state.mark`（talked、`ink:ノット`）を出す。選んだ選択肢は `chosen` に `ink:ノット#c…/c番号` で残す。
 - validate のコード：`INK_LOAD`、`INK_VERSION`、`INK_UNSUPPORTED`、`INK_LIST`、`INK_EXTERNAL`、`INK_MISSING_KNOT`（JSON の `{"ink"}` の行き先）、タグの素材は `ASSET_NOT_FOUND`。
-- テスト用の `tests/ink/*.ink.json` は inklecate の出力の形に合わせて手で書いた。実際の inklecate の出力での確認はまだ。
+- タグだけの行は本文が空の行になる（C# 版と同じ）。アダプタは、その行の出力イベント以外のタグを次の行の `ext.tags` に回す。
+- 確かめ方：`tests/ink/src/*.ink` を inklecate で変換したものを `tests/ink/` に置いている。`conformance.ink` は、inklecate の再生モード（`-p`）で選択肢を 1 2 1 2 1 1 2 と選んだ出力（`conformance.expected.txt`）と一字一句同じになることをテストで確かめる。`.ink` を直したら次のように作り直す。
+
+```
+inklecate -o tests/ink/sample.ink.json tests/ink/src/sample.ink
+inklecate -o tests/ink/conformance.ink.json tests/ink/src/conformance.ink
+printf '1\n2\n1\n2\n1\n1\n2\n' | inklecate -p tests/ink/src/conformance.ink > tests/ink/conformance.expected.txt
+```
 
 ## 段階6の決めごと
 

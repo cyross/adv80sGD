@@ -20,6 +20,7 @@ func _initialize() -> void:
 	_test_stage1_scenario()
 	_test_english()
 	_test_ink_story()
+	_test_ink_conformance()
 	_test_ink_adapter()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
@@ -493,7 +494,8 @@ func _test_ink_story() -> void:
 	s.external_functions["event"] = func(a): calls.append(a); return null
 	s.choose_path("shop")
 	lines = s.continue_maximally()
-	eq(_texts(lines), ["Coins: 5", "Visited start 2 times.", "Poor."], "ink function, CNT?, conditional divert")
+	# タグだけの行は、本文が空の行になる（C# 版と同じ）
+	eq(_texts(lines), ["", "Coins: 5", "Visited start 1 times.", "Poor."], "ink function, CNT?, conditional")
 	eq(lines[0]["tags"], ["shop_tag"], "ink knot tag")
 	eq(calls, [["se.play", "{\"id\":\"knock\"}"]], "ink external function args")
 	eq(s.tags_at_path("shop"), ["shop_tag"], "ink tags_at_path")
@@ -508,6 +510,33 @@ func _test_ink_story() -> void:
 	s.choose_path("shop")
 	s.continue_maximally()
 	eq(changed, [["coins", 6]], "ink variable change callback")
+
+
+## inklecate -p の出力（tests/ink/conformance.expected.txt）と同じになるか。
+func _test_ink_conformance() -> void:
+	var s := AdvInkStory.new()
+	s.load_json(FileAccess.get_file_as_string("res://tests/ink/conformance.ink.json"))
+	var picks := [1, 2, 1, 2, 1, 1, 2]
+	var out := PackedStringArray()
+	var prefix := ""
+	while true:
+		for l in s.continue_maximally():
+			out.append(prefix + l["text"])
+			prefix = ""
+			if not l["tags"].is_empty():
+				out.append("# tags: " + ", ".join(PackedStringArray(l["tags"])))
+		var ch := s.current_choices
+		if ch.is_empty() or picks.is_empty():
+			break
+		out.append("")
+		for c in ch:
+			out.append("%d: %s" % [c["index"] + 1, c["text"]])
+		prefix = "?> "
+		s.choose_choice_index(int(picks.pop_front()) - 1)
+	var want := FileAccess.get_file_as_string("res://tests/ink/conformance.expected.txt").replace("\r", "").strip_edges()
+	var got := "\n".join(out).strip_edges()
+	check(got == want, "ink conformance with inklecate -p:\n%s" % got)
+	check(s.errors.is_empty(), "ink conformance no errors: %s" % str(s.errors))
 
 
 func _test_ink_adapter() -> void:
@@ -540,7 +569,7 @@ func _test_ink_adapter() -> void:
 	ev = c.submit({"verb": "CHOOSE", "target": "c0"})
 	eq(_bodies(ev), "Leave / Quietly. / はなしおえた。", "ink: resume after load")
 	ev = c.submit({"verb": "LOOK", "target": "register"})
-	eq(_bodies(ev), "Coins: 12 / Visited start 2 times. / Rich. / レジを はなれた。", "ink: Core variables copied into ink")
+	eq(_bodies(ev), "Coins: 12 / Visited start 1 times. / Rich. / レジを はなれた。", "ink: Core variables copied into ink")
 	eq(c.state.get_var("coins"), 12, "ink: changed variable returned")
 	check(ev.any(func(e): return e["type"] == "se.play" and e["args"]["id"] == "knock"), "ink: event() external")
 	ev = c.submit({"verb": "OPEN", "target": "register"})
@@ -552,6 +581,9 @@ func _test_ink_adapter() -> void:
 	check(ev.any(func(e): return e["type"] == "image.show" and e["args"]["layer"] == "bg"), "ink: bg tag")
 	check(ev.any(func(e): return e["type"] == "bgm.play"), "ink: JSON event tag")
 	eq(shows[2]["ext"].get("tags"), ["custom"], "ink: other tags in ext")
+	var ev2 := c.submit({"verb": "LOOK", "target": "register"})
+	var shows2 := ev2.filter(func(e): return e["type"] == "text.show")
+	eq(shows2[0]["ext"].get("tags"), ["shop_tag"], "ink: tag-only line carried to the next line")
 	check(String(shows[0]["id"]).begins_with("ink:talk#"), "ink: line id")
 	eq(_bodies(ev), "Hi there. / Narration. / Mood. / No key. / おわり。", "ink: two ink calls in a row")
 	c.state.items["key"] = 1

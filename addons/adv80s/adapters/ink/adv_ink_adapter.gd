@@ -36,6 +36,7 @@ var _choice_id: String = ""
 var _scratch: AdvState
 var _out: Array[Dictionary] = []
 var _occurrence: Dictionary = {}
+var _carry_tags: Array = []        ## タグだけの行のタグ（次の行の ext.tags に入れる）
 
 
 func load_sources(paths: PackedStringArray) -> Error:
@@ -160,6 +161,7 @@ func _begin() -> void:
 	_scratch = ctx.state.duplicate_state()
 	_out = []
 	_occurrence = {}
+	_carry_tags = []
 
 
 func _run() -> void:
@@ -230,7 +232,11 @@ func _line(text: String, tags: Array) -> void:
 				else:
 					extra_tags.append(tag)
 	if text == "":
+		# タグだけの行：出力イベント以外のタグは次の行に回す
+		_carry_tags.append_array(extra_tags)
 		return
+	extra_tags = _carry_tags + extra_tags
+	_carry_tags = []
 	if text.begins_with("@@"):
 		text = text.substr(1)
 	elif text.begins_with("@"):

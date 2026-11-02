@@ -1,0 +1,59 @@
+Hello world!
+# tags: greeting
+First time.
+Cycle A
+Once one
+stopping 1
+
+1: Ask about the key
+2: Leave
+3: Sticky
+?> "The key?"
+# tags: q
+She nods.
+Again.
+Cycle B
+Once two
+stopping 2
+
+1: Leave
+2: Sticky
+?> Sticky chosen.
+Again.
+Cycle A
+Once three
+stopping 2
+
+1: Leave
+2: Sticky
+?> Leave quietly.
+3 1 13 3.5 false abcd true
+x is 14.
+3 40
+5 false
+Coins: 5
+Inside tunnel.
+After tunnel. Visits start 1 turns 3.
+
+1: Side option
+2: Main option
+?> Main option
+Main picked.
+Gathered.
+Second stitch 1.
+
+1: Visible once
+?> Visible once
+Saw visible.
+Auto fallback.
+
+1: Outer A
+2: Outer B
+?> Outer A
+
+1: Inner A1
+2: Inner A2
+?> Inner A2
+A2.
+Inner gather.
+Outer gather. No key.
