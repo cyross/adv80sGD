@@ -363,6 +363,14 @@ PROJECT = {
         "transitions": obj({"named": mapof({"anyOf": [STR, {"type": "object", "properties": {"type": STR}}]},
                                            t("名前付きの切り替え演出（名前 → 演出と引数）", "Named transitions (name -> type and arguments)"))}, extra=False),
         "effects": {**STRS, "description": t("自作のフィルター・切り替え演出・画面効果の定義ファイル（*.effect.json）", "Custom filter / transition / effect definitions (*.effect.json)")},
+        "save": obj({
+            "protection": {"enum": ["hmac", "hmac_aes", "none"], "description": t("保護レベル：hmac（検知のみ、標準）、hmac_aes（検知＋暗号化）、none", "Protection: hmac (detect, default), hmac_aes (detect + encrypt), none")},
+            "on_tamper": {"enum": ["reject", "warn"], "description": t("署名が一致しないとき：reject（読み込まない）、warn（警告して読み込む。暗号化時は不可）", "On signature mismatch: reject, or warn and load (not for encrypted saves)")},
+            "text_format": {"type": "boolean", "description": t("テキスト形式（JSON）で書き出す。製品版でも読み書きを許可する", "Write text (JSON) saves; also allows them in release builds")},
+            "dir": STR,
+            "slots": {"type": "integer", "minimum": 1},
+            "key_provider": {"type": "string", "description": t("embedded（標準）、per_user、または AdvKeyProvider を継承したスクリプトのパス", "embedded (default), per_user, or a script extending AdvKeyProvider")},
+        }, t("セーブの設定（第8章）", "Save settings (chapter 8)"), extra=False),
     }),
     "definitions": COND_DEFS,
 }

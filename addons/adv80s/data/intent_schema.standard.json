@@ -16,6 +16,7 @@
     "OPEN":    { "slots": [ { "name": "target", "type": "object", "particles": ["を"] },
                             { "name": "with",   "type": "item",   "particles": ["で"], "required": false } ] },
     "CLOSE":   { "slots": [ { "name": "target", "type": "object", "particles": ["を"] } ] },
-    "ITEMS":   { "slots": [] }
+    "ITEMS":   { "slots": [] },
+    "CHOOSE":  { "slots": [ { "name": "target", "type": "choice" } ] }
   }
 }

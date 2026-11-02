@@ -13,6 +13,8 @@ var _verb: Dictionary = {}
 var _slot_index: int = 0
 var _filled: Dictionary = {}
 var _enabled: bool = true
+var _labels: PackedStringArray = []   ## ログに残す、選んだものの表示名
+var choosing: bool = false            ## 選択肢を出している
 
 
 func _ready() -> void:
@@ -28,6 +30,7 @@ func _ready() -> void:
 ## 動詞の一覧から始め直す。
 func refresh(core: AdvCore) -> void:
 	_core = core
+	choosing = false
 	_verb = {}
 	_filled = {}
 	_slot_index = 0
@@ -75,14 +78,34 @@ func _on_verb(v: Dictionary) -> void:
 	_verb = v
 	_filled = {}
 	_slot_index = 0
+	_labels = PackedStringArray([String(v["label"])])
 	_next_slot()
+
+
+## 選択肢を出す（choice.show）。選ぶと CHOOSE の意図を出す。
+func show_choices(choices: Array) -> void:
+	choosing = true
+	_clear()
+	_grid.columns = 1
+	for c in choices:
+		_add(String(c["label"]), _on_choice.bind(c))
+	if _grid.get_child_count() > 0 and _enabled:
+		(_grid.get_child(0) as Button).call_deferred("grab_focus")
+
+
+func _on_choice(c: Dictionary) -> void:
+	choosing = false
+	_show_verbs()
+	intent_selected.emit({"verb": "CHOOSE", "slots": {"target": {"type": "choice", "id": String(c["id"])}},
+		"source": "select", "ext": {"label": String(c["label"])}})
 
 
 ## 次に埋めるスロットの候補を出す。全部埋まったら意図を出す。
 func _next_slot() -> void:
 	var slots: Array = _verb.get("slots", [])
 	if _slot_index >= slots.size():
-		var intent := {"verb": _verb["id"], "slots": _filled.duplicate(), "source": "select"}
+		var intent := {"verb": _verb["id"], "slots": _filled.duplicate(), "source": "select",
+			"ext": {"label": " ".join(_labels)}}
 		_show_verbs()
 		intent_selected.emit(intent)
 		return
@@ -103,6 +126,7 @@ func _next_slot() -> void:
 
 func _on_target(def: Dictionary, c: Dictionary) -> void:
 	_filled[def["name"]] = {"type": c["type"], "id": c["id"]}
+	_labels.insert(_labels.size() - 1, String(c["label"]))
 	_slot_index += 1
 	_next_slot()
 

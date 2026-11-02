@@ -96,15 +96,19 @@ func start(entry: String = "") -> Array[Dictionary]:
 func submit(intent: Dictionary) -> Array[Dictionary]:
 	var it := normalize_intent(intent)
 	var verb := String(it.get("verb", ""))
+	if verb != "CHOOSE" and query("pending_choice") != null:
+		return []  # 選択肢を選ぶまでは、ほかの意図を受け付けない
 	if not schema.has_verb(verb):
 		return _commit([AdvEvents.text(dictionary.reply("cannot"))])
 	for s in schema.slots(verb):
 		if s["required"] and not it["slots"].has(s["name"]):
 			return _commit([AdvEvents.text(dictionary.reply("missing_slot", {"verb": dictionary.verb_label(verb)}))])
-	var key := verb
-	if it["slots"].has("target"):
-		key += ":" + slot_key(it["slots"]["target"])
-	var events: Array[Dictionary] = [AdvEvents.make("state.mark", {"kind": "tried", "id": key})]
+	var events: Array[Dictionary] = []
+	if verb != "CHOOSE":
+		var key := verb
+		if it["slots"].has("target"):
+			key += ":" + slot_key(it["slots"]["target"])
+		events.append(AdvEvents.make("state.mark", {"kind": "tried", "id": key}))
 	events.append_array(adapter.handle_intent(it))
 	return _commit(events)
 
@@ -163,6 +167,10 @@ func _commit(events: Array) -> Array[Dictionary]:
 			if e["type"] == "scene.goto":
 				_reload_schema()
 		if e.get("type") == "text.show" and e.has("id"):
+			# 既読スキップのため、この表示の前に読んでいたかを残しておく
+			if not e.has("ext"):
+				e["ext"] = {}
+			e["ext"]["was_read"] = state.read.has(String(e["id"]))
 			state.read[String(e["id"])] = true
 		out.append(e)
 	return out

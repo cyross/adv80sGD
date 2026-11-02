@@ -52,9 +52,9 @@ vec3 quantize(vec3 c, vec2 px) {
 	return c;
 }
 
-vec3 fetch(sampler2D tex, vec2 px) {
-	vec2 p = clamp(px, vec2(0.0), source_size - 1.0);
-	return quantize(texture(tex, (p + 0.5) / source_size).rgb, p);
+// 元の1ピクセルの中心の UV（TEXTURE は関数の引数に渡せない環境があるので、UV だけを求める）
+vec2 center_uv(vec2 px) {
+	return (clamp(px, vec2(0.0), source_size - 1.0) + 0.5) / source_size;
 }
 
 void fragment() {
@@ -72,10 +72,12 @@ void fragment() {
 		}
 		vec2 src = uv * source_size;
 		vec2 px = floor(src);
-		vec3 c = fetch(TEXTURE, px);
+		vec3 c = quantize(texture(TEXTURE, center_uv(px)).rgb, px);
 		if (bleed > 0.0) {
-			vec3 l = fetch(TEXTURE, px - vec2(1.0, 0.0));
-			vec3 r = fetch(TEXTURE, px + vec2(1.0, 0.0));
+			vec2 pl = px - vec2(1.0, 0.0);
+			vec2 pr = px + vec2(1.0, 0.0);
+			vec3 l = quantize(texture(TEXTURE, center_uv(pl)).rgb, pl);
+			vec3 r = quantize(texture(TEXTURE, center_uv(pr)).rgb, pr);
 			c = mix(c, (l + c * 2.0 + r) * 0.25, bleed);
 		}
 		vec2 f = fract(src);

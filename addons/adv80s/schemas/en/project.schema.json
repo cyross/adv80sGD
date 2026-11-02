@@ -485,6 +485,43 @@
       },
       "description": "Custom filter / transition / effect definitions (*.effect.json)"
     },
+    "save": {
+      "type": "object",
+      "properties": {
+        "protection": {
+          "enum": [
+            "hmac",
+            "hmac_aes",
+            "none"
+          ],
+          "description": "Protection: hmac (detect, default), hmac_aes (detect + encrypt), none"
+        },
+        "on_tamper": {
+          "enum": [
+            "reject",
+            "warn"
+          ],
+          "description": "On signature mismatch: reject, or warn and load (not for encrypted saves)"
+        },
+        "text_format": {
+          "type": "boolean",
+          "description": "Write text (JSON) saves; also allows them in release builds"
+        },
+        "dir": {
+          "type": "string"
+        },
+        "slots": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "key_provider": {
+          "type": "string",
+          "description": "embedded (default), per_user, or a script extending AdvKeyProvider"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Save settings (chapter 8)"
+    },
     "ext": {
       "type": "object",
       "description": "Extension area. Free-form"

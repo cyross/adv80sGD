@@ -11,6 +11,7 @@ const EXPORT_SCRIPT := preload("res://addons/adv80s/editor/adv_export_plugin.gd"
 
 const MENU_GENERATE := "adv80s: マニフェストを生成"
 const MENU_VSCODE := "adv80s: VS Code の設定を書き出す"
+const MENU_KEY := "adv80s: セーブの鍵を生成"
 
 var _dock: Control
 var _export: EditorExportPlugin
@@ -30,6 +31,7 @@ func _enter_tree() -> void:
 
 	add_tool_menu_item(MENU_GENERATE, generate)
 	add_tool_menu_item(MENU_VSCODE, write_vscode_settings)
+	add_tool_menu_item(MENU_KEY, generate_save_key)
 
 	# ファイルが変わったら、少し待ってから生成する（続けて変わったときにまとめるため）
 	_timer = Timer.new()
@@ -48,6 +50,7 @@ func _exit_tree() -> void:
 		fs.filesystem_changed.disconnect(_on_filesystem_changed)
 	remove_tool_menu_item(MENU_GENERATE)
 	remove_tool_menu_item(MENU_VSCODE)
+	remove_tool_menu_item(MENU_KEY)
 	if _export != null:
 		remove_export_plugin(_export)
 		_export = null
@@ -75,6 +78,21 @@ func generate() -> Dictionary:
 			fs.update_file(p)
 	_busy = false
 	return res
+
+
+## セーブの鍵（res://master.key）を乱数で作る。すでにあれば作らない（鍵を変えると、それまでのセーブが読めなくなる）。
+## master.key は Git の管理対象から外しておくこと（.gitignore に master.key を書く）。
+func generate_save_key() -> void:
+	var err := AdvEmbeddedKeyProvider.generate_key_file()
+	match err:
+		OK:
+			print("[adv80s] %s を作りました。Git にコミットしないでください（.gitignore に master.key を加えてください）" % AdvEmbeddedKeyProvider.KEY_FILE)
+		ERR_ALREADY_EXISTS:
+			push_warning("[adv80s] %s はすでにあります。鍵を変えるとそれまでのセーブが読めなくなるため、作り直しません" % AdvEmbeddedKeyProvider.KEY_FILE)
+		_:
+			push_error("[adv80s] 鍵を作れませんでした（%s）" % error_string(err))
+	if not FileAccess.file_exists("res://.gitignore") or not FileAccess.get_file_as_string("res://.gitignore").contains("master.key"):
+		push_warning("[adv80s] .gitignore に master.key がありません。鍵を公開しないよう加えてください")
 
 
 ## VS Code の json.schemas 設定（res://.vscode/settings.json）を書き出す。

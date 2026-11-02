@@ -1,26 +1,60 @@
 {
   "start": "hallway",
   "variables": {
-    "door_unlocked": { "type": "bool", "default": false },
-    "got_key":       { "type": "bool", "default": false },
-    "knocks":        { "type": "int",  "default": 0 }
+    "door_unlocked": {
+      "type": "bool",
+      "default": false
+    },
+    "got_key": {
+      "type": "bool",
+      "default": false
+    },
+    "knocks": {
+      "type": "int",
+      "default": 0
+    },
+    "met_ayumi": {
+      "type": "bool",
+      "default": false
+    }
   },
   "characters": {
-    "ayumi": { "name": "あゆみ", "names": ["しょうじょ", "少女"], "pal": 13 }
+    "ayumi": {
+      "name": "あゆみ",
+      "names": [
+        "しょうじょ",
+        "少女"
+      ],
+      "pal": 13
+    }
   },
   "items": {
     "key": {
       "name": "かぎ",
-      "names": ["鍵", "カギ"],
+      "names": [
+        "鍵",
+        "カギ"
+      ],
       "on": {
         "LOOK": "ふるびた しんちゅうの かぎだ。",
         "USE+door": [
-          { "set": { "door_unlocked": true } },
+          {
+            "set": {
+              "door_unlocked": true
+            }
+          },
           "かぎを まわした。 カチリと おとが した。"
         ],
         "USE": {
           "if": "scene == hallway and not door_unlocked",
-          "then": [ { "set": { "door_unlocked": true } }, "ドアの かぎあなに さしこんで まわした。 カチリと おとが した。" ],
+          "then": [
+            {
+              "set": {
+                "door_unlocked": true
+              }
+            },
+            "ドアの かぎあなに さしこんで まわした。 カチリと おとが した。"
+          ],
           "else": "ここでは つかえない。"
         }
       }
@@ -37,8 +71,17 @@
       "enter": "ろうかに もどってきた。",
       "objects": {
         "door": {
-          "names": ["ドア", "とびら", "扉"],
-          "region": [260, 90, 88, 110],
+          "names": [
+            "ドア",
+            "とびら",
+            "扉"
+          ],
+          "region": [
+            260,
+            90,
+            88,
+            110
+          ],
           "on": {
             "LOOK": "ふるびた 木の ドアだ。",
             "EXAMINE": {
@@ -48,18 +91,51 @@
             },
             "OPEN": {
               "if": "door_unlocked",
-              "then": [ "ドアを あけた。", { "goto": "room" } ],
-              "else": [ { "set": { "knocks": "= knocks + 1" } }, "かぎが かかっている。" ]
+              "then": [
+                "ドアを あけた。",
+                {
+                  "goto": "room"
+                }
+              ],
+              "else": [
+                {
+                  "set": {
+                    "knocks": "= knocks + 1"
+                  }
+                },
+                "かぎが かかっている。"
+              ]
             },
             "OPEN+key": [
-              { "if": "not door_unlocked", "then": [ { "set": { "door_unlocked": true } }, "かぎで あけた。" ] },
-              { "goto": "room" }
+              {
+                "if": "not door_unlocked",
+                "then": [
+                  {
+                    "set": {
+                      "door_unlocked": true
+                    }
+                  },
+                  "かぎで あけた。"
+                ]
+              },
+              {
+                "goto": "room"
+              }
             ]
           }
         },
         "plant": {
-          "names": ["うえきばち", "植木鉢", "はち"],
-          "region": [60, 130, 50, 110],
+          "names": [
+            "うえきばち",
+            "植木鉢",
+            "はち"
+          ],
+          "region": [
+            60,
+            130,
+            50,
+            110
+          ],
           "on": {
             "LOOK": "かれかけた うえきばちだ。",
             "EXAMINE": {
@@ -68,8 +144,16 @@
               "else": [
                 "うえきばちの したに なにか ある……",
                 "かぎを みつけた！",
-                { "set": { "got_key": true } },
-                { "item.add": { "id": "key" } }
+                {
+                  "set": {
+                    "got_key": true
+                  }
+                },
+                {
+                  "item.add": {
+                    "id": "key"
+                  }
+                }
               ]
             },
             "TAKE": "おもくて もてない。"
@@ -85,15 +169,27 @@
       ],
       "enter": "へやに はいった。",
       "exits": {
-        "hallway": { "names": ["ろうか", "そと"] }
+        "hallway": {
+          "names": [
+            "ろうか",
+            "そと"
+          ]
+        }
       },
       "objects": {
         "girl": {
           "character": "ayumi",
-          "region": [280, 56, 60, 154],
+          "region": [
+            280,
+            56,
+            60,
+            154
+          ],
           "on": {
             "LOOK": "ながい かみの しょうじょだ。 こちらを じっと みている。",
-            "TALK": { "dialogue": "ayumi_first" }
+            "TALK": {
+              "dialogue": "ayumi_first"
+            }
           }
         }
       }
@@ -102,18 +198,68 @@
   "dialogues": {
     "ayumi_first": [
       "@ayumi ……だれ？",
-      { "if": "knocks > 0",
-        "then": "@ayumi さっき ドアを たたいていたのは あなたね。" },
+      {
+        "if": "knocks > 0",
+        "then": "@ayumi さっき ドアを たたいていたのは あなたね。"
+      },
+      {
+        "choice": {
+          "id": "who",
+          "prompt": "どう こたえる？",
+          "options": [
+            {
+              "id": "detective",
+              "label": "たんていだ",
+              "do": [
+                "@ayumi よかった……。 たすけに きてくれたのね。",
+                {
+                  "set": {
+                    "met_ayumi": true
+                  }
+                }
+              ]
+            },
+            {
+              "id": "secret",
+              "label": "なのらない",
+              "once": true,
+              "do": [
+                "@ayumi ……そう。",
+                {
+                  "call": "ayumi_case"
+                }
+              ]
+            }
+          ]
+        }
+      },
       "@ayumi ここから でる ほうほうを さがしているの。",
       "@@マークの ついた メモが かべに はってある。"
     ],
     "ayumi_case": [
       "@ayumi きのうの よるから ずっと ここに いるの。"
+    ],
+    "ayumi_jump": [
+      "@ayumi まって。",
+      {
+        "goto": "ayumi_case"
+      },
+      "この ぎょうは でない。"
     ]
   },
   "topics": {
     "ayumi": [
-      { "id": "case", "label": "じけんについて", "dialogue": "ayumi_case" }
+      {
+        "id": "case",
+        "label": "じけんについて",
+        "dialogue": "ayumi_case"
+      },
+      {
+        "id": "memo",
+        "label": "メモについて",
+        "dialogue": "ayumi_jump",
+        "when": "met_ayumi"
+      }
     ]
   }
 }

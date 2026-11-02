@@ -457,6 +457,11 @@ func show_text(bbcode: String, speaker_name: String = "", instant: bool = false)
 		_typing = true
 
 
+## 文字速度（1秒あたりの文字数。0 なら一度に表示）。
+func set_text_speed(chars_per_sec: float) -> void:
+	_speed = chars_per_sec
+
+
 func clear_text() -> void:
 	message_label.text = ""
 	wait_mark.visible = false

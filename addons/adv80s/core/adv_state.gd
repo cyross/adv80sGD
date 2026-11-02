@@ -69,7 +69,7 @@ func apply_event(ev: Dictionary) -> bool:
 				items.erase(id)
 			return true
 		"scene.goto":
-			scene = String(args.get("id", ""))
+			scene = String(args.get("scene", args.get("id", "")))
 			visited[scene] = true
 			return true
 		"state.mark":
@@ -79,7 +79,7 @@ func apply_event(ev: Dictionary) -> bool:
 
 
 func _apply_set(args: Dictionary) -> void:
-	var name := String(args.get("var", args.get("flag", args.get("name", ""))))
+	var name := String(args.get("name", args.get("var", args.get("flag", ""))))
 	if name == "":
 		return
 	var op := String(args.get("op", "set"))

@@ -27,7 +27,10 @@ func _main() -> void:
 	var scene: PackedScene = load("res://tests/stage1/stage1_main.tscn")
 	player = scene.instantiate()
 	player.auto_click = true
+	player.settings_path = ""
+	_rmdir("user://test_saves")
 	root.add_child(player)
+	player.project.data["save"] = {"dir": "user://test_saves", "slots": 3}
 	await _settle()
 	await _shot("01_start")
 	check(player.core.state.scene == "hallway", "start in hallway")
@@ -53,10 +56,80 @@ func _main() -> void:
 	player.submit_text("ドアを あける")
 	await _settle()
 	check(player.core.state.scene == "room", "moved to room")
+	check(FileAccess.file_exists("user://test_saves/auto1.sav"), "autosave on scene change")
 	player.submit_text("あゆみと はなす")
 	await _settle()
-	await _shot("03_room_talk")
-	check(player.screen.message_label.get_parsed_text().contains("@マーク"), "dialogue last line")
+	await _shot("03_room_choice")
+	check(sel.choosing and _buttons(sel) == ["たんていだ", "なのらない"], "choice menu: %s" % str(_buttons(sel)))
+	check(not player.screen.command_line.editable, "command line disabled while choosing")
+	check(player.screen.message_label.get_parsed_text().contains("どう こたえる"), "choice prompt shown")
+	# 選択中にセーブ
+	check(player.save_game("02") == OK, "save at choice")
+	_press(sel, "なのらない")
+	await _settle()
+	check(player.screen.message_label.get_parsed_text().contains("@マーク"), "dialogue continues after choice")
+	check(player.message_log.entries.any(func(e): return e["kind"] == "input" and e["body"] == "なのらない"), "choice logged as input")
+	check(player.message_log.entries.any(func(e): return e["kind"] == "input" and e["body"] == "うえきばち しらべる"), "command select logged")
+	# 選択中のセーブを読み込むと、選択肢が出し直される
+	check(await player.load_game("02") == "", "load at choice")
+	await _settle()
+	check(sel.choosing and _buttons(sel).size() == 2, "choice restored after load: %s" % str(_buttons(sel)))
+	check(not player.core.state.chosen.has("who/secret"), "state restored")
+	_press(sel, "たんていだ")
+	await _settle()
+	check(player.core.state.get_var("met_ayumi") == true, "chose after load")
+
+	# セーブとロード（入力待ちのとき）
+	check(player.save_game("01") == OK, "save slot 01")
+	player.submit_text("ろうかへ いく")
+	await _settle()
+	check(player.core.state.scene == "hallway", "moved back")
+	check(await player.load_game("01") == "", "load slot 01")
+	await _settle()
+	check(player.core.state.scene == "room" and player._images["bg"]["id"] == "room", "scene and image restored")
+	check(player.screen.message_label.get_parsed_text().contains("@マーク"), "last text restored: %s" % player.screen.message_label.get_parsed_text())
+	var saves := player.list_saves()
+	check(saves.filter(func(x): return x["exists"]).size() >= 3, "list saves: %s" % str(saves.map(func(x): return [x["slot"], x["exists"]])))
+	# 書き換えたセーブは読まない
+	var raw := FileAccess.get_file_as_bytes("user://test_saves/01.sav")
+	raw[raw.size() - 40] = raw[raw.size() - 40] ^ 0x5a
+	var f := FileAccess.open("user://test_saves/01.sav", FileAccess.WRITE)
+	f.store_buffer(raw)
+	f.close()
+	check(await player.load_game("01") == AdvSave.ERR_TAMPERED, "tampered save rejected")
+
+	# メッセージログの画面
+	player.open_log()
+	await _settle()
+	check(player._overlay is AdvLogView, "log view opens")
+	await _shot("03b_log")
+	player._overlay.close()
+	await _settle()
+	check(player._overlay == null, "log view closes")
+	# セーブ画面
+	player.open_save_menu("load")
+	await _settle()
+	check(player._overlay is AdvSaveMenu, "save menu opens")
+	await _shot("03c_save_menu")
+	player._overlay.close()
+	await _settle()
+
+	# 既読スキップ：読んだ文章は止まらずに進み、未読で止まる
+	player.submit_text("あゆみ みる")
+	await _settle()
+	player.auto_click = false
+	player.skip_mode = true
+	player.submit_text("あゆみ みる")
+	await _settle()
+	check(not player.busy, "skip through read text")
+	player.submit_text("ろうかへ いく")   # 「ろうかに もどってきた」は未読
+	for i in 30:
+		await process_frame
+	check(player.busy and not player.skip_mode, "skip stops at unread text")
+	player.auto_click = true
+	await _settle()
+	player.submit_text("ドアを あける")
+	await _settle()
 
 	# 切り替え演出と画面効果（すべての種類を一通り動かす）
 	for t in ["fade", "wipe", "blinds", "line_draw", "interlace", "plane_draw", "mosaic", "dissolve", "blocks", "iris", "fade_color"]:
@@ -89,6 +162,8 @@ func _main() -> void:
 	check(player.core.assets.resolve("image", "room").contains("presets/88"), "by_preset image for 88")
 	check(player.display.display_scale().y == player.display.display_scale().x * 2.0, "88 line doubling")
 	player.submit_text("あゆみと はなす")
+	await _settle()
+	_press(player.screen.command_select, "たんていだ")
 	await _settle()
 	await _shot("06_pc88")
 	# 自作フィルター（*.effect.json）を足す
@@ -132,6 +207,15 @@ func _shot(name: String) -> void:
 	await RenderingServer.frame_post_draw
 	var img := root.get_texture().get_image()
 	img.save_png("%s/%s.png" % [_shot_dir, name])
+
+
+func _rmdir(path: String) -> void:
+	var d := DirAccess.open(path)
+	if d == null:
+		return
+	for file in d.get_files():
+		d.remove(file)
+	DirAccess.remove_absolute(path)
 
 
 func _buttons(sel: AdvCommandSelect) -> Array:

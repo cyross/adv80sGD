@@ -4,7 +4,7 @@ extends RefCounted
 ## 層を重ねて使い、後の層が動詞・型ごとに上書きする。null を書くと取り除く。
 
 const STANDARD := "res://addons/adv80s/data/intent_schema.standard.json"
-const REFERENCE_TYPES := ["object", "item", "character", "scene", "topic"]
+const REFERENCE_TYPES := ["object", "item", "character", "scene", "topic", "choice"]
 const BASIC_TYPES := ["number", "string", "bool", "enum", "point"]
 const _DEFAULT_PARTICLES := {"target": ["を"], "with": ["で"], "topic": ["について", "のことを", "のこと"]}
 

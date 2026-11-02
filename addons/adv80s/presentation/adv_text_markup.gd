@@ -64,6 +64,22 @@ static func to_bbcode(body: String, state: AdvState, tpl: AdvTemplate) -> String
 	return out
 
 
+## 装飾を取り除いた文字列（メッセージログや読み上げ用）。
+static func to_plain(body: String, state: AdvState, tpl: AdvTemplate) -> String:
+	_init_re()
+	var bb := to_bbcode(body, state, tpl)
+	var re := RegEx.create_from_string("\\[(/?)([a-z_]+)(=[^\\]]*)?\\]")
+	var out := ""
+	var pos := 0
+	for m in re.search_all(bb):
+		out += bb.substr(pos, m.get_start() - pos)
+		match m.get_string(2):
+			"lb": out += "["
+			"rb": out += "]"
+		pos = m.get_end()
+	return out + bb.substr(pos)
+
+
 static func _replace_vars(s: String, state: AdvState) -> String:
 	var out := ""
 	var pos := 0

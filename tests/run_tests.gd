@@ -16,6 +16,7 @@ func _initialize() -> void:
 	_test_schema()
 	_test_features()
 	_test_visuals()
+	_test_save()
 	_test_stage1_scenario()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
@@ -230,6 +231,61 @@ func _test_visuals() -> void:
 	eq(AdvVisuals.resolve_transition("nonsense", t98)["type"], "cut", "unknown transition -> cut")
 
 
+# ---------------------------------------------------------------- セーブ
+
+class FixedKey extends AdvKeyProvider:
+	var k: PackedByteArray
+	func _init(seed_byte: int) -> void:
+		k = PackedByteArray()
+		for i in 32:
+			k.append((i * 7 + seed_byte) & 0xff)
+	func get_master_key() -> PackedByteArray:
+		return k
+
+
+func _test_save() -> void:
+	var kp := FixedKey.new(1)
+	var data := {"save_version": 1, "state": {"vars": {"money": 120, "name": "ゆうじ", "f": 1.5}, "items": {"key": 1}}, "log": [{"kind": "text", "body": "あ"}]}
+	for level in ["none", "hmac", "hmac_aes"]:
+		var b := AdvSave.encode(data, level, kp)
+		var r := AdvSave.decode(b, kp)
+		check(r["ok"] and r["data"] == data, "save round trip (%s): %s" % [level, r["error"]])
+	var plain := AdvSave.encode(data, "hmac", kp)
+	check(_contains_bytes(plain, "ゆうじ".to_utf8_buffer()), "hmac only: body readable")
+	check(not _contains_bytes(AdvSave.encode(data, "hmac_aes", kp), "ゆうじ".to_utf8_buffer()), "hmac_aes: body encrypted")
+	var tampered := plain.duplicate()
+	var at := plain.hex_encode().find("ゆうじ".to_utf8_buffer().hex_encode()) / 2
+	tampered[at + 2] = tampered[at + 2] ^ 0x01  # 「ゆ」の1バイトを書き換える
+	eq(AdvSave.decode(tampered, kp)["error"], AdvSave.ERR_TAMPERED, "tamper detected")
+	var warned := AdvSave.decode(tampered, kp, false, "warn")
+	check(warned["ok"] and warned["warning"] == AdvSave.ERR_TAMPERED, "tamper warn mode loads")
+	eq(AdvSave.decode(AdvSave.encode(data, "hmac", kp), FixedKey.new(2))["error"], AdvSave.ERR_KEY_MISMATCH, "key mismatch")
+	var text := AdvSave.encode_text(data)
+	eq(AdvSave.decode(text, kp)["error"], AdvSave.ERR_TEXT_DENIED, "text denied by default")
+	var tr := AdvSave.decode(text, kp, true)
+	check(tr["ok"] and tr["data"]["state"]["vars"]["money"] == 120, "text format loads")
+	eq(AdvSave.decode("garbage".to_utf8_buffer(), kp)["error"], AdvSave.ERR_FORMAT, "bad format")
+	# 鍵の仕組み
+	check(kp.derive("hmac") != kp.derive("aes") and kp.derive("hmac").size() == 32, "derived keys differ")
+	eq(kp.key_id().length(), 16, "key id length")
+	var raw := FixedKey.new(3).k
+	eq(AdvEmbeddedKeyProvider.unmask(AdvEmbeddedKeyProvider.mask(raw)), raw, "mask round trip")
+	check(AdvEmbeddedKeyProvider.mask(raw) != raw, "masked key is not plain")
+	# メッセージログ
+	var log := AdvMessageLog.new()
+	log.max_entries = 3
+	for i in 5:
+		log.add_text("line %d" % i)
+	log.add_input("ドア しらべる")
+	eq(log.entries.size(), 3, "log limit")
+	eq(log.last_text()["body"], "line 4", "last text")
+	eq(AdvTextMarkup.to_plain("[ruby=かぎ]鍵[/ruby]と[pal=2]a[b[/pal]", null, AdvTemplate.load_template("pc98_classic")), "鍵（かぎ）とa[b", "to_plain")
+
+
+func _contains_bytes(hay: PackedByteArray, needle: PackedByteArray) -> bool:
+	return hay.hex_encode().contains(needle.hex_encode())
+
+
 # ---------------------------------------------------------------- 段階1のシナリオ
 
 var core: AdvCore
@@ -290,10 +346,27 @@ func _test_stage1_scenario() -> void:
 	t = _bodies(_say("ドアをあける"))
 	check(t.contains("ドアを あけた") and t.contains("ほこりっぽい"), "open door (no space) → %s" % t)
 	eq(core.state.scene, "room", "scene is room")
-	t = _bodies(_say("しょうじょと はなす"))
+	var ev2 := _say("しょうじょと はなす")
+	t = _bodies(ev2)
 	check(t.contains("たたいていたのは"), "talk (knocks>0) → %s" % t)
-	check(t.contains("@マーク"), "@@ escape → %s" % t)
+	check(ev2.back()["type"] == "choice.show", "stops at choice")
+	eq(ev2.back()["args"]["choices"].size(), 2, "two choices")
 	check(core.state.talked.has("ayumi_first"), "talked mark")
+	eq(core.query("pending_choice")["id"], "who", "pending choice query")
+	# 選択中にセーブして、別の項目を選んでから戻す
+	var at_choice := core.save_state()
+	t = _bodies(core.submit({"verb": "CHOOSE", "target": "secret"}))
+	check(t.contains("……そう") and t.contains("きのうの よる") and t.contains("@マーク"), "choose secret (call returns) → %s" % t)
+	check(core.state.chosen.has("who/secret"), "chosen mark")
+	var ev3 := _say("しょうじょと はなす")
+	check(ev3.back()["type"] == "choice.show" and ev3.back()["args"]["choices"].size() == 1, "once option hidden: %s" % str(ev3.back()))
+	core.load_state(at_choice)
+	eq(core.query("pending_choice")["id"], "who", "choice restored by load")
+	t = _bodies(core.submit({"verb": "CHOOSE", "target": "detective"}))
+	check(t.contains("よかった") and t.contains("@マーク"), "choose detective → %s" % t)
+	check(core.state.get_var("met_ayumi") == true, "set inside choice")
+	t = _bodies(_say("あゆみに メモ きく"))
+	check(t.contains("まって") and t.contains("きのうの よる") and not t.contains("でない"), "goto dialogue does not return → %s" % t)
 	t = _bodies(_say("あゆみに じけんについて きく"))
 	check(t.contains("きのうの よる"), "ask topic → %s" % t)
 	t = _bodies(_say("あゆみに じけん きく"))

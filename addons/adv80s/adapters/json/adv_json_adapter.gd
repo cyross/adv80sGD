@@ -37,14 +37,16 @@ var files: PackedStringArray = []
 var sources: Dictionary = {}              ## ファイル → 読み込んだJSON（validate で使う）
 var diags: Array[Dictionary] = []
 
-const MAX_DEPTH := 64
+const MAX_STEPS := 100000
 
 # 1回の処理（start や handle_intent）の間だけ使う作業用の値
 var _scratch: AdvState      ## 下書きの状態。出したイベントをここにも適用して、続く条件の評価に使う
 var _out: Array[Dictionary] = []
-var _depth: int = 0
-var _halt: bool = false
+var _steps_run: int = 0
 var _occurrence: Dictionary = {}
+
+var _stack: Array = []        ## 実行中の手順 [{steps, i, path, kind}]。入力待ちで止まっても残る
+var _choice: Dictionary = {}  ## 選択肢の入力待ち {id, path, options: {項目ID: 手順}, args}
 
 
 # ---------------------------------------------------------------- 読み込み
@@ -107,8 +109,11 @@ func _put(table: Dictionary, id: String, value: Variant, path: String, json_path
 
 func start(entry: String) -> Array[Dictionary]:
 	_begin()
+	_stack.clear()
+	_choice = {}
 	var id := entry if entry != "" else start_scene
 	_goto_scene(id)
+	_resume()
 	return _out
 
 
@@ -116,6 +121,13 @@ func handle_intent(intent: Dictionary) -> Array[Dictionary]:
 	_begin()
 	var verb := String(intent.get("verb", ""))
 	var slots: Dictionary = intent.get("slots", {})
+	if verb == "CHOOSE":
+		_choose(slots.get("target"))
+		_resume()
+		return _out
+	if not _choice.is_empty():
+		ctx.warn("CHOICE_PENDING", "選択肢を選ぶまで、ほかのコマンドは受け付けません")
+		return _out
 	var target = slots.get("target")
 	var with_v = slots.get("with")
 	var scene: Dictionary = scenes.get(_scratch.scene, {})
@@ -124,7 +136,6 @@ func handle_intent(intent: Dictionary) -> Array[Dictionary]:
 
 	if target is Dictionary:
 		var tid := String(target.get("id", ""))
-		var ttype := String(target.get("type", ""))
 		path = "%s/%s/%s" % [_scratch.scene, tid, verb]
 		var exits: Dictionary = scene.get("exits", {})
 		var obj = _object_for(tid)
@@ -157,15 +168,16 @@ func handle_intent(intent: Dictionary) -> Array[Dictionary]:
 	if reaction == null:
 		var r := ctx.dictionary.default_reply(verb)
 		reaction = r if r != "" else ctx.reply("nothing_happens")
-	_run(reaction, path)
+	_stack.clear()
+	_push(reaction, path, "reaction")
+	_resume()
 	return _out
 
 
 func _begin() -> void:
 	_scratch = ctx.state.duplicate_state()
 	_out = []
-	_depth = 0
-	_halt = false
+	_steps_run = 0
 	_occurrence = {}
 
 
@@ -217,35 +229,44 @@ func item_label(id: String) -> String:
 	return String(def.get("name", id)) if def is Dictionary else id
 
 
-## 手順を実行する。
-func _run(step: Variant, path: String) -> void:
-	if _halt:
-		return
-	_depth += 1
-	if _depth > MAX_DEPTH:
-		ctx.warn("UNREACHABLE", "手順の呼び出しが深すぎます（循環していませんか）: %s" % path)
-		_depth -= 1
-		_halt = true
-		return
+# 手順は「積み重ね（スタック）」で実行する。選択肢などの入力待ちで止まったら、続きはスタックに残り、
+# 選ばれた結果（CHOOSE の意図）が届いたところから再開する。スタックはセーブにも含める。
+
+func _push(step: Variant, path: String, kind: String = "block") -> void:
+	var steps: Array = step if step is Array else [step]
+	_stack.append({"steps": steps, "i": 0, "path": path, "kind": kind})
+
+
+func _resume() -> void:
+	while not _stack.is_empty() and _choice.is_empty():
+		_steps_run += 1
+		if _steps_run > MAX_STEPS:
+			ctx.warn("UNREACHABLE", "手順が多すぎます（循環していませんか）")
+			_stack.clear()
+			break
+		var f: Dictionary = _stack.back()
+		if int(f["i"]) >= f["steps"].size():
+			_stack.pop_back()
+			continue
+		var step = f["steps"][f["i"]]
+		f["i"] = int(f["i"]) + 1
+		_exec(step, String(f["path"]))
+
+
+func _exec(step: Variant, path: String) -> void:
 	if step is String:
 		_text(step, path)
 	elif step is Array:
-		for s in step:
-			if _halt:
-				break
-			_run(s, path)
+		_push(step, path)
 	elif step is Dictionary:
-		_run_dict(step, path)
-	_depth -= 1
+		_exec_dict(step, path)
 
 
-func _run_dict(d: Dictionary, path: String) -> void:
+func _exec_dict(d: Dictionary, path: String) -> void:
 	if d.has("if"):
-		if ctx.eval(d["if"], _scratch):
-			if d.has("then"):
-				_run(d["then"], path)
-		elif d.has("else"):
-			_run(d["else"], path)
+		var branch = d.get("then") if ctx.eval(d["if"], _scratch) else d.get("else")
+		if branch != null:
+			_push(branch, path)
 		return
 	if d.has("set"):
 		var s: Dictionary = d["set"]
@@ -253,7 +274,7 @@ func _run_dict(d: Dictionary, path: String) -> void:
 			var v = s[name]
 			if v is String and String(v).begins_with("="):
 				v = ctx.eval_expr(String(v).substr(1), _scratch)
-			_emit(AdvEvents.make("state.set", {"var": name, "value": v}))
+			_emit(AdvEvents.make("state.set", {"name": name, "value": v}))
 		return
 	if d.has("let"):
 		var stmts = AdvExpr.parse_let(String(d["let"]))
@@ -262,27 +283,27 @@ func _run_dict(d: Dictionary, path: String) -> void:
 			return
 		for st in stmts:
 			var v = AdvCondition.eval_ast(st[1], _scratch, ctx.extra())
-			_emit(AdvEvents.make("state.set", {"var": st[0], "value": v}))
+			_emit(AdvEvents.make("state.set", {"name": st[0], "value": v}))
 		return
 	if d.has("say"):
 		_say(String(d["say"]), String(d.get("text", "")), path, String(d.get("id", "")), d.get("voice"))
 		return
 	if d.has("goto"):
 		var id := String(d["goto"])
-		if dialogues.has(id) and not (scenes.has(id) and not path.begins_with("dlg:")):
-			_dialogue(id)
+		if dialogues.has(id) and (path.begins_with("dlg:") or not scenes.has(id)):
+			_jump_dialogue(id)
 		else:
 			_goto_scene(id)
-		_halt = true
 		return
 	if d.has("call") or d.has("dialogue"):
-		_dialogue(String(d.get("call", d.get("dialogue"))))
+		_call_dialogue(String(d.get("call", d.get("dialogue"))))
 		return
 	if d.has("choice"):
-		ctx.warn("UNSUPPORTED", "choice は段階1ではまだ使えません: %s" % path)
+		if d["choice"] is Dictionary:
+			_show_choice(d["choice"], path)
 		return
 	if d.has("ink"):
-		ctx.warn("UNSUPPORTED", "Ink アダプタは段階1ではまだ使えません: %s" % path)
+		ctx.warn("UNSUPPORTED", "Ink アダプタはまだ使えません: %s" % path)
 		return
 	if d.has("type"):
 		_emit(d.duplicate(true))
@@ -290,9 +311,93 @@ func _run_dict(d: Dictionary, path: String) -> void:
 	if d.size() == 1 and String(d.keys()[0]).contains("."):
 		var type := String(d.keys()[0])
 		var args = d[type]
-		_emit(AdvEvents.make(type, args if args is Dictionary else {}))
+		_emit(AdvEvents.make(type, args.duplicate(true) if args is Dictionary else {}))
 		return
 	ctx.warn("UNKNOWN_KEY", "解釈できない手順です: %s（%s）" % [JSON.stringify(d), path])
+
+
+## 会話を呼ぶ（終わったら戻る）。
+func _call_dialogue(id: String) -> void:
+	if not dialogues.has(id):
+		ctx.warn("MISSING_TARGET", "会話が見つかりません: %s" % id)
+		return
+	_emit(AdvEvents.make("state.mark", {"kind": "talked", "id": id}))
+	_push(dialogues[id], "dlg:" + id, "dialogue")
+
+
+## 会話へ移る（戻らない）：いまの会話の続きを捨ててから呼ぶ。
+func _jump_dialogue(id: String) -> void:
+	while not _stack.is_empty():
+		var f: Dictionary = _stack.pop_back()
+		if f["kind"] == "dialogue":
+			break
+	_call_dialogue(id)
+
+
+## シーンへ移る。いま実行中の手順は打ち切る。
+func _goto_scene(id: String) -> void:
+	if not scenes.has(id):
+		ctx.warn("MISSING_TARGET", "シーンが見つかりません: %s" % id)
+		return
+	_stack.clear()
+	var first := not _scratch.visited.has(id)
+	_emit(AdvEvents.make("scene.goto", {"scene": id}))
+	var sc: Dictionary = scenes[id]
+	if sc.has("image"):
+		_emit(AdvEvents.make("image.show", {"layer": "bg", "id": String(sc["image"])}))
+	if first and sc.has("first"):
+		_push(sc["first"], "%s/first" % id, "scene")
+	elif sc.has("enter"):
+		_push(sc["enter"], "%s/enter" % id, "scene")
+
+
+## 選択肢を出して、選ばれるまで止まる。
+func _show_choice(c: Dictionary, path: String) -> void:
+	var prompt := String(c.get("prompt", ""))
+	var cid := String(c.get("id", ""))
+	var options: Array = c.get("options", [])
+	if cid == "":
+		var labels := PackedStringArray()
+		for o in options:
+			if o is Dictionary:
+				labels.append(String(o.get("label", "")))
+		cid = "%s#c%s" % [path, (prompt + "|" + "|".join(labels)).md5_text().substr(0, 8)]
+	var shown := []
+	var map := {}
+	for i in options.size():
+		var o = options[i]
+		if not o is Dictionary:
+			continue
+		var oid := String(o.get("id", "o%d" % (i + 1)))
+		if o.has("when") and not ctx.eval(o["when"], _scratch):
+			continue
+		if bool(o.get("once", false)) and _scratch.chosen.has("%s/%s" % [cid, oid]):
+			continue
+		shown.append({"id": oid, "label": String(o.get("label", oid))})
+		map[oid] = o.get("do", [])
+	if shown.is_empty():
+		return
+	var args := {"id": cid, "choices": shown}
+	if prompt != "":
+		args["prompt"] = prompt
+	_emit(AdvEvents.make("choice.show", args))
+	_choice = {"id": cid, "path": path, "options": map, "args": args}
+
+
+## 選ばれた結果（CHOOSE の意図）を受け取って、続きを再開する。
+func _choose(target: Variant) -> void:
+	if _choice.is_empty():
+		ctx.warn("CHOICE_NONE", "選択肢を出していないのに CHOOSE が届きました")
+		return
+	var oid := String(target.get("id", "")) if target is Dictionary else str(target)
+	if not _choice["options"].has(oid):
+		ctx.warn("CHOICE_UNKNOWN", "知らない選択肢の項目です: %s" % oid)
+		return
+	_emit(AdvEvents.make("state.mark", {"kind": "chosen", "id": "%s/%s" % [_choice["id"], oid]}))
+	var steps = _choice["options"][oid]
+	var path := String(_choice["path"])
+	_choice = {}
+	_push(steps, path)
 
 
 func _emit(ev: Dictionary) -> void:
@@ -348,34 +453,6 @@ func _line_id(path: String, body: String) -> String:
 	return base if n == 0 else "%s-%d" % [base, n]
 
 
-func _dialogue(id: String) -> void:
-	if not dialogues.has(id):
-		ctx.warn("MISSING_TARGET", "会話が見つかりません: %s" % id)
-		return
-	_emit(AdvEvents.make("state.mark", {"kind": "talked", "id": id}))
-	var saved_halt := _halt
-	_run(dialogues[id], "dlg:" + id)
-	_halt = saved_halt
-
-
-func _goto_scene(id: String) -> void:
-	if not scenes.has(id):
-		ctx.warn("MISSING_TARGET", "シーンが見つかりません: %s" % id)
-		return
-	var first := not _scratch.visited.has(id)
-	_emit(AdvEvents.make("scene.goto", {"id": id}))
-	var sc: Dictionary = scenes[id]
-	if sc.has("image"):
-		_emit(AdvEvents.make("image.show", {"layer": "bg", "id": String(sc["image"])}))
-	var saved_halt := _halt
-	_halt = false
-	if first and sc.has("first"):
-		_run(sc["first"], "%s/first" % id)
-	elif sc.has("enter"):
-		_run(sc["enter"], "%s/enter" % id)
-	_halt = saved_halt
-
-
 # ---------------------------------------------------------------- 問い合わせ
 
 func query(what: String, args: Dictionary = {}) -> Variant:
@@ -413,6 +490,8 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 			return intent_schema_layer
 		"start":
 			return start_scene
+		"pending_choice":
+			return _choice.get("args") if not _choice.is_empty() else null
 	return null
 
 
@@ -483,6 +562,20 @@ func _all_names() -> Array:
 				names.append(characters[id]["name"])
 			names.append_array(characters[id].get("names", []))
 	return names
+
+
+# ---------------------------------------------------------------- セーブ
+
+func save_state() -> Dictionary:
+	return {"stack": _stack.duplicate(true), "choice": _choice.duplicate(true)}
+
+
+func load_state(data: Dictionary) -> Error:
+	_stack = data.get("stack", []).duplicate(true)
+	_choice = data.get("choice", {}).duplicate(true)
+	for f in _stack:
+		f["i"] = int(f.get("i", 0))
+	return OK
 
 
 # ---------------------------------------------------------------- 確認
@@ -683,11 +776,11 @@ func _walk_step(step: Variant, jp: String, f: String, in_dialogue: bool) -> void
 			args = d[type]
 			ap = "%s/%s" % [jp, _ptr(type)]
 		if type == "state.set" and args is Dictionary:
-			_v_writes[String(args.get("var", args.get("flag", args.get("name", ""))))] = true
+			_v_writes[String(args.get("name", args.get("var", args.get("flag", ""))))] = true
 		if _ASSET_EVENTS.has(type) and args is Dictionary and args.has("id"):
 			_v_refs.append({"kind": _ASSET_EVENTS[type], "id": String(args["id"]), "file": f, "path": ap + "/id"})
 		if type == "scene.goto" and args is Dictionary:
-			_v_targets[String(args.get("id", ""))] = true
+			_v_targets[String(args.get("scene", args.get("id", "")))] = true
 
 
 func _walk_cond(cond: Variant, jp: String, f: String) -> void:

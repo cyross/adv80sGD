@@ -3,6 +3,8 @@ extends EditorExportPlugin
 ## ゲームの書き出しへの割り込み。
 ## - 書き出しの直前に manifest.auto.json を必ず生成し直す
 ## - JSON は素材ではないので、そのままだと書き出しに含まれない。すべての JSON を含める
+## - セーブの元鍵（環境変数 ADV80S_MASTER_KEY か master.key）を、平文ではない形で res://adv80s_key.bin として含める
+##   （master.key そのものは含めない）
 
 var plugin: EditorPlugin
 
@@ -23,6 +25,11 @@ func _export_begin(_features: PackedStringArray, _is_debug: bool, _path: String,
 	_collect("res://", files)
 	for f in files:
 		add_file(f, FileAccess.get_file_as_bytes(f), false)
+	var key := AdvEmbeddedKeyProvider.find_master_key()
+	if key.size() == 32:
+		add_file(AdvEmbeddedKeyProvider.EMBEDDED_FILE, AdvEmbeddedKeyProvider.mask(key), false)
+	else:
+		push_warning("[adv80s] セーブの鍵がないまま書き出します。製品版ではセーブできません（ツールメニュー「adv80s: セーブの鍵を生成」）")
 
 
 func _collect(dir_path: String, out: Array) -> void:
