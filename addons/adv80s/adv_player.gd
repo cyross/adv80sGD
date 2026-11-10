@@ -68,6 +68,8 @@ var _sprites: Dictionary = {}          ## スプライトID → いまの状態�
 var _video: Dictionary = {}            ## 繰り返しの動画の引数（セーブと表示し直しに使う）
 var _cursor_forced: Variant = null     ## cursor.set で固定した形（種類の文字列か {image, hotspot}）
 var _cursor_kind: String = ""          ## いま出しているカーソルの種類
+var _devices: Variant = null            ## 使う入力機器（プロジェクト設定の input_devices。null ならすべて）
+var _debug_layer: Control = null       ## デバッグ専用UI層（配布アプリでは生成しない）
 
 
 func _ready() -> void:
@@ -87,6 +89,7 @@ func _ready() -> void:
 	if template == null:
 		_report(diags)
 		return
+	_apply_project_overrides(template)
 	core.preset = String(template.preset.get("id", "98"))
 	core.group = String(template.preset.get("group", ""))
 	core.assets.set_preset(core.preset, core.group)
@@ -125,6 +128,13 @@ func _ready() -> void:
 	screen = display.screen
 	screen.resolver = func(kind: String, id: String) -> String: return core.assets.resolve(kind, id)
 	_build_screen()
+	if OS.is_debug_build():
+		_setup_debug_ui()
+	var title := String(project.get_value("title", ""))
+	if title != "" and get_window() != null and get_parent() == get_tree().root:
+		get_window().title = title
+	if _devices is Array and not "mouse" in _devices:
+		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	var start_at := entry if entry != "" else String(project.get_value("entry", ""))
 	_run(core.start(start_at))
 
@@ -138,8 +148,22 @@ func _resolve_features(diags: Array = []) -> void:
 	}
 	features = AdvFeatures.resolve(project.get_value("features", {}), template.get_section("features"), env,
 		settings.get_value("features", {}), diags)
+	# 使う入力機器（プロジェクト設定の input_devices）にないものは、機能ごと止める
+	var devs = project.get_value("input_devices")
+	_devices = devs if devs is Array and not devs.is_empty() else null
+	if _devices is Array:
+		for k in ["gamepad", "touch"]:
+			if not k in _devices:
+				features.allowed[k] = false
+				features.enabled[k] = false
 	core.features = features.enabled
 	message_log.max_entries = int(features.options.get("message_log", {}).get("max_entries", 500))
+
+
+## プロジェクト設定でテンプレートを上書きする（inputs：コマンド方式など）。
+func _apply_project_overrides(t: AdvTemplate) -> void:
+	var inp = project.get_value("inputs", {})
+	t.overrides = {"inputs": inp} if inp is Dictionary and not inp.is_empty() else {}
 
 
 func _build_screen() -> void:
@@ -148,10 +172,16 @@ func _build_screen() -> void:
 	screen.set_text_speed(float(template.get_section("text").get("speed", 40)) * float(settings.get_value("text_speed", 1.0)))
 	if screen.command_select != null and not screen.command_select.intent_selected.is_connected(submit_intent):
 		screen.command_select.intent_selected.connect(submit_intent)
+		screen.command_select.verb_changed.connect(func(): _cursor_kind = "")
+		screen.command_select.item_long_pressed.connect(func(t: Dictionary): _pointer_alt({}, t))
+		screen.command_select.menu_requested.connect(func(): modern.open_system_menu())
+		screen.command_select.target_clicked.connect(func(t: Dictionary):
+			_on_hotspot_clicked({"id": t["id"], "target": t["id"], "type": "exit" if t["type"] == "scene" else t["type"], "label": t["label"]}))
 	if screen.command_line != null and not screen.command_line.command_entered.is_connected(submit_text):
 		screen.command_line.command_entered.connect(submit_text)
 	if not screen.hotspot_layer.hotspot_clicked.is_connected(_on_hotspot_clicked):
 		screen.hotspot_layer.hotspot_clicked.connect(_on_hotspot_clicked)
+		screen.hotspot_layer.long_pressed.connect(func(h: Dictionary): _pointer_alt(h))
 	screen.hotspot_layer.sprite_lookup = screen.sprite
 	var ui: Dictionary = template.get_section("ui")
 	screen.set_marks(_make_mark(ui.get("wait_mark")), _make_mark(ui.get("page_mark", ui.get("wait_mark"))))
@@ -173,6 +203,7 @@ func switch_template(id: String, transition: Variant = null) -> void:
 	if not skipping and String(tr.get("type", "cut")) in ["fade_color", "fade"]:
 		await screen.play_effect("flash", {"color": String(tr.get("color", "#000000")), "duration": float(tr.get("duration", 0.5))})
 	template = t
+	_apply_project_overrides(t)
 	# 切り替え先のテンプレートの素材フォルダ（窓の枠の画像など）を重ねる
 	var troot := t.asset_root()
 	if troot != "" and not troot in core.assets.roots:
@@ -413,19 +444,54 @@ func _apply_input_modes() -> void:
 		modes = template.get_section("inputs").get("enabled", ["select", "parser"])
 	if screen.command_line != null:
 		screen.command_line.visible = "parser" in modes and template.region_rect("input").size != Vector2i.ZERO
+	var pointer := _pointer_mode()
+	var inp: Dictionary = template.get_section("inputs")
 	if screen.command_select != null:
-		screen.command_select.get_parent().visible = ("select" in modes or "icon" in modes) and template.region_rect("commands").size != Vector2i.ZERO
+		screen.command_select.get_parent().visible = ("select" in modes or "icon" in modes or pointer != "") and template.region_rect("commands").size != Vector2i.ZERO
 		screen.command_select.icons = "icon" in modes
 		screen.command_select.show_tried = features.is_on("tried_marks")
-	var click: bool = "click" in modes
+		screen.command_select.mode = pointer if pointer != "" else "menu"
+		screen.command_select.item_verb = String(inp.get("item_verb", "USE"))
+		screen.command_select.alt_verb = String(inp.get("context_alt_verb", "LOOK"))
+	_cursor_kind = ""
+	var click: bool = "click" in modes or pointer != ""
 	screen.hotspot_layer.mouse_filter = Control.MOUSE_FILTER_STOP if click or features.is_on("hotspot") else Control.MOUSE_FILTER_IGNORE
 	screen.hotspot_layer.set_meta("click", click)
+	screen.hotspot_layer.long_press = pointer != ""   # タッチを使わない設定なら、タッチの操作はここまで届かない
+
+
+## いまの入力UIの一覧（input.mode で変えていればそれ、なければテンプレートとプロジェクト設定の inputs.enabled）。
+func _input_modes() -> Array:
+	var modes = core.state.ui.get("input_modes")
+	if not modes is Array:
+		modes = template.get_section("inputs").get("enabled", ["select", "parser"])
+	return modes
+
+
+## 絵の中の対象を選ぶコマンド方式（4.5）："verbs"（verb_click）、"cursor"（verb_cursor）、"context"。なければ空。
+func _pointer_mode() -> String:
+	var modes := _input_modes()
+	if "verb_click" in modes:
+		return "verbs"
+	if "verb_cursor" in modes:
+		return "cursor"
+	if "context" in modes:
+		return "context"
+	return ""
 
 
 func _refresh_hotspots() -> void:
 	var hs = core.query("hotspots")
 	var layer := screen.hotspot_layer
 	layer.set_hotspots(hs if hs is Array else [])
+	if screen.command_select != null:
+		var keys := {}
+		for h in layer.hotspots:
+			keys["%s:%s" % ["scene" if h.get("type") == "exit" else h.get("type", "object"), h.get("target", h["id"])]] = true
+		var changed: bool = keys != screen.command_select.hotspot_keys
+		screen.command_select.hotspot_keys = keys
+		if changed and screen.command_select.is_pointer() and not busy and not screen.command_select.choosing:
+			screen.command_select._show_verbs()
 	layer.show_hover = features.is_on("hotspot")
 	layer.show_all = _show_all_hotspots and features.is_on("hotspot")
 	layer.show_new = features.is_on("tried_marks")
@@ -433,19 +499,52 @@ func _refresh_hotspots() -> void:
 
 
 ## 画面選択：コマンド選択で対象を選んでいる途中ならその対象に、そうでなければ既定の動詞で調べる。
-func _on_hotspot_clicked(h: Dictionary) -> void:
+func _on_hotspot_clicked(h: Dictionary, alt: bool = false) -> void:
 	if busy or _overlay != null or not bool(screen.hotspot_layer.get_meta("click", false)):
 		return
 	var t := {"type": String(h.get("type", "object")), "id": String(h.get("target", h["id"])), "label": String(h.get("label", h["id"]))}
-	if screen.command_select != null and screen.command_select.is_picking():
-		screen.command_select.pick_target(t)
+	if screen.command_select != null and screen.command_select.is_picking() and not alt:
+		var cs := screen.command_select
+		var picked := cs.pick_target(t)
+		if not picked and t["type"] == "exit":
+			t["type"] = "scene"
+			picked = cs.pick_target(t)
+		if not picked and cs.is_pointer() and cs._filled.is_empty():
+			# その動詞の対象にならないものを押した：そのまま出して、シナリオの「できない」の返事を見せる
+			var vid := cs.current_verb_id()
+			if cs.mode != "cursor":
+				cs.cancel()
+			submit_intent({"verb": vid, "slots": {"target": {"type": t["type"], "id": t["id"]}}, "source": "click",
+				"ext": {"label": "%s %s" % [t["label"], core.dictionary.verb_label(vid)]}})
 		return
-	var verb := String(template.get_section("inputs").get("click_verb", "EXAMINE"))
+	var verb := _context_verb(h, alt)
+	if verb == "":
+		return
 	if t["type"] == "exit":
-		verb = "MOVE"
 		t["type"] = "scene"
 	submit_intent({"verb": verb, "slots": {"target": {"type": t["type"], "id": t["id"]}}, "source": "click",
 		"ext": {"label": "%s %s" % [t["label"], core.dictionary.verb_label(verb)]}})
+
+
+## 動詞を選ばずに対象を選んだときの動詞（4.5 コンテキスト型）。
+## 物・出口の click → 出口は MOVE → カーソルの種類（cursor、なければ人物は talk）から inputs.context_verbs で決める → inputs.click_verb。
+## alt（右クリック）は inputs.context_alt_verb（既定 LOOK。出口には使わない）。
+func _context_verb(h: Dictionary, alt: bool = false) -> String:
+	var inp: Dictionary = template.get_section("inputs")
+	var is_exit := String(h.get("type", "object")) == "exit"
+	if alt:
+		return "" if is_exit else String(inp.get("context_alt_verb", "LOOK"))
+	if h.has("verb"):
+		return String(h["verb"])
+	if is_exit:
+		return "MOVE"
+	var fallback := String(inp.get("click_verb", "EXAMINE"))
+	if _pointer_mode() == "":
+		return fallback
+	var kind := String(h.get("cursor", "talk" if h.get("type") == "character" else "look"))
+	var map: Dictionary = AdvJson.merge(CONTEXT_VERBS, inp.get("context_verbs", {}))
+	var v := String(map.get(kind, ""))
+	return v if v != "" else fallback
 
 
 func _set_inputs_enabled(on: bool) -> void:
@@ -858,7 +957,34 @@ const CURSOR_SHAPES := {"arrow": Input.CURSOR_ARROW, "pointing_hand": Input.CURS
 	"help": Input.CURSOR_HELP, "move": Input.CURSOR_MOVE, "busy": Input.CURSOR_BUSY, "ibeam": Input.CURSOR_IBEAM, "wait": Input.CURSOR_WAIT}
 
 
-## いまのカーソルの種類（固定 → 演出中・クリック待ち → 調べられる場所 → 通常）。
+## コンテキスト型で、カーソルの種類から決める動詞の既定（inputs.context_verbs で変える。空は inputs.click_verb）
+const CONTEXT_VERBS := {"look": "", "talk": "TALK", "take": "TAKE", "exit": "MOVE"}
+## 動詞から決めるカーソルの種類の既定（inputs.verb_cursors で変える）
+const VERB_CURSORS := {"LOOK": "look", "EXAMINE": "look", "TALK": "talk", "ASK": "talk", "CALL": "talk", "TAKE": "take",
+	"USE": "use", "OPEN": "use", "CLOSE": "use", "PUSH": "use", "PULL": "use", "HIT": "use", "GIVE": "use", "SHOW": "use", "MOVE": "exit"}
+## テンプレートに ui.cursors がなく、絵の中の対象を選ぶコマンド方式のときに使うカーソル（アドオンの標準の画像）
+const DEFAULT_CURSORS := {
+	"default": {"image": "cursor_arrow", "hotspot": [0, 0]}, "look": {"image": "cursor_look", "hotspot": [5, 6]},
+	"talk": {"image": "cursor_talk", "hotspot": [6, 5]}, "take": {"image": "cursor_hand", "hotspot": [5, 0]},
+	"use": {"image": "cursor_hand", "hotspot": [5, 0]}, "exit": {"image": "cursor_exit", "hotspot": [13, 8]},
+	"wait": {"image": "cursor_wait", "hotspot": [6, 7]}, "next": {"image": "cursor_next", "hotspot": [5, 7]}}
+
+
+## カーソルの定義（テンプレートの ui.cursors。なければ、絵の中の対象を選ぶ方式のときだけ標準のもの）。
+func _cursor_defs() -> Dictionary:
+	var cursors: Dictionary = template.get_section("ui").get("cursors", {})
+	if cursors.is_empty() and core != null and _pointer_mode() != "":
+		return DEFAULT_CURSORS
+	return cursors
+
+
+## 動詞に合うカーソルの種類。
+func _verb_cursor(verb: String) -> String:
+	var map: Dictionary = AdvJson.merge(VERB_CURSORS, template.get_section("inputs").get("verb_cursors", {}))
+	return String(map.get(verb, "default"))
+
+
+## いまのカーソルの種類（固定 → 演出中・クリック待ち → 選んでいる動詞 → 調べられる場所 → 通常）。
 func current_cursor_kind() -> String:
 	if _cursor_forced is String:
 		return _cursor_forced
@@ -867,10 +993,14 @@ func current_cursor_kind() -> String:
 	if busy and _overlay == null:
 		return "next" if screen.is_waiting_mark() else "wait"
 	if screen != null and _overlay == null:
+		if screen.command_select != null and screen.command_select.is_pointer() and screen.command_select.current_verb_id() != "":
+			return _verb_cursor(screen.command_select.current_verb_id())
 		var h := screen.hotspot_layer.hovered()
 		if not h.is_empty():
 			if h.has("cursor"):
 				return String(h["cursor"])
+			if h.has("verb"):
+				return _verb_cursor(String(h["verb"]))
 			match String(h.get("type", "object")):
 				"character": return "talk"
 				"exit": return "exit"
@@ -881,7 +1011,7 @@ func current_cursor_kind() -> String:
 func _process(_delta: float) -> void:
 	if template == null or screen == null:
 		return
-	var cursors: Dictionary = template.get_section("ui").get("cursors", {})
+	var cursors := _cursor_defs()
 	if cursors.is_empty() and _cursor_forced == null:
 		return
 	var k := current_cursor_kind()
@@ -1133,11 +1263,69 @@ func toggle_skip() -> void:
 		skip_mode = not skip_mode
 
 
+## 絵の中の対象を選ぶコマンド方式（4.5）の操作。扱ったら true。
+## - 右クリック：選びかけをやめる → cursor なら次の動詞 → 持ち物や調べられる場所の上なら調べる（context_alt_verb）→ メニュー
+## - Tab（Shift で逆）、ゲームパッドの L・R：調べられる場所を順に選ぶ。決定で、その場所をクリックしたことにする
+func _pointer_input(event: InputEvent) -> bool:
+	var mode := _pointer_mode()
+	var cs := screen.command_select
+	if mode == "" or cs == null or ended:
+		return false
+	var layer := screen.hotspot_layer
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+		var h := layer.hotspot_at(layer.get_local_mouse_position()) if layer.get_global_rect().has_point(layer.get_global_mouse_position()) else {}
+		return _pointer_alt(h, cs.item_at_mouse())
+	var dir := 0
+	if event is InputEventKey and event.pressed and event.keycode == KEY_TAB:
+		dir = -1 if event.shift_pressed else 1
+	elif event is InputEventJoypadButton and event.pressed and event.button_index in [JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER]:
+		dir = -1 if event.button_index == JOY_BUTTON_LEFT_SHOULDER else 1
+	if dir != 0:
+		if not layer.focus_next(dir).is_empty():
+			screen.get_viewport().gui_release_focus()
+			_cursor_kind = ""
+		return true
+	if event.is_action_pressed("ui_accept") and not layer.focused().is_empty():
+		_on_hotspot_clicked(layer.focused())
+		return true
+	if event.is_action_pressed("ui_cancel") and cs.has_partial() and not cs.choosing:
+		cs.cancel()
+		return true
+	return false
+
+
+## 右クリックと、タッチの長押しの操作（h は押した場所、item は押した持ち物。なければ空）。扱ったら true。
+## 選びかけをやめる → cursor なら次の動詞 → 持ち物や調べられる場所なら調べる（context_alt_verb）。
+func _pointer_alt(h: Dictionary, item: Dictionary = {}) -> bool:
+	var mode := _pointer_mode()
+	var cs := screen.command_select
+	if mode == "" or cs == null or ended or busy or _overlay != null or cs.choosing:
+		return false
+	if cs.has_partial():
+		cs.cancel()
+		return true
+	if mode == "cursor":
+		cs.cycle_verb(1)
+		return true
+	if not item.is_empty():
+		cs.alt_item(item)
+		return true
+	if not h.is_empty() and _context_verb(h, true) != "":
+		_on_hotspot_clicked(h, true)
+		return true
+	return false
+
+
 ## 無効にした入力機器の操作か（モダン機能 gamepad、touch）。
 ## ゲームパッドのボタンとスティック、タッチと、タッチから作られたマウスの操作を見る。
 func is_blocked_input(event: InputEvent) -> bool:
 	if features == null:
 		return false
+	if _devices is Array:
+		if event is InputEventKey and not "keyboard" in _devices and not (OS.is_debug_build() and event.keycode in [KEY_F11, KEY_F12]):
+			return true
+		if event is InputEventMouse and event.device != InputEvent.DEVICE_ID_EMULATION and not "mouse" in _devices:
+			return true
 	if (event is InputEventJoypadButton or event is InputEventJoypadMotion) and not features.is_on("gamepad"):
 		return true
 	if not features.is_on("touch"):
@@ -1151,15 +1339,28 @@ func is_blocked_input(event: InputEvent) -> bool:
 func _input(event: InputEvent) -> void:
 	# ゲームパッドやキーボードで操作している間はカーソルを隠し、マウスを動かすとまた出す（6.5）
 	if (event is InputEventJoypadButton or (event is InputEventKey and event.pressed)) and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE \
-			and not template.get_section("ui").get("cursors", {}).is_empty():
+			and not _cursor_defs().is_empty():
 		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
-	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_HIDDEN:
+	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_HIDDEN and not (_devices is Array and not "mouse" in _devices):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	# 無効にした機器の操作は、画面の部品に届く前に止める（_input は GUI より先に呼ばれる）
 	if is_blocked_input(event):
 		get_viewport().set_input_as_handled()
 		return
 	if _overlay != null:
+		if OS.is_debug_build() and event is InputEventKey and event.pressed and not event.echo:
+			if event.keycode == KEY_F12 and _overlay.has_method("close_and_resume"):
+				_overlay.call("close_and_resume")
+				get_viewport().set_input_as_handled()
+				return
+			if event.keycode == KEY_F11 and _overlay.has_method("handle_escape") and not _overlay.has_method("close_and_resume"):
+				_overlay.call("close")
+				get_viewport().set_input_as_handled()
+				return
+		if event.is_action_pressed("ui_cancel") and _overlay.has_method("handle_escape"):
+			_overlay.call("handle_escape")
+			get_viewport().set_input_as_handled()
+			return
 		if event.is_action_pressed("ui_cancel") or (event is InputEventKey and event.pressed and event.keycode == KEY_F4):
 			_overlay.call("close")
 			get_viewport().set_input_as_handled()
@@ -1180,7 +1381,11 @@ func _input(event: InputEvent) -> void:
 					load_game("quick")
 			KEY_ESCAPE:
 				if not busy:
-					open_save_menu("save")
+					var cs := screen.command_select
+					if cs != null and cs.is_pointer() and cs.has_partial() and not cs.choosing:
+						cs.cancel()   # 選びかけの動詞・持ち物をやめる
+					else:
+						open_save_menu("save")
 			KEY_F1:
 				modern.open_system_menu()
 			KEY_F6:
@@ -1188,6 +1393,13 @@ func _input(event: InputEvent) -> void:
 				_refresh_hotspots()
 			_:
 				pass
+		if OS.is_debug_build() and event.keycode in [KEY_F11, KEY_F12]:
+			if event.keycode == KEY_F12:
+				open_debug_console()
+			else:
+				open_scene_graph()
+			get_viewport().set_input_as_handled()
+			return
 		if event.keycode in [KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6, KEY_F9, KEY_ESCAPE]:
 			get_viewport().set_input_as_handled()
 			return
@@ -1200,7 +1412,9 @@ func _input(event: InputEvent) -> void:
 		if not busy and screen.command_line != null and screen.command_line.has_focus() and screen.command_select != null:
 			screen.command_select.focus_first()
 	if not busy:
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+		if _pointer_input(event):
+			get_viewport().set_input_as_handled()
+		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
 			modern.open_system_menu()
 			get_viewport().set_input_as_handled()
 		return
@@ -1313,6 +1527,7 @@ func _make_save_data() -> Dictionary:
 	var sc = core.query("scene")
 	return {
 		"save_version": 1,
+		"game": String(project.get_value("game_id", "")),
 		"meta": {
 			"time": int(Time.get_unix_time_from_system()),
 			"scene": core.state.scene,
@@ -1377,6 +1592,12 @@ func load_game(slot: String) -> String:
 		return String(res["error"])
 	if res.get("warning", "") != "":
 		push_warning("[adv80s] セーブデータの署名が一致しません（改ざんの疑い）。設定に従って読み込みます: %s" % slot)
+	# ほかのゲーム（ゲームIDが違う）のセーブは読まない
+	var gid := String(project.get_value("game_id", ""))
+	var saved_gid := String(res["data"].get("game", ""))
+	if gid != "" and saved_gid != "" and gid != saved_gid:
+		push_warning("[adv80s] GAME_MISMATCH: ほかのゲームのセーブデータです: %s（%s）" % [slot, saved_gid])
+		return "GAME_MISMATCH"
 	_history.clear()
 	await _apply_save_data(res["data"])
 	loaded.emit(slot)
@@ -1502,6 +1723,112 @@ func _make_key_provider(diags: Array) -> AdvKeyProvider:
 		return _DevKeyProvider.new(String(ProjectSettings.get_setting("application/config/name", "adv80s")))
 	diags.append(AdvDiag.make("error", "NO_KEY", "セーブの鍵がありません", "No save key", AdvEmbeddedKeyProvider.KEY_FILE))
 	return kp
+
+
+## 開発中だけ使う仮の鍵（製品版では使わない）。
+# ---------------------------------------------------------------- デバッグ専用機能（デバッグコンソール・シーングラフ）
+
+func _setup_debug_ui() -> void:
+	if not OS.is_debug_build():
+		return
+	_debug_layer = Control.new()
+	_debug_layer.name = "DebugLayer"
+	_debug_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_debug_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_debug_layer.z_index = 100
+	add_child(_debug_layer)
+
+	var btn_bar := HBoxContainer.new()
+	btn_bar.name = "DebugButtonBar"
+	btn_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	btn_bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	btn_bar.offset_left = -280
+	btn_bar.offset_right = -6
+	btn_bar.offset_top = 4
+	btn_bar.offset_bottom = 28
+	btn_bar.alignment = BoxContainer.ALIGNMENT_END
+	btn_bar.add_theme_constant_override("separation", 4)
+	btn_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_debug_layer.add_child(btn_bar)
+
+	var graph_btn := Button.new()
+	graph_btn.text = "シーングラフ (F11)"
+	graph_btn.tooltip_text = "シーングラフを表示します (ショートカット: F11)"
+	graph_btn.focus_mode = Control.FOCUS_NONE
+	graph_btn.add_theme_font_size_override("font_size", 11)
+	graph_btn.pressed.connect(open_scene_graph)
+	btn_bar.add_child(graph_btn)
+
+	var console_btn := Button.new()
+	console_btn.text = "デバッグコンソール (F12)"
+	console_btn.tooltip_text = "デバッグコンソールを表示します (ショートカット: F12)"
+	console_btn.focus_mode = Control.FOCUS_NONE
+	console_btn.add_theme_font_size_override("font_size", 11)
+	console_btn.pressed.connect(open_debug_console)
+	btn_bar.add_child(console_btn)
+
+
+## デバッグコンソールを開く（デバッグビルド専用）。
+func open_debug_console() -> void:
+	if not OS.is_debug_build() or _debug_layer == null:
+		return
+	if _overlay != null:
+		if _overlay.has_method("close_and_resume"):
+			_overlay.call("close_and_resume")
+			return
+		_overlay.call("close")
+	var script: Script = load("res://addons/adv80s/debug/adv_debug_console.gd")
+	if script == null:
+		return
+	var console: Control = script.new()
+	console.call("setup", core)
+	console.connect("data_modified", apply_debug_changes)
+	console.connect("open_scene_graph_requested", func() -> void:
+		console.call("close_and_resume")
+		call_deferred("open_scene_graph")
+	)
+	_overlay = console
+	_debug_layer.add_child(console)
+	await console.closed
+	if is_instance_valid(console):
+		console.queue_free()
+	if _overlay == console:
+		_overlay = null
+
+
+## シーングラフを開く（デバッグビルド専用）。
+func open_scene_graph() -> void:
+	if not OS.is_debug_build() or _debug_layer == null:
+		return
+	if _overlay != null:
+		if _overlay.has_method("handle_escape") and not _overlay.has_method("close_and_resume"):
+			_overlay.call("close")
+			return
+		_overlay.call("close")
+	var script: Script = load("res://addons/adv80s/debug/adv_scene_graph_view.gd")
+	if script == null:
+		return
+	var view: Control = script.new()
+	view.call("setup_from_core", core, core.state.scene if core != null and core.state != null else "")
+	_overlay = view
+	_debug_layer.add_child(view)
+	await view.closed
+	if is_instance_valid(view):
+		view.queue_free()
+	if _overlay == view:
+		_overlay = null
+
+
+## デバッグコンソールでデータを変更した後に再開した際、そのデータで画面・スプライト・コマンド候補を更新する。
+func apply_debug_changes(scene_changed: bool = false) -> void:
+	if core == null or screen == null:
+		return
+	var evs: Array[Dictionary] = core.sync_debug_state(scene_changed)
+	for ev in evs:
+		await _play(ev)
+	_redraw_view()
+	if not busy:
+		_enter_idle()
 
 
 ## 開発中だけ使う仮の鍵（製品版では使わない）。

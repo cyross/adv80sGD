@@ -488,6 +488,194 @@ func _main() -> void:
 	player.auto_mode = false
 	player.auto_click = true
 
+	# ---- 段階11：絵の中の対象を選ぶコマンド方式（verb_click、verb_cursor、context）
+	await _settle()
+	sel = player.screen.command_select
+	var hl2 := player.screen.hotspot_layer
+	var n_in := func() -> int: return player.message_log.entries.filter(func(e): return e["kind"] == "input").size()
+	var last_in := func() -> String:
+		var ins := player.message_log.entries.filter(func(e): return e["kind"] == "input")
+		return String(ins.back()["body"]) if not ins.is_empty() else ""
+	var spot := func(id: String) -> Dictionary:
+		var l := hl2.hotspots.filter(func(h): return h["id"] == id)
+		return l[0] if not l.is_empty() else {}
+	print("scene for pointer tests: %s, hotspots %s" % [player.core.state.scene, str(hl2.hotspots.map(func(h): return h["id"]))])
+	# verb_click：動詞を押してから、絵の中の対象を押す
+	player.core.state.ui["input_modes"] = ["verb_click"]
+	player._apply_input_modes()
+	sel.refresh(player.core)
+	player._refresh_hotspots()
+	await _settle()
+	check(sel.mode == "verbs" and sel.is_pointer() and sel.get_parent().visible, "verb_click: verb bar shown")
+	check(_buttons(sel).has("しらべる") and bool(hl2.get_meta("click", false)), "verb_click: verbs and clickable picture: %s" % str(_buttons(sel)))
+	check(not sel.has_partial() and sel.current_verb_id() == "", "verb_click: nothing armed at first")
+	_press(sel, "しらべる")
+	await _settle_frames(3)
+	check(sel.current_verb_id() == "EXAMINE" and sel.is_picking() and sel.has_partial(), "verb_click: verb armed, waiting for a target")
+	check(_buttons(sel).has("しらべる"), "verb_click: verbs stay while picking: %s" % str(_buttons(sel)))
+	check(sel._sentence_row.visible and sel._sentence.text.contains("しらべる"), "verb_click: sentence line: %s" % sel._sentence.text)
+	check(player.current_cursor_kind() == "look", "verb_click: cursor follows the verb: %s" % player.current_cursor_kind())
+	await _shot("22_verb_click")
+	var c0: int = n_in.call()
+	var girl: Dictionary = spot.call("door")
+	var plant: Dictionary = spot.call("plant")
+	check(not girl.is_empty() and not plant.is_empty(), "door and plant hotspots exist")
+	hl2.hotspot_clicked.emit(girl)
+	await _settle()
+	check(n_in.call() == c0 + 1 and String(last_in.call()).contains("しらべる"), "verb_click: verb + clicked target submitted: %s" % last_in.call())
+	check(sel.current_verb_id() == "", "verb_click: verb released after the command")
+	# 選びかけをやめる（右クリック、Esc）
+	_press(sel, "しらべる")
+	await _settle_frames(3)
+	var rc := InputEventMouseButton.new()
+	rc.button_index = MOUSE_BUTTON_RIGHT
+	rc.pressed = true
+	check(player._pointer_input(rc) and not sel.has_partial(), "verb_click: right click cancels")
+	# 動詞を選ばずに押すと、コンテキスト型と同じに決める
+	c0 = n_in.call()
+	hl2.hotspot_clicked.emit(plant)
+	await _settle()
+	check(n_in.call() == c0 + 1 and String(last_in.call()).contains("とる"), "verb_click: bare click uses the verb of the cursor kind: %s" % last_in.call())
+	if sel.choosing:
+		_press(sel, _buttons(sel)[0])
+		await _settle()
+	# キーボードで調べられる場所を選ぶ
+	var tab := InputEventKey.new()
+	tab.keycode = KEY_TAB
+	tab.pressed = true
+	check(player._pointer_input(tab) and not hl2.focused().is_empty(), "pointer: Tab selects a hotspot")
+	hl2.clear_focus()
+
+	# タッチ：短く押すとクリック、長押しは右クリックの代わり
+	check(hl2.long_press, "touch: long press enabled in pointer modes")
+	var door_at: Vector2 = hl2.rect_of(girl).get_center()
+	var tp := func(pressed: bool) -> InputEventMouseButton:
+		var e := InputEventMouseButton.new()
+		e.device = InputEvent.DEVICE_ID_EMULATION
+		e.button_index = MOUSE_BUTTON_LEFT
+		e.pressed = pressed
+		e.position = door_at
+		return e
+	c0 = n_in.call()
+	hl2._gui_input(tp.call(true))
+	check(n_in.call() == c0 and not player.busy, "touch: nothing happens on press")
+	hl2._gui_input(tp.call(false))
+	await _settle()
+	check(n_in.call() == c0 + 1 and String(last_in.call()).contains("しらべる"), "touch: tap clicks on release: %s" % last_in.call())
+	c0 = n_in.call()
+	hl2._gui_input(tp.call(true))
+	await create_timer(0.7).timeout
+	await _settle()
+	check(n_in.call() == c0 + 1 and String(last_in.call()).contains("みる"), "touch: long press looks: %s" % last_in.call())
+	hl2._gui_input(tp.call(false))
+	await _settle()
+	check(n_in.call() == c0 + 1, "touch: release after a long press does not click")
+	_press(sel, "しらべる")
+	await _settle_frames(3)
+	hl2._gui_input(tp.call(true))
+	await create_timer(0.7).timeout
+	check(not sel.has_partial(), "touch: long press cancels a half-made command")
+	hl2._gui_input(tp.call(false))
+	await _settle()
+	# 動かしたら長押しにしない
+	c0 = n_in.call()
+	hl2._gui_input(tp.call(true))
+	var mv := InputEventMouseMotion.new()
+	mv.device = InputEvent.DEVICE_ID_EMULATION
+	mv.position = door_at + Vector2(30, 0)
+	hl2._gui_input(mv)
+	await create_timer(0.7).timeout
+	hl2._gui_input(tp.call(false))
+	await _settle()
+	check(n_in.call() == c0, "touch: a drag is neither a tap nor a long press")
+
+	# verb_cursor：カーソルの動詞を切り替える。選んだ動詞は残る
+	player.core.state.ui["input_modes"] = ["verb_cursor"]
+	player._apply_input_modes()
+	sel.refresh(player.core)
+	await _settle()
+	check(sel.mode == "cursor", "verb_cursor: mode")
+	check(player._pointer_input(rc) and sel.current_verb_id() != "", "verb_cursor: right click picks the next verb: %s" % sel.current_verb_id())
+	var v1 := sel.current_verb_id()
+	player._pointer_input(rc)
+	check(sel.current_verb_id() != v1 and sel.current_verb_id() != "", "verb_cursor: cycles: %s → %s" % [v1, sel.current_verb_id()])
+	v1 = sel.current_verb_id()
+	hl2._gui_input(tp.call(true))
+	await create_timer(0.7).timeout
+	hl2._gui_input(tp.call(false))
+	await _settle()
+	check(sel.current_verb_id() != v1 and sel.current_verb_id() != "", "verb_cursor: long press picks the next verb: %s → %s" % [v1, sel.current_verb_id()])
+	for i in 20:
+		if sel.current_verb_id() == "TALK":
+			break
+		sel.cycle_verb(1)
+	check(sel.current_verb_id() == "TALK" and player.current_cursor_kind() == "talk", "verb_cursor: talk cursor: %s %s" % [sel.current_verb_id(), player.current_cursor_kind()])
+	await _shot("23_verb_cursor")
+	c0 = n_in.call()
+	hl2.hotspot_clicked.emit(girl)
+	await _settle()
+	if sel.choosing:
+		_press(sel, _buttons(sel)[0])
+		await _settle()
+	check(n_in.call() > c0, "verb_cursor: click uses the cursor verb")
+	check(sel.current_verb_id() == "TALK", "verb_cursor: verb stays after the command: %s" % sel.current_verb_id())
+
+	# context：対象に合わせて動詞が決まる
+	player.core.state.ui["input_modes"] = ["context"]
+	player._apply_input_modes()
+	sel.refresh(player.core)
+	await _settle()
+	check(sel.mode == "context" and _buttons(sel).is_empty(), "context: no verb list: %s" % str(_buttons(sel)))
+	check(player._context_verb({"id": "a", "type": "character"}) == "TALK", "context: character → TALK")
+	check(player._context_verb({"id": "a", "type": "object"}) == "EXAMINE", "context: object → click_verb")
+	check(player._context_verb({"id": "a", "type": "object", "cursor": "take"}) == "TAKE", "context: cursor take → TAKE")
+	check(player._context_verb({"id": "a", "type": "exit"}) == "MOVE", "context: exit → MOVE")
+	check(player._context_verb({"id": "a", "type": "object", "verb": "OPEN"}) == "OPEN", "context: click of the object wins")
+	check(player._context_verb({"id": "a", "type": "object"}, true) == "LOOK" and player._context_verb({"id": "a", "type": "exit"}, true) == "", "context: right click looks")
+	player.template.overrides = {"inputs": {"context_verbs": {"look": "LOOK"}, "click_verb": "TAKE"}}
+	check(player._context_verb({"id": "a", "type": "object"}) == "LOOK" and player._context_verb({"id": "a", "type": "object", "cursor": "zzz"}) == "TAKE", "context: project inputs override the template")
+	player._apply_project_overrides(player.template)
+	c0 = n_in.call()
+	hl2.hotspot_clicked.emit(girl)
+	await _settle()
+	if sel.choosing:
+		_press(sel, _buttons(sel)[0])
+		await _settle()
+	check(n_in.call() > c0, "context: click submits")
+	c0 = n_in.call()
+	player._on_hotspot_clicked(girl, true)
+	await _settle()
+	check(n_in.call() == c0 + 1 and String(last_in.call()).contains("みる"), "context: right click looks: %s" % last_in.call())
+	# 持ち物：クリックで持って、対象に使う
+	if player.core.state.has_item("key"):
+		check(_inv_buttons(sel).any(func(l): return String(l).contains("かぎ")), "context: inventory shown: %s" % str(_inv_buttons(sel)))
+		_press(sel, _inv_buttons(sel).filter(func(l): return String(l).contains("かぎ"))[0])
+		await _settle_frames(3)
+		check(sel.current_verb_id() == "USE" and sel.is_picking(), "context: item held, waiting for a target")
+		sel.cancel()
+		await _settle_frames(3)
+		c0 = n_in.call()
+		var key_t: Dictionary = sel._inv.get_children().filter(func(b): return b is Button and String(b.text).contains("かぎ"))[0].get_meta("target")
+		sel._on_item_input(tp.call(true), key_t)
+		await create_timer(0.7).timeout
+		await _settle()
+		check(n_in.call() == c0 + 1 and String(last_in.call()).contains("みる"), "touch: long press on an item looks at it: %s" % last_in.call())
+	await _shot("24_context")
+	player.core.state.ui.erase("input_modes")
+	player._apply_input_modes()
+	sel.refresh(player.core)
+	await _settle()
+	check(sel.mode == "menu" and _buttons(sel).has("しらべる"), "back to the command menu")
+
+	# ゲームID：ほかのゲームのセーブデータは読まない
+	player.project.data["game_id"] = "game_a"
+	check(player.save_game("03") == OK, "save with game id")
+	player.project.data["game_id"] = "game_b"
+	check(await player.load_game("03") == "GAME_MISMATCH", "save of another game is refused")
+	player.project.data["game_id"] = "game_a"
+	check(await player.load_game("03") == "", "save of the same game loads")
+	await _settle()
+
 	print("ui failed: %d" % _failed)
 	quit(1 if _failed > 0 else 0)
 
@@ -546,14 +734,22 @@ func _rmdir(path: String) -> void:
 
 func _buttons(sel: AdvCommandSelect) -> Array:
 	var r := []
-	for b in sel.get_child(0).get_children():
+	for b in sel._grid.get_children():
+		if b is Button and not b.is_queued_for_deletion():
+			r.append(b.text)
+	return r
+
+
+func _inv_buttons(sel: AdvCommandSelect) -> Array:
+	var r := []
+	for b in sel._inv.get_children():
 		if b is Button and not b.is_queued_for_deletion():
 			r.append(b.text)
 	return r
 
 
 func _press(sel: AdvCommandSelect, label: String) -> void:
-	for b in sel.get_child(0).get_children():
+	for b in sel._grid.get_children() + sel._inv.get_children():
 		if b is Button and b.text == label and not b.is_queued_for_deletion():
 			b.pressed.emit()
 			return

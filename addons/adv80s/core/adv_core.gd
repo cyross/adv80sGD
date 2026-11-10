@@ -279,6 +279,17 @@ func _commit(events: Array) -> Array[Dictionary]:
 
 
 ## 問い合わせ（5.1）。Core が答えるもの以外はアダプタに聞く。
+## デバッグコンソールでデータを変更した後に再開する際、アダプタ側の表示状態（背景・スプライト等）とスキーマを再同期する。
+func sync_debug_state(scene_changed: bool = false) -> Array[Dictionary]:
+	if scene_changed:
+		_reload_schema()
+	var evs: Array = []
+	for a in _adapters:
+		if a != null and a.has_method("sync_debug_state"):
+			evs.append_array(a.call("sync_debug_state", scene_changed))
+	return _commit(evs)
+
+
 func query(what: String, args: Dictionary = {}) -> Variant:
 	match what:
 		"verbs":

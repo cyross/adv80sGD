@@ -109,6 +109,10 @@
             "type": "string",
             "description": "Cursor kind on hover"
           },
+          "click": {
+            "type": "string",
+            "description": "Verb used on click (context and click methods)"
+          },
           "character": {
             "type": "string",
             "description": "Speaker ID when this is a character"
@@ -186,6 +190,9 @@
                 "type": "string"
               },
               "cursor": {
+                "type": "string"
+              },
+              "click": {
                 "type": "string"
               },
               "ext": {
@@ -510,6 +517,10 @@
                   "type": "string",
                   "description": "Cursor kind on hover"
                 },
+                "click": {
+                  "type": "string",
+                  "description": "Verb used on click (context and click methods)"
+                },
                 "character": {
                   "type": "string",
                   "description": "Speaker ID when this is a character"
@@ -587,6 +598,9 @@
                       "type": "string"
                     },
                     "cursor": {
+                      "type": "string"
+                    },
+                    "click": {
                       "type": "string"
                     },
                     "ext": {

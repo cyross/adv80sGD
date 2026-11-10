@@ -31,7 +31,11 @@
 | 項目 | 型 | 中身 |
 | --- | --- | --- |
 | `project_version` | 整数 | 設定の形の版。`1` |
+| `game_id` | 文字列 | ゲームID。ほかのゲームと重ならない名前（英小文字で始まる英小文字・数字・`_`）。セーブデータに入り、違うゲームのセーブデータは読まない |
+| `title` | 文字列 | ゲームのタイトル。ウィンドウのタイトルにも使う |
 | `template` | 文字列 | 最初に使うテンプレートの ID |
+| `inputs` | 辞書 | コマンド方式。書いた項目だけ、テンプレートの `inputs` を上書きする（下の「テンプレート」の `inputs.*` と同じ項目） |
+| `input_devices` | 配列 | 使う入力機器：`keyboard`、`mouse`、`gamepad`、`touch`。書かなければすべて |
 | `templates` | 配列 | 登録するテンプレートの ID。旧表示と新表示の切り替え（`era_switch`）はこれが2つ以上のとき使える |
 | `scenarios` | 配列 | シナリオのパス。`*.scenario.json` は JSON、`*.ink.json` は Ink のアダプタが読む |
 | `entry` | 文字列 | 開始シーン。空ならシナリオの `start` |
@@ -109,7 +113,12 @@
 | `layout.screen_layers` | 画面全体のスプライトの層。既定 `["back", "front"]`。`back` で始まる層は窓の後ろ |
 | `layout.regions` | 区割り。`picture`（絵）、`message`（文章）、`commands`（コマンド選択）、`input`（入力欄）ごとに `rect`、`window`、`visible` |
 | `layout.named` | 名前付きのレイアウト（`layout.set` で切り替える。窓を隠すときは `"visible": false`） |
-| `inputs.enabled` | 使う入力：`select`（コマンド選択）、`parser`（コマンド入力）、`click`（絵をクリック） |
+| `inputs.enabled` | 使う入力：`select`（コマンド選択）、`parser`（コマンド入力）、`icon`（アイコン）、`click`（絵をクリック）、`verb_click`（動詞リスト＋クリック）、`verb_cursor`（アイコン切り替え）、`context`（コンテキスト） |
+| `inputs.click_verb` | 絵をクリックしたときの動詞（既定 `EXAMINE`） |
+| `inputs.context_verbs` | コンテキストで、カーソルの種類から決める動詞（種類 → 動詞ID。既定 `talk`→`TALK`、`take`→`TAKE`、`exit`→`MOVE`） |
+| `inputs.context_alt_verb` | 右クリックの動詞（既定 `LOOK`） |
+| `inputs.item_verb` | 持ち物を押して持ったときの動詞（既定 `USE`） |
+| `inputs.verb_cursors` | 動詞ごとのカーソルの種類（動詞ID → 種類） |
 | `inputs.parser_profile` | `ja` など |
 | `inputs.command_columns` | コマンド選択の列の数（既定 2） |
 | `text.speed` | 1秒あたりの文字数（0 で一度に表示） |
@@ -235,6 +244,7 @@
 | `region` | クリックできる範囲 [x, y, 幅, 高さ]（絵の窓の中の座標） |
 | `sprite` | 結び付けるスプライト ID（不透明な部分がクリック範囲） |
 | `cursor` | マウスを重ねたときのカーソルの種類 |
+| `click` | クリックしたときに使う動詞ID（コンテキストと画面選択の方式。書かなければカーソルの種類から決める） |
 | `character` | 人物として扱うときの話者 ID |
 | `when` | この物がある条件 |
 | `on` | 動詞 → 手順。`"USE+door"` のように「動詞+相手の ID」で、`with` の相手ごとの反応を書ける |

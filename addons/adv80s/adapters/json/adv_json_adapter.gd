@@ -55,6 +55,7 @@ var _choice: Dictionary = {}  ## 選択肢の入力待ち {id, path, options: {�
 var _suspended: bool = false  ## ほかのアダプタ（Ink）に処理を渡して止まっている
 var _shown_sprites: Dictionary = {}  ## シーンの sprites で出しているもの（スプライトID → シーンID）
 var _shown_image: Variant = null     ## シーンの image を配列で書いたとき、いま出している重ね合わせ
+var _last_trace: Dictionary = {}     ## デバッグコンソール用：直近に実行したブロックとステップ位置
 
 
 # ---------------------------------------------------------------- 読み込み
@@ -218,6 +219,19 @@ func _begin() -> void:
 
 ## シーンの sprites（6.4）を、いまのシーンと条件に合わせて出し入れする。
 ## 合わなくなったものは sprite.hide、合うようになったものは sprite.show を出す。
+## デバッグコンソールでデータを変更した後に再開する際、現在のデータで背景画像・スプライトを再評価する。
+func sync_debug_state(scene_changed: bool = false) -> Array[Dictionary]:
+	_begin()
+	if scene_changed:
+		var sc: Dictionary = scenes.get(_scratch.scene, {})
+		_shown_image = null
+		if sc.has("image"):
+			_shown_image = _scene_image(sc)
+			_emit(AdvEvents.make("image.show", {"layer": "bg", "id": _shown_image}))
+	_sync_sprites()
+	return _out
+
+
 const _SPRITE_SKIP := ["when", "show", "hide"]
 
 
@@ -365,6 +379,7 @@ func _resume() -> void:
 			continue
 		var step = f["steps"][f["i"]]
 		f["i"] = int(f["i"]) + 1
+		_last_trace = {"path": String(f["path"]), "steps": f["steps"], "index": int(f["i"]) - 1, "kind": String(f.get("kind", "block"))}
 		_exec(step, String(f["path"]))
 
 
@@ -602,6 +617,8 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 					for k in ["sprite", "cursor"]:
 						if obj.has(k):
 							h[k] = obj[k]
+					if obj.has("click"):
+						h["verb"] = String(obj["click"])
 					list.append(h)
 			# 出口も、範囲かスプライトがあれば調べられる場所にする（クリックで移動）
 			var exits: Dictionary = scenes.get(ctx.state.scene, {}).get("exits", {})
@@ -616,6 +633,8 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 					for k in ["sprite", "cursor"]:
 						if ex.has(k):
 							h[k] = ex[k]
+					if ex.has("click"):
+						h["verb"] = String(ex["click"])
 					list.append(h)
 			return list
 		"flow_structure":
@@ -648,6 +667,23 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 			return _v_ink_refs.duplicate(true)
 		"pending_choice":
 			return _choice.get("args") if not _choice.is_empty() else null
+		"debug_context":
+			var stack_info: Array = []
+			for f in _stack:
+				if f is Dictionary:
+					stack_info.append({"path": String(f.get("path", "")), "steps": f.get("steps", []), "index": int(f.get("i", 0)), "kind": String(f.get("kind", ""))})
+			return {
+				"adapter": "json",
+				"scene": ctx.state.scene,
+				"scene_data": scenes.get(ctx.state.scene, {}),
+				"scenes": scenes,
+				"dialogues": dialogues,
+				"items": items,
+				"variables": variables,
+				"stack": stack_info,
+				"choice": _choice.duplicate(true),
+				"last_trace": _last_trace.duplicate(true)
+			}
 	return null
 
 

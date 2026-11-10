@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_media()
 	_test_layers_and_globals()
 	_test_text_stops()
+	_test_setup()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -45,6 +46,96 @@ func eq(a: Variant, b: Variant, label: String) -> void:
 
 
 # ---------------------------------------------------------------- 式
+
+# ---------------------------------------------------------------- セットアップ（6.7）とコマンド方式（4.5）
+
+func _test_setup() -> void:
+	var base := "res://tests/_tmp_setup"
+	var pj := base + "/adv80s.project.json"
+	_rmdir(base)
+	eq(AdvSetup.to_id("My Game 2"), "my_game_2", "setup: id from title")
+	check(AdvSetup.to_id("やかたの なぞ") != "", "setup: id from a Japanese title is not empty")
+	check(AdvSetup.template_list().any(func(t): return t["id"] == "pc98_classic"), "setup: template list")
+	var opts := {"game_id": "yakata", "title": "やかたの なぞ", "template": "pc98_classic", "command": "verb_click",
+		"devices": ["keyboard", "mouse"], "base_dir": base + "/game"}
+	eq(Array(AdvSetup.check(opts)), [], "setup: options ok")
+	check(not AdvSetup.check(opts.merged({"game_id": "1bad"}, true)).is_empty(), "setup: bad game id")
+	check(not AdvSetup.check(opts.merged({"title": " "}, true)).is_empty(), "setup: empty title")
+	check(not AdvSetup.check(opts.merged({"template": "zzz"}, true)).is_empty(), "setup: unknown template")
+	check(not AdvSetup.check(opts.merged({"devices": []}, true)).is_empty(), "setup: no devices")
+	check(not AdvSetup.check(opts.merged({"command": "verb_cursor", "devices": ["keyboard"]}, true)).is_empty(), "setup: verb_cursor needs a pointer")
+	check(not AdvSetup.check(opts.merged({"command": "parser", "devices": ["mouse"]}, true)).is_empty(), "setup: parser needs a keyboard")
+	check(not AdvSetup.check(opts.merged({"base_dir": "res://addons/x"}, true)).is_empty(), "setup: base dir under addons")
+	var pl := AdvSetup.plan(opts, pj)
+	eq(pl["settings"].get("display/window/size/viewport_width"), 640, "setup: viewport from the template")
+	eq(pl["settings"].get("application/run/main_scene"), base + "/game/main.tscn", "setup: main scene")
+	var res := AdvSetup.apply(opts, pj, false)
+	eq(res["errors"], [], "setup: apply")
+	for d in AdvSetup.ASSET_DIRS:
+		check(DirAccess.dir_exists_absolute("%s/game/assets/%s" % [base, d]), "setup: asset folder %s" % d)
+	check(FileAccess.file_exists(base + "/game/main.tscn") and FileAccess.file_exists(base + "/game/assets/manifest.json"), "setup: entry scene and manifest")
+	var p = AdvJson.load_file(pj)
+	check(p is Dictionary, "setup: project written")
+	eq(p.get("game_id"), "yakata", "setup: game_id")
+	eq(p.get("title"), "やかたの なぞ", "setup: title")
+	eq(p.get("template"), "pc98_classic", "setup: template")
+	eq(p.get("inputs", {}).get("enabled"), ["verb_click"], "setup: command method")
+	eq(p.get("input_devices"), ["keyboard", "mouse"], "setup: devices")
+	eq(p.get("scenarios"), [base + "/game/scenario/main.scenario.json"], "setup: scenarios")
+	eq(_codes(AdvSchemaValidator.check(p, "project")), [], "setup: project matches schema")
+	eq(_codes(AdvSchemaValidator.check(AdvJson.load_file(base + "/game/scenario/main.scenario.json"), "scenario")), [], "setup: scenario matches schema")
+	eq(_codes(AdvSchemaValidator.check(AdvJson.load_file(base + "/game/assets/manifest.json"), "manifest")), [], "setup: manifest matches schema")
+	var c := AdvCore.new()
+	c.setup({"seed": 1})
+	c.use_adapter(AdvJsonAdapter.new())
+	eq(c.load_scenario(p["scenarios"]), OK, "setup: scenario loads")
+	eq(c.validate().filter(func(d): return d["severity"] == "error").size(), 0, "setup: scenario validates")
+	var evs := c.start()
+	check(_bodies(evs).contains("やかたの なぞ"), "setup: scenario starts: %s" % _bodies(evs))
+	var scene = load(base + "/game/main.tscn")
+	check(scene is PackedScene, "setup: main scene loads")
+	# 2回目：あるファイルは残し、プロジェクト設定はセットアップの項目だけを書き換える
+	p["x.keep"] = 1
+	p["inputs"]["click_verb"] = "LOOK"
+	var f := FileAccess.open(pj, FileAccess.WRITE)
+	f.store_string(JSON.stringify(p))
+	f.close()
+	var res2 := AdvSetup.apply(opts.merged({"command": "template", "title": "べつの なまえ"}, true), pj, false)
+	eq(res2["errors"], [], "setup: apply again")
+	check((res2["skipped"] as Array).has(base + "/game/main.tscn") and (res2["created"] as Array).is_empty(), "setup: existing files kept: %s" % str(res2["created"]))
+	var p2 = AdvJson.load_file(pj)
+	eq(p2.get("x.keep"), 1, "setup: other project keys kept")
+	eq(p2.get("title"), "べつの なまえ", "setup: title updated")
+	eq(p2.get("inputs"), {"click_verb": "LOOK"}, "setup: enabled removed for the template default")
+	eq(AdvSetup.defaults(pj).get("command"), "template", "setup: defaults read the project")
+
+	# 物の click は hotspots の verb になる
+	var sf := FileAccess.open(base + "/click.scenario.json", FileAccess.WRITE)
+	sf.store_string(JSON.stringify({"scenario_version": 1, "start": "a", "scenes": {"a": {"objects": {
+		"box": {"region": [0, 0, 10, 10], "click": "OPEN", "on": {"OPEN": "あいた。"}}, "cat": {"region": [20, 0, 10, 10]}}}}}))
+	sf.close()
+	var c2 := AdvCore.new()
+	c2.setup({"seed": 1})
+	c2.use_adapter(AdvJsonAdapter.new())
+	eq(c2.load_scenario([base + "/click.scenario.json"]), OK, "click: scenario loads")
+	c2.start()
+	var hs: Array = c2.query("hotspots")
+	eq(hs.filter(func(h): return h["id"] == "box")[0].get("verb"), "OPEN", "hotspots: click verb")
+	check(not hs.filter(func(h): return h["id"] == "cat")[0].has("verb"), "hotspots: no verb without click")
+	_rmdir(base)
+
+	# プロジェクトの inputs はテンプレートの inputs を上書きする
+	var t := AdvTemplate.load_template("pc98_classic")
+	var before: Array = t.get_section("inputs").get("enabled", [])
+	t.overrides = {"inputs": {"enabled": ["context"], "click_verb": "LOOK"}}
+	eq(t.get_section("inputs").get("enabled"), ["context"], "template overrides: enabled")
+	eq(t.get_section("inputs").get("click_verb"), "LOOK", "template overrides: new key")
+	t.overrides = {}
+	eq(t.get_section("inputs").get("enabled", []), before, "template overrides: cleared")
+	eq(_codes(AdvSchemaValidator.check({"template": "pc98_classic", "game_id": "a_1", "title": "T", "input_devices": ["mouse"],
+		"inputs": {"enabled": ["verb_cursor"], "context_verbs": {"look": "LOOK"}, "verb_cursors": {"TAKE": "take"}, "item_verb": "USE", "context_alt_verb": "LOOK"}}, "project")), [], "schema: project inputs")
+	check(not AdvSchemaValidator.check({"game_id": "Bad Id"}, "project").is_empty(), "schema: bad game_id")
+
 
 func _test_expr() -> void:
 	eq(AdvCondition.compile("has_key and money >= 100"),

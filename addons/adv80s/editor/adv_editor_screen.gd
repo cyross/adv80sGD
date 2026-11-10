@@ -8,11 +8,16 @@ extends VBoxContainer
 ##
 ## 保存すると JSON を整形して書き出し、エディタのファイル一覧に知らせる（マニフェストの自動生成もこれで動く）。
 
+const SceneGraphView = preload("res://addons/adv80s/debug/adv_scene_graph_view.gd")
+const SetupView = preload("res://addons/adv80s/editor/adv_setup_view.gd")
+
 const KIND_PROJECT := 0
 const KIND_TEMPLATE := 1
 const KIND_MANIFEST := 2
 const KIND_VARIABLES := 3
-const KIND_NAMES := ["プロジェクト設定", "テンプレート", "マニフェスト", "変数の一覧"]
+const KIND_SCENE_GRAPH := 4
+const KIND_SETUP := 5
+const KIND_NAMES := ["プロジェクト設定", "テンプレート", "マニフェスト", "変数の一覧", "シーングラフ", "セットアップ"]
 const SCHEMAS := ["project", "template", "manifest"]
 ## 新しく作るテンプレートを置くフォルダ（AdvTemplate.SEARCH_DIRS の最初）
 const TEMPLATE_DIR := "res://game/templates"
@@ -25,12 +30,16 @@ var _diag_tree: Tree
 var _json: TextEdit
 var _add_files_btn: Button
 var _show_inherited: CheckBox
+var _scene_graph_btn: Button
 var _file_buttons: Array = []   ## ファイルを編集するときだけ出すボタン
 var _split: HSplitContainer
 var _vars_box: VBoxContainer
 var _vars_filter: LineEdit
 var _vars_tree: Tree
 var _vars: Array = []
+var _scene_graph_view: Control
+var _setup_view: Control
+var _setup_offered: bool = false
 var _file_dialog: EditorFileDialog
 var _new_dialog: ConfirmationDialog
 var _new_id: LineEdit
@@ -45,6 +54,28 @@ var _dirty: bool = false
 
 func _init() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_build_editor_ui()
+
+
+## エディタ上でスクリプトがホットリロードされた際にメンバ変数が null になっていたら UI を再構築する。
+func _ensure_ui() -> void:
+	if _form != null and _kind != null and _split != null and _scene_graph_view != null and _setup_view != null:
+		return
+	var prev_sel := 0
+	if get_child_count() > 0 and get_child(0) is HBoxContainer:
+		var old_bar := get_child(0) as HBoxContainer
+		if old_bar.get_child_count() > 0 and old_bar.get_child(0) is OptionButton:
+			prev_sel = (old_bar.get_child(0) as OptionButton).selected
+	for ch in get_children():
+		remove_child(ch)
+		ch.queue_free()
+	_file_buttons.clear()
+	_build_editor_ui()
+	if prev_sel >= 0 and prev_sel < _kind.item_count:
+		_kind.select(prev_sel)
+
+
+func _build_editor_ui() -> void:
 	var bar := HBoxContainer.new()
 	add_child(bar)
 	_kind = OptionButton.new()
@@ -77,8 +108,23 @@ func _init() -> void:
 	_show_inherited.text = "継承した値"
 	_show_inherited.tooltip_text = "テンプレートで、書いていない項目に元のテンプレート（extends）の値を出します"
 	_show_inherited.button_pressed = true
-	_show_inherited.toggled.connect(func(_on): _form.inherited = _inherited_of(_form.data); _form.rebuild())
+	_show_inherited.toggled.connect(func(_on):
+		_ensure_ui()
+		_form.inherited = _inherited_of(_form.data)
+		_form.rebuild()
+	)
 	bar.add_child(_show_inherited)
+
+	_scene_graph_btn = Button.new()
+	_scene_graph_btn.text = "シーングラフを開く"
+	_scene_graph_btn.tooltip_text = "シナリオのシーングラフを表示します"
+	_scene_graph_btn.pressed.connect(func() -> void:
+		_ensure_ui()
+		_kind.select(KIND_SCENE_GRAPH)
+		_refresh_files()
+	)
+	bar.add_child(_scene_graph_btn)
+
 	_status = Label.new()
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -94,6 +140,7 @@ func _init() -> void:
 	_vars_box = _make_vars_view()
 	_vars_box.visible = false
 	add_child(_vars_box)
+
 	_form = AdvSchemaForm.new()
 	_form.suggest = _suggest
 	_form.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -131,6 +178,26 @@ func _init() -> void:
 	_json.custom_minimum_size = Vector2(0, 160)
 	jbox.add_child(_json)
 
+	_scene_graph_view = SceneGraphView.new()
+	_scene_graph_view.visible = false
+	_scene_graph_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_scene_graph_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scene_graph_view.closed.connect(func() -> void:
+		_ensure_ui()
+		_kind.select(KIND_PROJECT)
+		_refresh_files()
+	)
+	add_child(_scene_graph_view)
+
+	_setup_view = SetupView.new()
+	_setup_view.visible = false
+	_setup_view.applied.connect(func(res: Dictionary) -> void:
+		_ensure_ui()
+		var errs: Array = res.get("errors", [])
+		_status.text = "セットアップが終わりました" if errs.is_empty() else "セットアップでエラーが %d 件ありました" % errs.size()
+	)
+	add_child(_setup_view)
+
 	_file_dialog = EditorFileDialog.new()
 	_file_dialog.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILES
 	_file_dialog.access = EditorFileDialog.ACCESS_RESOURCES
@@ -161,11 +228,23 @@ func _init() -> void:
 
 
 func _ready() -> void:
+	_ensure_ui()
+	_offer_setup()
 	_refresh_files()
+
+
+## プロジェクト設定がまだないときは、最初にセットアップ画面を出す（1回だけ）。
+func _offer_setup() -> void:
+	if _setup_offered:
+		return
+	_setup_offered = true
+	if not FileAccess.file_exists(AdvProject.DEFAULT_PATH):
+		_kind.select(KIND_SETUP)
 
 
 ## 画面に切り替えたとき。保存していない変更がなければ、ファイルの一覧と中身を読み直す。
 func on_shown() -> void:
+	_ensure_ui()
 	if not _dirty:
 		_refresh_files()
 
@@ -181,8 +260,36 @@ func _shortcut_input(event: InputEvent) -> void:
 # ---------------------------------------------------------------- ファイルの一覧
 
 func _refresh_files() -> void:
+	_ensure_ui()
 	_add_files_btn.visible = _kind.selected == KIND_MANIFEST
 	_show_inherited.visible = _kind.selected == KIND_TEMPLATE
+	var is_graph := _kind.selected == KIND_SCENE_GRAPH
+	if _scene_graph_btn != null:
+		_scene_graph_btn.visible = not is_graph
+	if _scene_graph_view != null:
+		_scene_graph_view.visible = is_graph
+	var is_setup := _kind.selected == KIND_SETUP
+	if _setup_view != null:
+		_setup_view.visible = is_setup
+	if is_setup:
+		_split.visible = false
+		_vars_box.visible = false
+		_file.visible = false
+		for b in _file_buttons:
+			b.visible = false
+		_setup_view.set("project_path", AdvProject.DEFAULT_PATH)
+		_setup_view.call("reload")
+		_status.text = ""
+		return
+	if is_graph:
+		_split.visible = false
+		_vars_box.visible = false
+		_file.visible = false
+		for b in _file_buttons:
+			b.visible = false
+		_scene_graph_view.call("setup_from_project", AdvProject.DEFAULT_PATH)
+		_status.text = "%d シーン / %d 遷移" % [int(_scene_graph_view.call("node_count")), int(_scene_graph_view.call("edge_count"))]
+		return
 	var vars := _kind.selected == KIND_VARIABLES
 	_split.visible = not vars
 	_vars_box.visible = vars
@@ -238,6 +345,9 @@ func _manifest_roots() -> PackedStringArray:
 # ---------------------------------------------------------------- 開く・保存
 
 func _open(path: String) -> void:
+	_ensure_ui()
+	if _kind.selected < 0 or _kind.selected >= SCHEMAS.size():
+		return
 	_path = path
 	_root_of_manifest = path.get_base_dir() if _kind.selected == KIND_MANIFEST else ""
 	var schema := AdvSchemaValidator.load_schema(SCHEMAS[_kind.selected])
@@ -269,6 +379,16 @@ func _initial_value() -> Dictionary:
 
 
 func _reload() -> void:
+	_ensure_ui()
+	if _kind.selected == KIND_SETUP:
+		if _setup_view != null:
+			_setup_view.call("reload")
+		return
+	if _kind.selected == KIND_SCENE_GRAPH:
+		if _scene_graph_view != null:
+			_scene_graph_view.call("setup_from_project", AdvProject.DEFAULT_PATH)
+			_status.text = "%d シーン / %d 遷移" % [int(_scene_graph_view.call("node_count")), int(_scene_graph_view.call("edge_count"))]
+		return
 	if _kind.selected == KIND_VARIABLES:
 		_refresh_vars()
 		return
@@ -276,7 +396,8 @@ func _reload() -> void:
 
 
 func save() -> void:
-	if _path == "" or _form.read_only:
+	_ensure_ui()
+	if _kind.selected >= SCHEMAS.size() or _path == "" or _form.read_only:
 		return
 	DirAccess.make_dir_recursive_absolute(_path.get_base_dir())
 	var f := FileAccess.open(_path, FileAccess.WRITE)
@@ -317,6 +438,7 @@ func _inherited_of(value: Variant) -> Variant:
 
 
 func _on_form_changed() -> void:
+	_ensure_ui()
 	var inh = _inherited_of(_form.data)
 	if JSON.stringify(inh) != JSON.stringify(_form.inherited):
 		_form.inherited = inh
@@ -332,6 +454,7 @@ func _update_json() -> void:
 
 
 func _apply_json() -> void:
+	_ensure_ui()
 	var j := JSON.new()
 	if j.parse(_json.text) != OK:
 		_status.text = "JSON の書き方に誤りがあります（%d 行目）: %s" % [j.get_error_line(), j.get_error_message()]
@@ -344,6 +467,9 @@ func _apply_json() -> void:
 # ---------------------------------------------------------------- 確認
 
 func validate() -> void:
+	_ensure_ui()
+	if _kind.selected < 0 or _kind.selected >= SCHEMAS.size():
+		return
 	var diags: Array = AdvSchemaValidator.check(_form.data, SCHEMAS[_kind.selected], _path)
 	match _kind.selected:
 		KIND_TEMPLATE:
@@ -414,6 +540,7 @@ func _on_diag_activated() -> void:
 # ---------------------------------------------------------------- 新規
 
 func _on_new() -> void:
+	_ensure_ui()
 	match _kind.selected:
 		KIND_PROJECT:
 			if FileAccess.file_exists(AdvProject.DEFAULT_PATH):
@@ -493,6 +620,7 @@ func _register_template(id: String) -> void:
 # ---------------------------------------------------------------- マニフェスト：素材ファイルから追加
 
 func _on_add_files() -> void:
+	_ensure_ui()
 	if _root_of_manifest == "" or _form.read_only:
 		return
 	_file_dialog.current_dir = _root_of_manifest
@@ -500,6 +628,7 @@ func _on_add_files() -> void:
 
 
 func _on_files_selected(files: PackedStringArray) -> void:
+	_ensure_ui()
 	if _form.read_only:
 		return
 	var folders := AdvAssets.DEFAULT_FOLDERS

@@ -9,6 +9,8 @@ var data: Dictionary = {}
 var path: String = ""         ## 読み込んだ template.json のパス
 var preset: Dictionary = {}   ## AdvPresets.resolve の結果
 var _layout_name: String = ""
+## プロジェクト設定で上書きする章（章の名前 → 上書きする項目）。いまは inputs（コマンド方式）に使う
+var overrides: Dictionary = {}
 
 
 ## ID か template.json のパスから読み込む。失敗したら null。
@@ -114,4 +116,8 @@ func asset_root() -> String:
 
 func get_section(key: String) -> Dictionary:
 	var v = data.get(key, {})
-	return v if v is Dictionary else {}
+	var d: Dictionary = v if v is Dictionary else {}
+	var o = overrides.get(key)
+	if o is Dictionary and not o.is_empty():
+		return AdvJson.merge(d, o)
+	return d

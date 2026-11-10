@@ -144,6 +144,13 @@
 | 全画面の一枚絵用のレイアウトを作る | `"layout": {"named": {"cg": {"regions": {"picture": {"rect": [0, 0, 640, 400]}, "message": {"visible": false}}}}}` |
 | コマンド選択を 1 列にする | `"inputs": {"command_columns": 1}` |
 | コマンド入力を使わず選ぶだけにする | `"inputs": {"enabled": ["select"]}` |
+| 動詞を選んでから絵の中の対象をクリックする方式にする | プロジェクト設定に `"inputs": {"enabled": ["verb_click"]}`（セットアップ画面でも選べる） |
+| 右クリックでカーソルの動詞を切り替える方式にする | `"inputs": {"enabled": ["verb_cursor"]}` |
+| 対象に合わせて動作が決まる方式（動詞を選ばない）にする | `"inputs": {"enabled": ["context"]}` |
+| クリックしたときの動作を物ごとに決める | 物・出口に `"click": "OPEN"`（動詞ID） |
+| カーソルの種類ごとの動作を変える | `"inputs": {"context_verbs": {"look": "LOOK"}}` |
+| 使う入力機器をしぼる | プロジェクト設定に `"input_devices": ["keyboard", "mouse"]` |
+| ゲームの名前とIDを決める | セットアップ画面、またはプロジェクト設定の `title` と `game_id` |
 
 ## 現代的な機能
 

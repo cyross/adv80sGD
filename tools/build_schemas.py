@@ -164,6 +164,19 @@ EVENT_DEFAULTS = {"type": "object", "description": t("出力イベントの既�
 
 # ---------------------------------------------------------------- scenario
 
+INPUTS = obj({
+    "enabled": {"type": "array", "items": {"enum": ["select", "parser", "icon", "click", "verb_click", "verb_cursor", "context"]},
+                "description": t("使うコマンド方式。select=コマンド選択、parser=コマンド入力、icon=アイコン、click=絵のクリック、verb_click=動詞を選んで対象をクリック、verb_cursor=カーソルの動詞を切り替えてクリック、context=対象に合わせて自動で決める",
+                                 "Command methods. select, parser, icon, click, verb_click (pick a verb, then click a target), verb_cursor (cycle the cursor verb, then click), context (verb chosen from the target)")},
+    "parser_profile": STR,
+    "command_columns": {"type": "integer", "minimum": 1, "description": t("コマンド選択の列の数（既定 2）", "Columns of the command list (default 2)")},
+    "click_verb": {"type": "string", "description": t("絵をクリックしたときの動詞（既定 EXAMINE）", "Verb used when the picture is clicked (default EXAMINE)")},
+    "item_verb": {"type": "string", "description": t("持ち物をクリックして持ったときに使う動詞（既定 USE）", "Verb used when an inventory item is picked up by clicking (default USE)")},
+    "context_alt_verb": {"type": "string", "description": t("右クリックで使う動詞（既定 LOOK）", "Verb used on right click (default LOOK)")},
+    "context_verbs": mapof({"type": "string"}, t("context で、カーソルの種類から決める動詞（種類 → 動詞ID。空は click_verb）", "For context: verb per cursor kind (kind -> verb ID; empty = click_verb)")),
+    "verb_cursors": mapof({"type": "string"}, t("動詞に合わせるカーソルの種類（動詞ID → 種類）", "Cursor kind per verb (verb ID -> kind)")),
+}, extra=False)
+
 scene_props = {
     "name": {"type": "string", "description": t("表示名", "Display name")},
     "image": {"anyOf": [STR, {"type": "array", "items": {"anyOf": [STR, {"type": "object", "required": ["id"], "additionalProperties": False,
@@ -178,13 +191,14 @@ scene_props = {
         "region": RECT,
         "sprite": {"type": "string", "description": t("結び付けるスプライトID（見えている範囲が調べられる場所になる）", "Sprite ID whose visible area becomes the hotspot")},
         "cursor": {"type": "string", "description": t("マウスを重ねたときのカーソルの種類", "Cursor kind on hover")},
+        "click": {"type": "string", "description": t("クリックしたときに使う動詞（context と click の方式で使う）", "Verb used on click (context and click methods)")},
         "character": {"type": "string", "description": t("人物として扱うときの話者ID", "Speaker ID when this is a character")},
         "when": {"$ref": "#/definitions/condition", "description": t("表示する条件", "Visible when")},
         "on": ON_MAP,
     }), t("シーンの中の物や人物", "Objects and characters in the scene")),
     "exits": mapof({"anyOf": [{"type": "boolean"}, obj({
         "names": STRS, "label": STR, "when": {"$ref": "#/definitions/condition"}, "on": ON_MAP,
-        "region": RECT, "sprite": STR, "cursor": STR})]},
+        "region": RECT, "sprite": STR, "cursor": STR, "click": STR})]},
         t("出口（行き先のシーンID → 設定）", "Exits (target scene ID -> settings)")),
     "sprites": {"type": "array", "description": t("シーンに置くスプライト（条件に合うものを出し、合わなくなったら消す）", "Sprites placed in the scene (shown while when holds)"),
                 "items": {"type": "object", "required": ["id", "image"], "properties": {
@@ -276,9 +290,7 @@ TEMPLATE = {
             "regions": mapof({"anyOf": [REGION, {"type": "null"}]}, t("画面の区割り", "Screen regions")),
             "named": mapof(obj({"regions": mapof({"anyOf": [REGION, {"type": "null"}]})}, extra=False), t("名前付きのレイアウト", "Named layouts")),
         }, extra=False),
-        "inputs": obj({"enabled": {"type": "array", "items": {"enum": ["select", "parser", "icon", "click"]}},
-                       "parser_profile": STR,
-                       "command_columns": {"type": "integer", "minimum": 1, "description": t("コマンド選択の列の数（既定 2）", "Columns of the command list (default 2)")}}, extra=False),
+        "inputs": INPUTS,
         "text": obj({
             "speed": {"type": "number", "minimum": 0, "description": t("1秒あたりの文字数（0で一度に表示）", "Characters per second (0 = instant)")},
             "markup": STR,
@@ -394,6 +406,11 @@ PROJECT = {
     **obj({
         "$schema": STR,
         "project_version": INT,
+        "game_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": t("ゲームID。ほかのゲームと重ならない名前（セーブデータの見分けに使う）", "Game ID, unique per game (used to tell save data apart)")},
+        "title": {"type": "string", "description": t("ゲームのタイトル（ウィンドウのタイトルにも使う）", "Game title (also used as the window title)")},
+        "inputs": {**INPUTS, "description": t("コマンド方式。書いた項目だけ、テンプレートの inputs を上書きする", "Command methods; the keys written here override the template inputs")},
+        "input_devices": {"type": "array", "items": {"enum": ["keyboard", "mouse", "gamepad", "touch"]}, "uniqueItems": True,
+                          "description": t("使う入力機器（書かなければすべて）", "Input devices in use (all when omitted)")},
         "template": {"type": "string", "description": t("使う画面テンプレートのID", "Screen template ID")},
         "templates": {**STRS, "description": t("登録するテンプレート", "Registered templates")},
         "scenarios": {**STRS, "description": t("シナリオファイル（.ink.json は Ink のアダプタが読む）", "Scenario files (.ink.json files go to the Ink adapter)")},

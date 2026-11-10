@@ -194,9 +194,13 @@
               "select",
               "parser",
               "icon",
-              "click"
+              "click",
+              "verb_click",
+              "verb_cursor",
+              "context"
             ]
-          }
+          },
+          "description": "Command methods. select, parser, icon, click, verb_click (pick a verb, then click a target), verb_cursor (cycle the cursor verb, then click), context (verb chosen from the target)"
         },
         "parser_profile": {
           "type": "string"
@@ -205,6 +209,32 @@
           "type": "integer",
           "minimum": 1,
           "description": "Columns of the command list (default 2)"
+        },
+        "click_verb": {
+          "type": "string",
+          "description": "Verb used when the picture is clicked (default EXAMINE)"
+        },
+        "item_verb": {
+          "type": "string",
+          "description": "Verb used when an inventory item is picked up by clicking (default USE)"
+        },
+        "context_alt_verb": {
+          "type": "string",
+          "description": "Verb used on right click (default LOOK)"
+        },
+        "context_verbs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "For context: verb per cursor kind (kind -> verb ID; empty = click_verb)"
+        },
+        "verb_cursors": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Cursor kind per verb (verb ID -> kind)"
         }
       },
       "additionalProperties": false

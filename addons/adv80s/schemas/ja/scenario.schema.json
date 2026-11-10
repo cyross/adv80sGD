@@ -109,6 +109,10 @@
             "type": "string",
             "description": "マウスを重ねたときのカーソルの種類"
           },
+          "click": {
+            "type": "string",
+            "description": "クリックしたときに使う動詞（context と click の方式で使う）"
+          },
           "character": {
             "type": "string",
             "description": "人物として扱うときの話者ID"
@@ -186,6 +190,9 @@
                 "type": "string"
               },
               "cursor": {
+                "type": "string"
+              },
+              "click": {
                 "type": "string"
               },
               "ext": {
@@ -510,6 +517,10 @@
                   "type": "string",
                   "description": "マウスを重ねたときのカーソルの種類"
                 },
+                "click": {
+                  "type": "string",
+                  "description": "クリックしたときに使う動詞（context と click の方式で使う）"
+                },
                 "character": {
                   "type": "string",
                   "description": "人物として扱うときの話者ID"
@@ -587,6 +598,9 @@
                       "type": "string"
                     },
                     "cursor": {
+                      "type": "string"
+                    },
+                    "click": {
                       "type": "string"
                     },
                     "ext": {

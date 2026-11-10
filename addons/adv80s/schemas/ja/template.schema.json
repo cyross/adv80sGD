@@ -194,9 +194,13 @@
               "select",
               "parser",
               "icon",
-              "click"
+              "click",
+              "verb_click",
+              "verb_cursor",
+              "context"
             ]
-          }
+          },
+          "description": "使うコマンド方式。select=コマンド選択、parser=コマンド入力、icon=アイコン、click=絵のクリック、verb_click=動詞を選んで対象をクリック、verb_cursor=カーソルの動詞を切り替えてクリック、context=対象に合わせて自動で決める"
         },
         "parser_profile": {
           "type": "string"
@@ -205,6 +209,32 @@
           "type": "integer",
           "minimum": 1,
           "description": "コマンド選択の列の数（既定 2）"
+        },
+        "click_verb": {
+          "type": "string",
+          "description": "絵をクリックしたときの動詞（既定 EXAMINE）"
+        },
+        "item_verb": {
+          "type": "string",
+          "description": "持ち物をクリックして持ったときに使う動詞（既定 USE）"
+        },
+        "context_alt_verb": {
+          "type": "string",
+          "description": "右クリックで使う動詞（既定 LOOK）"
+        },
+        "context_verbs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "context で、カーソルの種類から決める動詞（種類 → 動詞ID。空は click_verb）"
+        },
+        "verb_cursors": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "動詞に合わせるカーソルの種類（動詞ID → 種類）"
         }
       },
       "additionalProperties": false

@@ -247,6 +247,26 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | F5、F9 | クイックセーブ、クイックロード |
 | F6 | 調べられる場所の表示 |
 | Esc | セーブ・ロードの画面 |
+| F11（デバッグ実行時のみ） | シーングラフの表示・閉じる |
+| F12（デバッグ実行時のみ） | デバッグコンソールの表示・再開 |
+
+**コマンド方式（`inputs.enabled`）**
+
+| 値 | 方式 | 操作 |
+| --- | --- | --- |
+| `select` | コマンド選択 | 動詞 → 対象を一覧から選ぶ |
+| `parser` | コマンド入力 | 文字で入力する |
+| `icon` | アイコン選択 | 動詞をアイコンで選ぶ |
+| `click` | 画面選択 | 絵の中の対象をクリックする（動詞は選んだもの、なければ `click_verb`） |
+| `verb_click` | 動詞リスト＋クリック | 出したままの動詞を選び、絵の中の対象を選ぶ |
+| `verb_cursor` | アイコン切り替え | 右クリックでカーソルの動詞を切り替え、対象をクリックする |
+| `context` | コンテキスト | 動詞を選ばない。対象に合った動詞を実行する。右クリックは「みる」 |
+
+絵の中の対象を選ぶ方式の操作：右クリック、タッチでは長押し（やめる／次の動詞／みる）、Tab・Shift+Tab とゲームパッドの L・R（調べられる場所を順に選ぶ）、Esc（選びかけをやめる）。
+
+**入力機器（プロジェクト設定 `input_devices`）**：`keyboard`、`mouse`、`gamepad`、`touch`。
+
+**セットアップ画面が作るもの**：`adv80s.project.json`（`game_id`、`title`、`template`、`inputs.enabled`、`input_devices`）、`game/assets/`（`bg`、`chara`、`sprite`、`ui`、`bgm`、`se`、`voice`、`font`、`movie`、`manifest.json`）、`game/scenario/main.scenario.json`、`game/main.tscn`。
 
 **マウスカーソルの種類**：`default`、`look`、`talk`、`take`、`use`、`exit`、`wait`、`next`、`text`（自作の種類も書ける）。OS 標準の形：`arrow`、`pointing_hand`、`cross`、`help`、`move`、`busy`、`ibeam`、`wait`。
 
@@ -284,6 +304,7 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | `BUSY` | 実行 | 実行中で受け付けられない（セーブなど） |
 | `NO_KEY` | 確認・実行 | セーブの鍵がない（開発中は仮の鍵） |
 | `TAMPERED`、`KEY_MISMATCH` | 実行 | セーブが改ざんされている、鍵が違う |
+| `GAME_MISMATCH` | 実行 | ほかのゲーム（ゲームIDが違う）のセーブデータ |
 | `INK_LOAD`、`INK_VERSION`、`INK_UNSUPPORTED` | 確認 | Ink の JSON が読めない、版が合わない、読めない部分がある |
 | `INK_LIST` | 確認 | `LIST` を使っている（未対応） |
 | `INK_EXTERNAL` | 確認 | ない外部関数を使っている |
