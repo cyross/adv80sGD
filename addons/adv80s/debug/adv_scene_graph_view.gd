@@ -42,6 +42,17 @@ var _detail_panel: PanelContainer
 var _detail_scroll: ScrollContainer
 var _detail_vbox: VBoxContainer
 var _status_label: Label
+var _detail_btn: Button
+var _detail_theme: Theme
+var _detail_font: int = 12        ## 詳細エリアの文字の大きさ（表示の大きさに合わせて決める）
+var _detail_user_set: bool = false ## 詳細エリアの表示・非表示を、ボタンで切り替えたことがある
+var _split_user_set: bool = false  ## 詳細エリアの幅を、ドラッグで変えたことがある
+var _applying_split: bool = false
+var _scaled: Array = []            ## [コントロール, 元の文字の大きさ]（表示の大きさに合わせて縮める）
+
+const DETAIL_FONT_BASE := 12       ## 詳細エリアの文字の大きさ（表示の高さが 720 以上のとき）
+const DETAIL_FONT_MIN := 8
+const DETAIL_AUTO_HIDE_WIDTH := 960.0  ## 表示の幅がこれより狭いとき、詳細エリアは最初はたたんでおく
 
 # Export dialog references
 var _export_modal: ColorRect
@@ -66,7 +77,80 @@ func _init() -> void:
 	_build_ui()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED:
+		_apply_view_scale()
+
+
+## 表示の大きさに合わせた倍率（高さ 720 以上で 1）。
+func _view_scale() -> float:
+	return clampf(size.y / 720.0, 0.0, 1.0) if size.y > 0.0 else 1.0
+
+
+func _scaled_font(base: int) -> int:
+	return clampi(roundi(base * _view_scale()), mini(DETAIL_FONT_MIN, base), base)
+
+
+## 文字の大きさを登録する（表示の大きさが変わると、合わせて縮める）。
+func _fs(c: Control, base: int) -> void:
+	c.add_theme_font_size_override("font_size", _scaled_font(base))
+	_scaled.append([c, base])
+
+
+## 表示の大きさに合わせて、文字の大きさ、詳細エリアの幅と表示を決め直す。
+func _apply_view_scale() -> void:
+	if _split == null or size.x <= 0.0:
+		return
+	for pair in _scaled:
+		if is_instance_valid(pair[0]):
+			(pair[0] as Control).add_theme_font_size_override("font_size", _scaled_font(int(pair[1])))
+	var f := _scaled_font(DETAIL_FONT_BASE)
+	_detail_panel.custom_minimum_size = Vector2(clampf(size.x * 0.15, 72.0, 160.0), 0)
+	if not _split_user_set:
+		_applying_split = true
+		_split.split_offset = -int(clampf(size.x * 0.3, 120.0, 360.0))
+		_applying_split = false
+	if not _detail_user_set:
+		_set_detail_visible(size.x >= DETAIL_AUTO_HIDE_WIDTH)
+	if f != _detail_font:
+		_detail_font = f
+		_detail_theme.default_font_size = f
+		_rebuild_detail_panel()
+
+
+## 詳細エリアを出す・たたむ。
+func _set_detail_visible(vis: bool) -> void:
+	if _detail_panel == null:
+		return
+	_detail_panel.visible = vis
+	if _detail_btn != null:
+		_detail_btn.text = "詳細 ▶" if vis else "◀ 詳細"
+		_detail_btn.tooltip_text = "詳細エリアをたたんで、グラフを広く表示します" if vis else "詳細エリアを表示します"
+
+
+func is_detail_visible() -> bool:
+	return _detail_panel != null and _detail_panel.visible
+
+
+func toggle_detail() -> void:
+	_detail_user_set = true
+	_set_detail_visible(not is_detail_visible())
+	_fit_later()
+
+
+## 並べ直しが終わってから、グラフを表示の中央に合わせる。
+func _fit_later() -> void:
+	if not is_inside_tree():
+		return
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if _canvas != null:
+		_canvas.fit_to_view()
+
+
 func _ready() -> void:
+	_apply_view_scale()
+	_fit_later()
 	var nodes_dict: Dictionary = graph.get("nodes", {})
 	if not nodes_dict.is_empty() and _layout.is_empty():
 		_rebuild_layout(true)
@@ -180,34 +264,34 @@ func _build_ui() -> void:
 	_title_label.text = "シーングラフ: 全体図"
 	_title_label.clip_text = true
 	_title_label.add_theme_color_override("font_color", Color("#f8fafc"))
-	_title_label.add_theme_font_size_override("font_size", 12)
+	_fs(_title_label, 12)
 	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	toolbar.add_child(_title_label)
 
 	_history_label = Label.new()
 	_history_label.text = ""
 	_history_label.add_theme_color_override("font_color", Color("#94a3b8"))
-	_history_label.add_theme_font_size_override("font_size", 11)
+	_fs(_history_label, 11)
 	toolbar.add_child(_history_label)
 
 	_back_btn = Button.new()
 	_back_btn.text = "← 戻る(ESC)"
 	_back_btn.tooltip_text = "直前に表示していたノード・遷移・全体図に戻ります (ESCキー)"
-	_back_btn.add_theme_font_size_override("font_size", 11)
+	_fs(_back_btn, 11)
 	_back_btn.pressed.connect(_step_back_history)
 	toolbar.add_child(_back_btn)
 
 	_overview_btn = Button.new()
 	_overview_btn.text = "全体図へ戻る"
 	_overview_btn.tooltip_text = "シーングラフの全体図表示へ戻ります"
-	_overview_btn.add_theme_font_size_override("font_size", 11)
+	_fs(_overview_btn, 11)
 	_overview_btn.pressed.connect(_on_overview_pressed)
 	toolbar.add_child(_overview_btn)
 
 	_reset_zoom_btn = Button.new()
 	_reset_zoom_btn.text = "中央表示"
 	_reset_zoom_btn.tooltip_text = "ズームとスクロール位置を中央にリセットします"
-	_reset_zoom_btn.add_theme_font_size_override("font_size", 11)
+	_fs(_reset_zoom_btn, 11)
 	_reset_zoom_btn.pressed.connect(func() -> void:
 		if _canvas != null:
 			_canvas.fit_to_view()
@@ -217,14 +301,20 @@ func _build_ui() -> void:
 	_export_btn = Button.new()
 	_export_btn.text = "SVG・PNG出力…"
 	_export_btn.tooltip_text = "保存設定ダイアログを開き、シーングラフをSVGまたはPNGファイルに出力します"
-	_export_btn.add_theme_font_size_override("font_size", 11)
+	_fs(_export_btn, 11)
 	_export_btn.pressed.connect(_open_export_dialog)
 	toolbar.add_child(_export_btn)
+
+	_detail_btn = Button.new()
+	_detail_btn.text = "詳細 ▶"
+	_fs(_detail_btn, 11)
+	_detail_btn.pressed.connect(toggle_detail)
+	toolbar.add_child(_detail_btn)
 
 	_close_btn = Button.new()
 	_close_btn.text = "閉じる(ESC)"
 	_close_btn.tooltip_text = "シーングラフを閉じます"
-	_close_btn.add_theme_font_size_override("font_size", 11)
+	_fs(_close_btn, 11)
 	_close_btn.pressed.connect(close)
 	toolbar.add_child(_close_btn)
 
@@ -247,14 +337,14 @@ func _build_ui() -> void:
 	hint_lbl.text = "操作: [ノードクリック] シーン中心の詳細表示  [矢印/条件クリック] 遷移詳細表示  [ドラッグ] 移動  [ホイール] 拡大縮小  [ESC] 履歴を戻る / 全体図で閉じる"
 	hint_lbl.clip_text = true
 	hint_lbl.add_theme_color_override("font_color", Color("#cbd5e1"))
-	hint_lbl.add_theme_font_size_override("font_size", 11)
+	_fs(hint_lbl, 11)
 	hint_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	legend_hb.add_child(hint_lbl)
 
 	_status_label = Label.new()
 	_status_label.text = ""
 	_status_label.add_theme_color_override("font_color", Color("#38bdf8"))
-	_status_label.add_theme_font_size_override("font_size", 12)
+	_fs(_status_label, 12)
 	legend_hb.add_child(_status_label)
 
 	# --- Main Split (Graph Canvas + Detail Inspector) ---
@@ -262,6 +352,11 @@ func _build_ui() -> void:
 	_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_split.split_offset = -230
+	_split.add_theme_constant_override("separation", 8)
+	_split.add_theme_constant_override("minimum_grab_thickness", 12)
+	_split.dragged.connect(func(_o: int) -> void:
+		if not _applying_split:
+			_split_user_set = true)
 	root_vbox.add_child(_split)
 
 	_canvas = _GraphCanvas.new()
@@ -272,7 +367,10 @@ func _build_ui() -> void:
 	_split.add_child(_canvas)
 
 	_detail_panel = PanelContainer.new()
-	_detail_panel.custom_minimum_size = Vector2(210, 0)
+	_detail_panel.custom_minimum_size = Vector2(160, 0)
+	_detail_theme = Theme.new()
+	_detail_theme.default_font_size = _detail_font
+	_detail_panel.theme = _detail_theme
 	var dp_style := StyleBoxFlat.new()
 	dp_style.bg_color = Color("#1e293b")
 	dp_style.border_color = Color("#334155")
@@ -665,7 +763,8 @@ func _add_section_header(title_text: String, color: Color = Color("#93c5fd")) ->
 	var lbl := Label.new()
 	lbl.text = title_text
 	lbl.add_theme_color_override("font_color", color)
-	lbl.add_theme_font_size_override("font_size", 14)
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.add_theme_font_size_override("font_size", _detail_font + (2 if _detail_font >= DETAIL_FONT_BASE else 1))
 	_detail_vbox.add_child(lbl)
 
 
@@ -674,7 +773,7 @@ func _add_info_line(text: String, color: Color = Color("#e2e8f0")) -> void:
 	lbl.text = text
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.add_theme_color_override("font_color", color)
-	lbl.add_theme_font_size_override("font_size", 12)
+	lbl.add_theme_font_size_override("font_size", _detail_font)
 	_detail_vbox.add_child(lbl)
 
 
@@ -700,6 +799,7 @@ func _build_overview_inspector() -> void:
 		var sname := String(nd.get("name", sid))
 		var btn := Button.new()
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.clip_text = true
 		var badge := ""
 		if sid == start_sc:
 			badge += "[START] "
@@ -720,6 +820,7 @@ func _build_overview_inspector() -> void:
 		var summary := String(ed.get("summary", "移動"))
 		var ebtn := Button.new()
 		ebtn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		ebtn.clip_text = true
 		ebtn.text = "%s → %s [%s]" % [f_id, t_id, summary]
 		ebtn.pressed.connect(func() -> void: _on_edge_clicked(eid))
 		_detail_vbox.add_child(ebtn)
@@ -785,6 +886,7 @@ func _build_node_detail_inspector(node_id: String) -> void:
 		var edge_btn := Button.new()
 		edge_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		edge_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		edge_btn.clip_text = true
 		edge_btn.text = "→ %s (%s) : %s" % [to_name, to_id, String(ed.get("summary", ""))]
 		edge_btn.pressed.connect(func() -> void: _on_edge_clicked(eid))
 		hb.add_child(edge_btn)
@@ -821,6 +923,7 @@ func _build_node_detail_inspector(node_id: String) -> void:
 		var edge_btn := Button.new()
 		edge_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		edge_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		edge_btn.clip_text = true
 		edge_btn.text = "← %s (%s) : %s" % [from_name, from_id, String(ed.get("summary", ""))]
 		edge_btn.pressed.connect(func() -> void: _on_edge_clicked(eid))
 		hb.add_child(edge_btn)
@@ -876,12 +979,14 @@ func _build_edge_detail_inspector(edge_id: String) -> void:
 
 	var from_btn := Button.new()
 	from_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	from_btn.clip_text = true
 	from_btn.text = "遷移元ノード: %s (%s) の詳細図を開く" % [from_name, from_id]
 	from_btn.pressed.connect(func() -> void: _on_node_clicked(from_id))
 	_detail_vbox.add_child(from_btn)
 
 	var to_btn := Button.new()
 	to_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	to_btn.clip_text = true
 	to_btn.text = "遷移先ノード: %s (%s) の詳細図を開く" % [to_name, to_id]
 	to_btn.pressed.connect(func() -> void: _on_node_clicked(to_id))
 	_detail_vbox.add_child(to_btn)
@@ -906,7 +1011,8 @@ func _build_edge_detail_inspector(edge_id: String) -> void:
 			var code_box := CodeEdit.new()
 			code_box.editable = false
 			var line_cnt := code_str.split("\n").size()
-			code_box.custom_minimum_size = Vector2(0, clampf(line_cnt * 19.0 + 16.0, 48.0, 140.0))
+			var line_h := _detail_font * 1.6
+			code_box.custom_minimum_size = Vector2(0, clampf(line_cnt * line_h + 16.0, line_h * 2.5, line_h * 7.5))
 			code_box.text = code_str
 			_detail_vbox.add_child(code_box)
 		idx += 1
