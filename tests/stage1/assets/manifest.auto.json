@@ -11,6 +11,14 @@
       "file": "bg/hallway.png",
       "type": "image"
     },
+    "image:heart": {
+      "file": "ui/heart.png",
+      "type": "image"
+    },
+    "image:key_icon": {
+      "file": "ui/key_icon.png",
+      "type": "image"
+    },
     "image:lamp": {
       "file": "sprite/lamp.gif",
       "type": "image"

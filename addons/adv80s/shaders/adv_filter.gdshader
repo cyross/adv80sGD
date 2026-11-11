@@ -1,5 +1,5 @@
 // adv80s 標準フィルター（7.2）。元の解像度の画面を拡大して表示するときに、1回の描画でまとめてかける。
-// 順番：曲面 → 減色・ディザ（元の1ピクセル単位） → にじみ → 走査線（元の1行単位） → 液晶の網目 → 単色 → RGBマスク → 周辺の暗さ
+// 順番：曲面 → 減色・ディザ（元の1ピクセル単位。keep_mask の範囲は飛ばす） → にじみ → 走査線（元の1行単位） → 液晶の網目 → 単色 → RGBマスク → 周辺の暗さ
 shader_type canvas_item;
 render_mode unshaded;
 
@@ -21,6 +21,9 @@ uniform float vignette : hint_range(0.0, 1.0) = 0.0;
 uniform int cycle_start = 0;
 uniform int cycle_len = 0;
 uniform int cycle_offset = 0;
+// 減色しない範囲（外字の keep_colors: true）。元の解像度の画面と同じ大きさで、不透明なところは減色しない
+uniform bool use_keep_mask = false;
+uniform sampler2D keep_mask : filter_nearest;
 
 const float BAYER[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 
@@ -79,12 +82,21 @@ void fragment() {
 		}
 		vec2 src = uv * source_size;
 		vec2 px = floor(src);
-		vec3 c = quantize(texture(TEXTURE, center_uv(px)).rgb, px);
+		vec3 c = texture(TEXTURE, center_uv(px)).rgb;
+		if (!use_keep_mask || texture(keep_mask, center_uv(px)).a < 0.5) {
+			c = quantize(c, px);
+		}
 		if (bleed > 0.0) {
 			vec2 pl = px - vec2(1.0, 0.0);
 			vec2 pr = px + vec2(1.0, 0.0);
-			vec3 l = quantize(texture(TEXTURE, center_uv(pl)).rgb, pl);
-			vec3 r = quantize(texture(TEXTURE, center_uv(pr)).rgb, pr);
+			vec3 l = texture(TEXTURE, center_uv(pl)).rgb;
+			vec3 r = texture(TEXTURE, center_uv(pr)).rgb;
+			if (!use_keep_mask || texture(keep_mask, center_uv(pl)).a < 0.5) {
+				l = quantize(l, pl);
+			}
+			if (!use_keep_mask || texture(keep_mask, center_uv(pr)).a < 0.5) {
+				r = quantize(r, pr);
+			}
 			c = mix(c, (l + c * 2.0 + r) * 0.25, bleed);
 		}
 		vec2 f = fract(src);

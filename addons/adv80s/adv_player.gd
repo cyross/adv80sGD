@@ -66,6 +66,8 @@ var _last_voice: String = ""            ## 直前の voice.play（次の text.sh
 var _request: Dictionary = {}          ## 聞き返し中（input.request）の引数
 var _sprites: Dictionary = {}          ## スプライトID → いまの状態（sprite.show の引数に変更を重ねたもの。セーブと表示し直しに使う）
 var _video: Dictionary = {}            ## 繰り返しの動画の引数（セーブと表示し直しに使う）
+var _gaiji_cache: Dictionary = {}      ## 外字：素材のパス → {path, alt}（読み込んだ画像を持っておく）
+var _video_volume: float = 1.0         ## 流している動画の音量（BGM の音量をかける前。0〜1）
 var _cursor_forced: Variant = null     ## cursor.set で固定した形（種類の文字列か {image, hotspot}）
 var _cursor_kind: String = ""          ## いま出しているカーソルの種類
 var _devices: Variant = null            ## 使う入力機器（プロジェクト設定の input_devices。null ならすべて）
@@ -82,6 +84,7 @@ func _ready() -> void:
 	core.setup(project.core_config())
 	core.progress = progress
 	core.assets.folders = project.asset_folders()
+	AdvTextMarkup.gaiji_resolver = _gaiji
 
 	AdvVisuals.load_custom(project.get_value("effects", []), diags)
 	var tid := template_id if template_id != "" else String(project.get_value("template", "pc98_classic"))
@@ -224,7 +227,7 @@ func _redraw_view() -> void:
 			screen.hide_image(layer)
 	for layer in _images:
 		var im: Dictionary = _images[layer]
-		screen.show_image(layer, _image_label(im["id"]), "", {"type": "cut"}, _layer_texture(im["id"], String(im.get("variant", ""))))
+		screen.show_image(layer, _image_label(im["id"]), "", {"type": "cut"}, _layer_visual(im["id"], String(im.get("variant", ""))))
 	screen.clear_sprites()
 	for id in _sprites:
 		_restore_sprite(_sprites[id])
@@ -281,12 +284,64 @@ func save_settings() -> void:
 	_save_settings()
 
 
+func _exit_tree() -> void:
+	if AdvTextMarkup.gaiji_resolver.is_valid() and AdvTextMarkup.gaiji_resolver.get_object() == self:
+		AdvTextMarkup.gaiji_resolver = Callable()
+
+
+## 外字（[gaiji=ID]）の画像を探す。画像は読み込んで、文中の [img] から使える仮のパスに置く。
+func _gaiji(id: String) -> Dictionary:
+	if core == null:
+		return {}
+	var e := core.assets.entry("image", id)
+	var alt := String(e.get("alt", ""))
+	var p := core.assets.resolve("image", id)
+	if p == "":
+		core.assets.report_missing("image", id)
+		return {"alt": alt}
+	var keep := bool(e.get("keep_colors", false))   # 減色しない（画像の色をそのまま出す）
+	var key := ("keep:" if keep else "") + p
+	if _gaiji_cache.has(key):
+		return _gaiji_cache[key]
+	var ck = AdvImages.key_color(e.get("color_key"), template)
+	var tex := AdvImages.first_texture(AdvImages.load_visual(p, ck))
+	var g := {"alt": alt}
+	if tex != null and keep:
+		# 写しを作って、減色しない外字の仮のパスに置く（読み込んだ画像そのものは動かさない）
+		var im := tex.get_image()
+		var copy: Texture2D = ImageTexture.create_from_image(im) if im != null else tex.duplicate()
+		var kp := AdvTextMarkup.GAIJI_KEEP_PREFIX + "%s.tex" % p.md5_text()
+		copy.take_over_path(kp)
+		g["path"] = kp
+		g["texture"] = copy   # 消えないように持っておく
+	elif tex != null:
+		if tex.resource_path != "":
+			g["path"] = tex.resource_path   # 取り込んだ画像はそのパスで使う
+		else:
+			# 読み込んで作った画像（カラーキー、アニメーション画像の最初のコマ）は、仮のパスに置く
+			var vp := "res://.adv80s_gaiji/%s.tex" % p.md5_text()
+			tex.take_over_path(vp)
+			g["path"] = vp
+		g["texture"] = tex   # 消えないように持っておく
+	_gaiji_cache[key] = g
+	return g
+
+
 ## 音量（プレイヤー設定）を反映する。
 func apply_volumes() -> void:
 	audio.bgm_volume = float(settings.get_value("bgm_volume", 1.0))
 	audio.se_volume = float(settings.get_value("se_volume", 1.0))
 	audio.voice_volume = float(settings.get_value("voice_volume", 1.0))
 	audio.apply_volumes()
+	if screen == null:
+		return
+	# 動画の音も BGM の音量に従う
+	for sid in screen.sprite_ids():
+		var sp := screen.sprite(sid)
+		if sp != null:
+			sp.apply_video_audio(audio.bgm_volume)
+	if screen.video_player != null and is_instance_valid(screen.video_player):
+		screen.video_player.volume_db = linear_to_db(maxf(_video_volume * audio.bgm_volume, 0.0001))
 
 
 ## モダン機能を実行時に切り替える（プロジェクトで禁止したものは変えられない）。
@@ -563,7 +618,8 @@ func _play(ev: Dictionary) -> void:
 	var wait = AdvEvents.wait_of(ev)
 	skipping = _skip_held()
 	match type:
-		"text.show":
+		"text.show", "text.append":
+			var appending := type == "text.append"
 			var was_read := bool(ev.get("ext", {}).get("was_read", false))
 			if skipping and not was_read and not bool(settings.get_value("skip_unread", false)):
 				# 未読の文章ではスキップを止める
@@ -575,10 +631,18 @@ func _play(ev: Dictionary) -> void:
 			_last_voice = ""
 			if args.has("voice") and not skipping:
 				_play_voice(voice)
-			_last_text = {"body": raw, "name": who}
-			message_log.add_text(AdvTextMarkup.to_plain(raw, core.state, template), who, String(ev.get("id", "")), voice)
+			var plain := AdvTextMarkup.to_plain(raw, core.state, template)
 			var conv := AdvTextMarkup.to_bbcode_stops(raw, core.state, template)
-			screen.show_text(conv["bbcode"], who, skipping, conv["stops"])
+			if appending and not _last_text.is_empty():
+				# いまの文章の続きに足す（話者はそのまま）
+				_last_text["body"] = String(_last_text.get("body", "")) + raw
+				who = ""
+				message_log.append_text(plain)
+				screen.append_text(conv["bbcode"], skipping, conv["stops"])
+			else:
+				_last_text = {"body": raw, "name": who}
+				message_log.add_text(plain, who, String(ev.get("id", "")), voice)
+				screen.show_text(conv["bbcode"], who, skipping, conv["stops"])
 			if features.is_on("tts") and not skipping and not audio.is_voice_playing():
 				_speak(raw, who)
 			# ページめくりと文字送りのタグ（[p]、[page]、[w]、[se]、[speed]）を最後まで進める
@@ -613,7 +677,7 @@ func _play(ev: Dictionary) -> void:
 						return
 				_images[layer] = {"id": idv, "variant": variant}
 				screen.reset_layer(layer)
-				job = screen.show_image.bind(layer, _image_label(idv), "", tr, _layer_texture(idv, variant))
+				job = screen.show_image.bind(layer, _image_label(idv), "", tr, _layer_visual(idv, variant))
 			else:
 				_images.erase(layer)
 				job = screen.hide_image.bind(layer, tr)
@@ -761,7 +825,11 @@ func _play(ev: Dictionary) -> void:
 				wait = "none"
 		"video.stop":
 			_video = {}
-			screen.stop_video()
+			var tr := _transition_for(args.get("transition"))
+			if not ev.has("wait") or (wait is String and wait == "end"):
+				await screen.stop_video_with(tr)
+			else:
+				screen.stop_video_with(tr)
 			audio.resume_bgm()
 		"layout.set":
 			template.set_layout(String(args.get("layout", "")))
@@ -788,7 +856,7 @@ func _play(ev: Dictionary) -> void:
 # ---------------------------------------------------------------- スプライト（6.4）
 
 const _SPRITE_NOT_PROPS := ["id", "image", "variant", "layer", "transition", "duration", "anim", "keep", "scene",
-	"color_key", "wait", "ease", "loop", "yoyo", "path"]
+	"color_key", "wait", "ease", "loop", "yoyo", "path", "mute", "volume"]
 
 
 ## スプライトを作って出す（演出はかけない）。作れなければ null。
@@ -816,6 +884,10 @@ func _show_sprite(args: Dictionary) -> AdvSprite:
 		var v := fid.substr(at + 1) if at >= 0 else ""
 		return AdvImages.first_texture(AdvImages.load_visual(core.assets.resolve("image", base, v), ck))
 	s.set_visual(res, entry, loader)
+	if s.has_video():
+		s.video_mute = bool(args.get("mute", true))
+		s.video_volume = float(args.get("volume", 1.0)) * float(entry.get("volume", 1.0))
+		s.apply_video_audio(audio.bgm_volume)
 	var props := {}
 	for k in args:
 		if not k in _SPRITE_NOT_PROPS:
@@ -912,9 +984,12 @@ func _play_video(args: Dictionary, wait: Variant) -> void:
 	var loop := bool(args.get("loop", false))
 	if not _start_video(args):
 		return
+	var tr := _transition_for(args.get("transition"))
 	if loop:
 		_video = args.duplicate(true)
+		screen.reveal_video(tr)   # 繰り返しの動画は待たない
 		return
+	await screen.reveal_video(tr)
 	var vid := String(args.get("id", ""))
 	var skippable := bool(args.get("skippable", true))
 	_click_pending = false
@@ -923,7 +998,8 @@ func _play_video(args: Dictionary, wait: Variant) -> void:
 			break
 		await get_tree().process_frame
 	_click_pending = false
-	screen.stop_video()
+	# 終わったら（飛ばしたときも）同じ演出で消す
+	await screen.stop_video_with(_transition_for(args.get("transition")))
 	if String(args.get("bgm", "pause")) == "pause":
 		audio.resume_bgm()
 	progress.read["video:" + vid] = true
@@ -944,7 +1020,8 @@ func _start_video(args: Dictionary) -> bool:
 	match String(args.get("bgm", "pause")):
 		"pause": audio.pause_bgm()
 		"stop": audio.stop_bgm()
-	var vol := float(args.get("volume", 1.0)) * float(settings.get_value("bgm_volume", 1.0))
+	_video_volume = float(args.get("volume", 1.0)) * float(core.assets.entry("video", vid).get("volume", 1.0))
+	var vol := _video_volume * float(settings.get_value("bgm_volume", 1.0))
 	var parent: Control = null if bool(args.get("filters", true)) else display.unfiltered_overlay()
 	screen.play_video(stream, String(args.get("area", "picture")), String(args.get("fit", "contain")),
 		bool(args.get("loop", false)), linear_to_db(maxf(vol, 0.0001)), parent)
@@ -1099,8 +1176,67 @@ func _make_mark(def: Variant) -> Control:
 
 # ---------------------------------------------------------------- 画像の層（重ね合わせ）
 
-## 層に出す画像。id は素材IDか、重ねる順に並べた配列（要素は素材IDか {id, variant?, x?, y?}）。
-## 配列なら、最初の画像の大きさの1枚に重ね合わせる（カラーキーも効く。アニメーション画像は最初のコマ）。
+## 層に出す画像。id は素材IDか、重ねる順に並べた配列（要素は素材IDか {id, variant?, x?, y?, anim?}）。
+## 動く画像（GIF・APNG・MNG、マニフェストの grid・anims）がなければ、最初の画像の大きさの1枚に重ね合わせた Texture2D を返す。
+## 動く画像があれば、要素ごとにスプライトを重ねた Control を返す（それぞれのアニメーションを再生する）。
+func _layer_visual(idv: Variant, variant: String = "") -> Variant:
+	var list: Array = idv if idv is Array else [idv]
+	var items := []   # [{res, entry, ck, at, anim}]
+	var animated := false
+	for e in list:
+		var eid := String(e.get("id", "")) if e is Dictionary else String(e)
+		var ev := String(e.get("variant", "")) if e is Dictionary else variant
+		var path := core.assets.resolve("image", eid, ev)
+		if path == "":
+			continue
+		var entry := core.assets.entry("image", eid)
+		var ck = AdvImages.key_color(entry.get("color_key"), template)
+		var res := AdvImages.load_visual(path, ck)
+		if res == null:
+			continue
+		if (res is AdvImageFrames and (res as AdvImageFrames).frames.size() > 1) or entry.has("grid") or entry.has("anims"):
+			animated = true
+		items.append({"res": res, "entry": entry, "ck": ck,
+			"at": Vector2(float(e.get("x", 0)), float(e.get("y", 0))) if e is Dictionary else Vector2.ZERO,
+			"anim": String(e.get("anim", "")) if e is Dictionary else ""})
+	if items.is_empty():
+		return null
+	if animated:
+		return _layer_anim_node(items)
+	return _layer_texture(list, variant)
+
+
+## 動く画像を含む重ね合わせ：要素ごとのスプライトを、最初の画像の大きさの枠に重ね、絵の窓に合わせて拡大する。
+func _layer_anim_node(items: Array) -> Control:
+	var root := Control.new()
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.size = screen.picture.size
+	root.clip_contents = true
+	var holder := Node2D.new()
+	holder.name = "Layers"
+	root.add_child(holder)
+	var base := Vector2.ZERO
+	for it in items:
+		var ck = it["ck"]
+		var sp := AdvSprite.new()
+		sp.set_visual(it["res"], it["entry"], func(fid: String) -> Texture2D:
+			return AdvImages.first_texture(AdvImages.load_visual(core.assets.resolve("image", fid), ck)))
+		sp.xy = it["at"]
+		holder.add_child(sp)
+		var an := String(it["anim"]) if String(it["anim"]) != "" else "default"
+		if an in sp.anim_names():
+			sp.play_anim(an)
+		if base == Vector2.ZERO:
+			base = sp.frame_size()
+	if base.x > 0 and base.y > 0:
+		var k := minf(root.size.x / base.x, root.size.y / base.y)
+		holder.scale = Vector2(k, k)
+		holder.position = ((root.size - base * k) * 0.5).round()
+	root.set_meta("animated", true)
+	return root
+
+
+## 動かない画像を、最初の画像の大きさの1枚に重ね合わせる（カラーキーも効く）。1つだけならそのまま返す。
 func _layer_texture(idv: Variant, variant: String = "") -> Texture2D:
 	var list: Array = idv if idv is Array else [idv]
 	var base: Image = null

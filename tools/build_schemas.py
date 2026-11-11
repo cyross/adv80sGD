@@ -379,6 +379,8 @@ def asset_entry():
                             "loop": {"anyOf": [BOOL, INT]}}, extra=False),
                        t("コマ送りアニメーション（名前 → frames、fps、loop）", "Frame animations (name -> frames, fps, loop)")),
         "hotspot": {"type": "array", "items": INT, "minItems": 2, "maxItems": 2, "description": t("カーソル画像の指す位置", "Cursor image hotspot")},
+        "alt": {"type": "string", "description": t("外字（[gaiji=ID]）を文字で表すときの文字（メッセージログ、読み上げ）", "Text used for the image as gaiji ([gaiji=ID]) in the message log and speech")},
+        "keep_colors": {"type": "boolean", "description": t("色をそのまま出す。有効なら、外字（[gaiji=ID]）として出すときに減色フィルターをかけない（既定 無効。走査線などはかかる）", "Keep the image's own colours: when shown as gaiji ([gaiji=ID]), skip the colour-reduction filter (default false; scanlines etc. still apply)")},
     })
 
 

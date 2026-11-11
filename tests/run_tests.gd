@@ -21,6 +21,8 @@ func _initialize() -> void:
 	_test_english()
 	_test_ink_story()
 	_test_ink_conformance()
+	_test_ink_random()
+	_test_mag()
 	_test_ink_adapter()
 	_test_editor_form()
 	_test_templates()
@@ -28,6 +30,8 @@ func _initialize() -> void:
 	_test_layers_and_globals()
 	_test_text_stops()
 	_test_setup()
+	_test_scenario_model()
+	_test_stage12()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -46,6 +50,157 @@ func eq(a: Variant, b: Variant, label: String) -> void:
 
 
 # ---------------------------------------------------------------- 式
+
+# ---------------------------------------------------------------- 段階12：外字、text.append
+
+func _test_stage12() -> void:
+	# [gaiji=ID]：画像は1文字として数え、文字で表すときは alt を使う
+	AdvTextMarkup.gaiji_resolver = func(id: String) -> Dictionary:
+		return {"path": "res://x/%s.png" % id, "alt": "<%s>" % id} if id == "heart" else {"alt": ""}
+	var r := AdvTextMarkup.to_bbcode_stops("すき[gaiji=heart][p]です", null, null)
+	eq(r["bbcode"], "すき[img]res://x/heart.png[/img]です", "gaiji: [img] in bbcode")
+	eq(r["stops"][0]["at"], 3, "gaiji: counted as one character")
+	eq(AdvTextMarkup.to_plain("すき[gaiji=heart]です", null, null), "すき<heart>です", "gaiji: alt in plain text")
+	eq(AdvTextMarkup.to_plain("[gaiji=none]なし", null, null), "なし", "gaiji: unknown ID")
+	eq(AdvTextMarkup.to_bbcode("[gaiji=none]なし", null, null), "なし", "gaiji: unknown ID in bbcode")
+	eq(AdvTextMarkup.to_speech("すき[gaiji=heart]", null), "すき<heart>", "gaiji: alt is read aloud")
+	AdvTextMarkup.gaiji_resolver = Callable()
+	eq(AdvTextMarkup.to_bbcode("a[gaiji=heart]b", null, null), "ab", "gaiji: no resolver")
+	# 減色しない外字の写し：色と点滅を外し、ほかの画像は透明にする
+	var kp := AdvTextMarkup.GAIJI_KEEP_PREFIX + "k.tex"
+	eq(AdvScreen.keep_bbcode("[color=#ff0000]あ[/color][img]%s[/img][pulse freq=2.0 color=#ffffff00 ease=-8.0]い[/pulse][img]res://x.png[/img]" % kp),
+		"あ[img]%s[/img]い[img color=#00000000]res://x.png[/img]" % kp, "gaiji keep mirror bbcode")
+
+	# メッセージログ：text.append は最後の文章に足す。入力をはさんだら新しい記録
+	var log := AdvMessageLog.new()
+	log.add_text("ドアには", "あゆみ")
+	log.append_text("かぎが ある。")
+	eq(log.entries.size(), 1, "log append: same entry")
+	eq(log.entries[0]["body"], "ドアにはかぎが ある。", "log append: joined")
+	log.add_input("しらべる")
+	log.append_text("つづき")
+	eq(log.entries.size(), 3, "log append: new entry after input")
+
+	# JSON シナリオ：手順に書いた text.append に行のIDがつき、既読になる。validate は外字の素材を確かめる
+	var base := "res://tests/_tmp_stage12"
+	_rmdir(base)
+	DirAccess.make_dir_recursive_absolute(base)
+	var sf := FileAccess.open(base + "/a.scenario.json", FileAccess.WRITE)
+	sf.store_string(JSON.stringify({"scenario_version": 1, "start": "a", "scenes": {"a": {"enter": [
+		"ランプ[gaiji=lamp]", {"text.append": {"body": "が [gaiji=nothing] ある。{gold}"}}]}}}))
+	sf.close()
+	var c := AdvCore.new()
+	c.setup({"seed": 1})
+	c.use_adapter(AdvJsonAdapter.new())
+	eq(c.load_scenario([base + "/a.scenario.json"]), OK, "stage12: scenario loads")
+	var evs := c.start()
+	var ap: Array = evs.filter(func(e): return e["type"] == "text.append")
+	check(ap.size() == 1 and String(ap[0].get("id", "")) != "", "text.append gets a line id: %s" % str(ap))
+	check(ap.size() == 1 and c.state.read.has(String(ap[0]["id"])), "text.append is marked as read")
+	var diags := c.validate()
+	var missing := diags.filter(func(d): return d["code"] == "ASSET_NOT_FOUND").map(func(d): return d["message"])
+	check(missing.any(func(m): return String(m).contains("nothing")) and missing.any(func(m): return String(m).contains("lamp")),
+		"validate: gaiji assets are checked: %s" % str(missing))
+	check(diags.any(func(d): return d["code"] == "UNKNOWN_VARIABLE" and String(d["message"]).contains("gold")), "validate: variables in text.append")
+	_rmdir(base)
+
+
+# ---------------------------------------------------------------- シナリオエディタのデータ（6.8）
+
+func _test_scenario_model() -> void:
+	var base := "res://tests/_tmp_scmodel"
+	var pj := base + "/adv80s.project.json"
+	_rmdir(base)
+	DirAccess.make_dir_recursive_absolute(base)
+	var f := FileAccess.open(pj, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"project_version": 1, "scenarios": ["res://tests/ink/random.ink.json"]}))
+	f.close()
+	var m := AdvScenarioModel.new(pj)
+	eq(m.root, "", "scmodel: no root yet")
+	eq(m.set_root(base + "/scenario"), OK, "scmodel: set root")
+	eq(AdvScenarioModel.new(pj).root, base + "/scenario", "scmodel: root stored in the project")
+	DirAccess.make_dir_recursive_absolute(base + "/scenario/assets")
+	var sid := m.create_scenario("Mansion")
+	eq(sid, "mansion", "scmodel: scenario id from name")
+	eq(m.create_scenario("やかた"), "scenario", "scmodel: Japanese name gets a fallback id")
+	eq(m.scenarios().map(func(s): return s["id"]), ["mansion", "scenario"], "scmodel: scenario order")
+	eq(m.scenario("mansion")["name"], "Mansion", "scmodel: scenario name")
+	eq(m.chapters("mansion").map(func(c): return c["id"]), ["chapter1"], "scmodel: first chapter")
+	var cid := m.create_chapter("mansion", "Second")
+	eq(cid, "second", "scmodel: chapter created")
+	var sc := m.create_scene("mansion", "second", "Hall")
+	eq(sc, "hall", "scmodel: scene created")
+	var d := m.load_chapter_data("mansion", "second")
+	d["scenes"]["hall"]["exits"] = {"mansion_start": {"label": "もどる"}}
+	d["scenes"]["hall"]["on"] = {"LOOK": [{"if": "visited(hall) and talked(chat)", "then": [{"goto": "mansion_start"}]}, {"call": "chat"}]}
+	d["dialogues"] = {"chat": ["@a やあ"]}
+	m.save_chapter_data("mansion", "second", d)
+	eq(m.scenes("mansion", "second").map(func(x): return x["id"]), ["hall"], "scmodel: scene list")
+	eq(m.rename("scene", ["mansion", "second", "hall"], "大広間"), OK, "scmodel: rename scene")
+	eq(m.scenes("mansion", "second")[0]["name"], "大広間", "scmodel: renamed scene")
+	m.rename("chapter", ["mansion", "second"], "第二章")
+	eq(m.chapter("mansion", "second")["name"], "第二章", "scmodel: renamed chapter")
+	# プロジェクト設定の scenarios：フォルダの外の Ink は残し、シナリオのファイルを並び順で書く
+	var p: Dictionary = AdvJson.load_file(pj)
+	eq(p["scenarios"][0], "res://tests/ink/random.ink.json", "scmodel: keep files outside the root")
+	eq(p["scenarios"].slice(1), [base + "/scenario/mansion/_scenario.scenario.json", base + "/scenario/mansion/chapter1.scenario.json",
+		base + "/scenario/mansion/second.scenario.json", base + "/scenario/scenario/_scenario.scenario.json",
+		base + "/scenario/scenario/chapter1.scenario.json"], "scmodel: synced scenarios")
+	eq(p.get("entry"), "mansion_start", "scmodel: entry is the first scenario's start")
+	# シーンの複写：ID は新しく、自分への参照は付け替える
+	var made := m.duplicate_scenes("mansion", "second", ["hall"], 2)
+	eq(made, ["hall_copy", "hall_copy_2"], "scmodel: duplicated scenes")
+	var hc: Dictionary = m.load_chapter_data("mansion", "second")["scenes"]["hall_copy"]
+	eq(hc["on"]["LOOK"][0]["if"], "visited(hall_copy) and talked(chat)", "scmodel: self reference remapped")
+	eq(hc["name"], "大広間 のコピー", "scmodel: copy name")
+	m.duplicate_scenes("mansion", "second", ["hall"], 1, "scenario", "chapter1")
+	check(m.load_chapter_data("scenario", "chapter1")["scenes"].has("hall_copy_3"), "scmodel: copy a scene to another scenario")
+	# チャプターの複写（別のシナリオへ）：シーン・会話の ID と参照を付け替える
+	var mc := m.duplicate_chapters("mansion", ["second"], 1, "scenario")
+	eq(mc, ["second"], "scmodel: chapter copied to another scenario")
+	var cd := m.load_chapter_data("scenario", "second")
+	check(cd["scenes"].has("hall_copy_4") and cd["dialogues"].has("chat_copy"), "scmodel: new ids in the copied chapter: %s" % str(cd["scenes"].keys()))
+	var look: Array = cd["scenes"]["hall_copy_4"]["on"]["LOOK"]
+	eq(look[0]["if"], "visited(hall_copy_4) and talked(chat_copy)", "scmodel: condition remapped")
+	eq(look[1]["call"], "chat_copy", "scmodel: call remapped")
+	eq(look[0]["then"][0]["goto"], "mansion_start", "scmodel: references outside are kept")
+	# シナリオの複写：start と exits も付け替える
+	var ms := m.duplicate_scenarios(["mansion"])
+	eq(ms, ["mansion_copy"], "scmodel: scenario copied")
+	eq(m.load_scenario_data("mansion_copy").get("start"), "mansion_start_copy", "scmodel: start remapped")
+	var c2 := m.load_chapter_data("mansion_copy", "second")
+	check(c2["scenes"].values().any(func(x): return x.get("exits", {}).has("mansion_start_copy")), "scmodel: exits remapped")
+	eq(m.scenario("mansion_copy")["name"], "Mansion のコピー", "scmodel: scenario copy name")
+	# ゲームとして読める（ID がぶつからない）
+	var core := AdvCore.new()
+	core.setup({"seed": 1})
+	core.use_adapter(AdvJsonAdapter.new())
+	var files: Array = AdvJson.load_file(pj)["scenarios"].filter(func(x): return String(x).ends_with(".scenario.json"))
+	eq(core.load_scenario(files), OK, "scmodel: all files load")
+	eq(core.validate().filter(func(x): return x["code"] == "DUPLICATE_ID").size(), 0, "scmodel: no duplicate ids")
+	# 消す
+	m.delete_scenes("mansion", "second", ["hall_copy_2"])
+	check(not m.load_chapter_data("mansion", "second")["scenes"].has("hall_copy_2"), "scmodel: scene deleted")
+	m.delete_chapters("scenario", ["second"])
+	eq(m.chapters("scenario").map(func(x): return x["id"]), ["chapter1"], "scmodel: chapter deleted")
+	# 古い形（フォルダの直下のファイル）：「フォルダの外」のシナリオとして見え、プロジェクト設定では元の順のまま
+	var lp := base + "/scenario/zz_old.scenario.json"
+	AdvScenarioModel._save_json(lp, {"scenario_version": 1, "start": "old", "scenes": {"old": {"enter": "むかし"}}})
+	var pp: Dictionary = AdvJson.load_file(pj)
+	pp["scenarios"].insert(1, lp)
+	AdvScenarioModel._save_json(pj, pp)
+	check(m.scenarios().any(func(x): return x["loose"] and x["id"] == AdvScenarioModel.LOOSE_ID), "scmodel: loose files are a scenario")
+	eq(m.chapters(AdvScenarioModel.LOOSE_ID).map(func(x): return x["id"]), ["zz_old"], "scmodel: loose file is a chapter")
+	m.sync_project()
+	eq(AdvJson.load_file(pj)["scenarios"][1], lp, "scmodel: loose file keeps its place")
+	check(not m.scenarios().any(func(x): return x["id"] == "assets"), "scmodel: folders without scenario files are not listed")
+	DirAccess.remove_absolute(lp)
+	m.sync_project()
+	m.delete_scenarios(["mansion_copy"])
+	eq(m.scenarios().map(func(x): return x["id"]), ["mansion", "scenario"], "scmodel: scenario deleted")
+	check(not AdvJson.load_file(pj)["scenarios"].any(func(x): return String(x).contains("mansion_copy")), "scmodel: project synced after delete")
+	_rmdir(base)
+
 
 # ---------------------------------------------------------------- セットアップ（6.7）とコマンド方式（4.5）
 
@@ -81,9 +236,11 @@ func _test_setup() -> void:
 	eq(p.get("template"), "pc98_classic", "setup: template")
 	eq(p.get("inputs", {}).get("enabled"), ["verb_click"], "setup: command method")
 	eq(p.get("input_devices"), ["keyboard", "mouse"], "setup: devices")
-	eq(p.get("scenarios"), [base + "/game/scenario/main.scenario.json"], "setup: scenarios")
+	eq(p.get("scenarios"), [base + "/game/scenario/main/_scenario.scenario.json", base + "/game/scenario/main/chapter1.scenario.json"], "setup: scenarios")
+	eq(p.get("ext", {}).get("adv80s_editor", {}).get("scenario_root"), base + "/game/scenario", "setup: scenario root")
 	eq(_codes(AdvSchemaValidator.check(p, "project")), [], "setup: project matches schema")
-	eq(_codes(AdvSchemaValidator.check(AdvJson.load_file(base + "/game/scenario/main.scenario.json"), "scenario")), [], "setup: scenario matches schema")
+	for f in p["scenarios"]:
+		eq(_codes(AdvSchemaValidator.check(AdvJson.load_file(f), "scenario")), [], "setup: scenario matches schema " + String(f).get_file())
 	eq(_codes(AdvSchemaValidator.check(AdvJson.load_file(base + "/game/assets/manifest.json"), "manifest")), [], "setup: manifest matches schema")
 	var c := AdvCore.new()
 	c.setup({"seed": 1})
@@ -619,6 +776,43 @@ func _test_ink_story() -> void:
 	s.choose_path("shop")
 	s.continue_maximally()
 	eq(changed, [["coins", 6]], "ink variable change callback")
+
+
+## MAG（MAKI02）の画像を読む：tools/build_test_mag.py で作った画像と、同じ内容の PNG を比べる。
+func _test_mag() -> void:
+	for n in ["mag16", "mag256"]:
+		var m := AdvMag.new()
+		var img := m.decode(FileAccess.get_file_as_bytes("res://tests/media/%s.mag" % n))
+		var want := Image.new()
+		want.load_png_from_buffer(FileAccess.get_file_as_bytes("res://tests/media/%s.png" % n))
+		want.convert(Image.FORMAT_RGBA8)
+		check(img != null and img.get_data() == want.get_data(), "mag %s decodes pixel-exact: %s" % [n, m.error])
+	eq(AdvMag.new().colors, 16, "mag default colours")
+	var bad := AdvMag.new()
+	check(bad.decode(PackedByteArray([1, 2, 3])) == null and bad.error != "", "mag: not a MAG file")
+	var cut := FileAccess.get_file_as_bytes("res://tests/media/mag16.mag").slice(0, 200)
+	var bad2 := AdvMag.new()
+	check(bad2.decode(cut) == null and bad2.error != "", "mag: truncated file: %s" % bad2.error)
+	var r = load("res://tests/media/mag16.mag")
+	check(r is AdvImageFrames and r.frames.size() == 1 and r.size == Vector2i(64, 40), "mag imports as a still image")
+
+
+## RANDOM、SEED_RANDOM、シャッフルが本家（inklecate -p、tests/ink/random.expected.txt）と同じになるか。
+func _test_ink_random() -> void:
+	eq([AdvDotNetRandom.new(0).next(), AdvDotNetRandom.new(42).next(), AdvDotNetRandom.new(1).next()], [1559595546, 1434747710, 534011718], ".NET Random first values")
+	var r := AdvDotNetRandom.new(-7)
+	var r2 := AdvDotNetRandom.new(7)
+	eq([r.next(), r.next()], [r2.next(), r2.next()], ".NET Random: negative seed uses its absolute value")
+	eq(AdvDotNetRandom.wrap32(2147483647 + 1), -2147483648, "wrap32 overflow")
+	var s := AdvInkStory.new()
+	s.load_json(FileAccess.get_file_as_string("res://tests/ink/random.ink.json"))
+	var out := PackedStringArray()
+	for l in s.continue_maximally():
+		out.append(l["text"])
+	var want := FileAccess.get_file_as_string("res://tests/ink/random.expected.txt").replace("\r", "").strip_edges()
+	var got := "\n".join(out).strip_edges()
+	check(got == want, "ink RANDOM and shuffle match inklecate -p:\n%s" % got)
+	check(s.errors.is_empty(), "ink random no errors: %s" % str(s.errors))
 
 
 ## inklecate -p の出力（tests/ink/conformance.expected.txt）と同じになるか。

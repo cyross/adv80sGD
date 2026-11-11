@@ -438,9 +438,163 @@ func _main() -> void:
 	_run_ev([AdvEvents.make("video.stop", {})])
 	await _settle()
 	check(player.screen.video_player == null or not is_instance_valid(player.screen.video_player), "video.stop")
+
+	# ---- 段階12：動画の切り替え演出（繰り返しの動画は待たずに現れ、video.stop は演出が終わるまで待つ）
+	_run_ev([AdvEvents.make("video.play", {"id": "op_test", "loop": true, "bgm": "keep", "transition": {"type": "wipe", "duration": 1.0}})])
+	await _settle_frames(3)
+	var vg: CanvasGroup = player.screen._video_group
+	check(vg != null and vg.material is ShaderMaterial, "video transition: shader while revealing")
+	await create_timer(1.2).timeout
+	check(vg.material == null and player.screen.video_player.is_playing(), "video transition: revealed and playing")
+	_run_ev([AdvEvents.make("video.stop", {"transition": {"type": "fade", "duration": 0.3}})])
+	await _settle_frames(3)
+	check(is_instance_valid(vg) and not vg.is_queued_for_deletion() and player.busy, "video.stop waits for the transition")
+	await _settle()
+	check(not is_instance_valid(vg) or vg.is_queued_for_deletion(), "video.stop: removed after the transition")
+	# 終わりを待つ動画：飛ばしても、同じ演出で消えてから次へ進む
+	_run_ev([AdvEvents.make("video.play", {"id": "op_test", "transition": {"type": "fade_color", "duration": 0.2}})])
+	await create_timer(0.35).timeout
+	player._click_pending = true
+	await _settle_frames(4)
+	check(player.busy and player.screen._video_group != null, "video: leaving with the transition after a skip")
+	await _settle()
+	check(player.screen.video_player == null and player.screen._video_group == null, "video: gone after the transition")
+	# スプライトの動画の音：既定は音なし、mute: false で BGM の音量に従って鳴らす
+	player.settings.set_value("bgm_volume", 0.5)
+	player.apply_volumes()
+	_run_ev([AdvEvents.make("sprite.show", {"id": "smv", "image": "op_test", "x": 0, "y": 0, "mute": false, "volume": 0.5}),
+		AdvEvents.make("sprite.show", {"id": "mv2", "image": "op_test", "x": 0, "y": 0})])
+	await _settle()
+	var smv := player.screen.sprite("smv")
+	check(smv != null and smv.has_video() and is_equal_approx(smv.video_volume_db(), linear_to_db(0.25)), "sprite video sound: %s" % (smv.video_volume_db() if smv else 0.0))
+	check(player.screen.sprite("mv2").video_volume_db() <= -79.0, "sprite video is muted by default")
+	check(not smv.state.has("mute") and not smv.state.has("volume"), "mute and volume are not sprite properties")
+	player.settings.set_value("bgm_volume", 1.0)
+	player.apply_volumes()
+	check(is_equal_approx(smv.video_volume_db(), linear_to_db(0.5)), "sprite video follows the BGM volume: %s" % smv.video_volume_db())
+	check(player.save_game("04") == OK, "save with a sprite video")
+	_run_ev([AdvEvents.make("sprite.clear", {})])
+	await _settle()
+	check(await player.load_game("04") == "", "load with a sprite video")
+	await _settle()
+	smv = player.screen.sprite("smv")
+	check(smv != null and is_equal_approx(smv.video_volume_db(), linear_to_db(0.5)) and player.screen.sprite("mv2").video_volume_db() <= -79.0, "sprite video sound restored from save")
+	_run_ev([AdvEvents.make("sprite.clear", {})])
+	await _settle()
 	player.auto_click = true
 	await player.switch_template("pc98_classic")
 	await _settle()
+
+	# ---- 段階13：スプライトの出し入れの演出（スプライト1枚に、画像と同じ演出をかける）
+	_run_ev([AdvEvents.make("sprite.show", {"id": "tw", "image": "room", "x": 10, "y": 10, "scale": 0.25, "transition": {"type": "wipe", "duration": 0.3}})])
+	await _settle_frames(3)
+	var tws := player.screen.sprite("tw")
+	check(tws != null and tws._tgroup != null and tws._tgroup.material is ShaderMaterial and player.busy, "sprite wipe in: shader on the sprite only")
+	var reg: Vector4 = tws._tgroup.material.get_shader_parameter("region") if tws != null and tws._tgroup != null else Vector4.ZERO
+	check(reg.z < 0.5 and reg.w < 0.5, "sprite wipe in: region is the sprite, not the picture: %s" % str(reg))
+	await _settle()
+	check(tws._tgroup == null and tws._body.get_parent() == tws and is_equal_approx(tws.modulate.a, 1.0), "sprite wipe in: picture back in place")
+	_run_ev([AdvEvents.make("sprite.hide", {"id": "tw", "transition": {"type": "dissolve", "duration": 0.3}})])
+	await _settle_frames(3)
+	check(player.screen.sprite("tw") != null and player.screen.sprite("tw")._tgroup != null and player.busy, "sprite dissolve out: in progress")
+	await _settle()
+	check(player.screen.sprite("tw") == null, "sprite dissolve out: removed")
+	# 98 のテンプレートは fade を dissolve に置き換える（時代に合わない演出の置き換えがスプライトにも効く）
+	_run_ev([AdvEvents.make("sprite.show", {"id": "tf", "image": "room", "x": 10, "y": 10, "scale": 0.25, "transition": {"type": "fade", "duration": 0.3}})])
+	await _settle_frames(3)
+	var tfg: CanvasGroup = player.screen.sprite("tf")._tgroup
+	check(tfg != null and int(tfg.material.get_shader_parameter("mode")) == 7, "sprite fade on 98: replaced by dissolve")
+	await _settle()
+	# fade_color はスプライトでは薄くする・濃くする
+	_run_ev([AdvEvents.make("sprite.show", {"id": "tc", "image": "room", "x": 10, "y": 10, "scale": 0.25, "transition": {"type": "fade_color", "duration": 0.3}})])
+	await _settle_frames(3)
+	check(player.screen.sprite("tc")._tgroup == null and player.screen.sprite("tc").modulate.a < 1.0, "sprite fade_color: opacity")
+	await _settle()
+	_run_ev([AdvEvents.make("sprite.clear", {})])
+	await _settle()
+
+	# ---- 段階13：背景の重ね合わせの中のアニメーション画像を動かす
+	_run_ev([AdvEvents.make("image.show", {"layer": "bg", "id": ["room", {"id": "lamp", "x": 300, "y": 40}], "transition": "cut"})])
+	await _settle()
+	var bgl: Control = player.screen.layers["bg"]
+	var bgv: Node = bgl.get_child(bgl.get_child_count() - 1).get_child(0)
+	check(bgv.has_meta("animated") and bgv.get_node("Layers").get_child_count() == 2, "layered bg with a GIF: stacked sprites")
+	var lamp_sp: AdvSprite = bgv.get_node("Layers").get_child(1) if bgv.has_node("Layers") else null
+	check(lamp_sp != null and lamp_sp.is_animating() and lamp_sp.xy == Vector2(300, 40), "layered bg: the GIF plays at its place")
+	_run_ev([AdvEvents.make("image.show", {"layer": "bg", "id": ["room", "hallway"], "transition": "cut"})])
+	await _settle()
+	bgv = bgl.get_child(bgl.get_child_count() - 1).get_child(0)
+	check(bgv is TextureRect and not bgv.has_meta("animated"), "layered bg without animation: one picture")
+	_run_ev([AdvEvents.make("image.show", {"layer": "bg", "id": "hallway", "transition": "cut"})])
+	await _settle()
+
+	# ---- 段階12：text.append（いまの文章の続きに足す）
+	player.auto_click = false
+	_run_ev([AdvEvents.make("text.show", {"body": "ドアには", "speaker": "ayumi", "name": "あゆみ"}),
+		AdvEvents.make("text.append", {"body": "かぎが かかっている。"})])
+	await _until_halt("end")
+	var before_append: int = player.screen.message_label.get_total_character_count()
+	player._click_pending = true
+	await _settle_frames(3)
+	var tml := player.screen.message_label
+	check(tml.get_parsed_text() == "あゆみ「ドアにはかぎが かかっている。」", "text.append: inside the quotes: %s" % tml.get_parsed_text())
+	check(player.screen.is_typing() and tml.visible_characters >= before_append - 1 and tml.visible_characters < tml.get_total_character_count(),
+		"text.append: typing continues from the old end: %d / %d" % [tml.visible_characters, tml.get_total_character_count()])
+	await _until_halt("end")
+	player._click_pending = true
+	await _settle()
+	var lt: Dictionary = player.message_log.last_text()
+	check(lt.get("body") == "ドアにはかぎが かかっている。" and lt.get("name") == "あゆみ", "text.append: one log entry: %s" % str(lt))
+	check(player._last_text.get("body") == "ドアにはかぎが かかっている。" and player._last_text.get("name") == "あゆみ", "text.append: kept for saves")
+	# 文章がないときは、ふつうの表示と同じ
+	_run_ev([AdvEvents.make("text.clear", {}), AdvEvents.make("text.append", {"body": "しずかだ。"})])
+	await _until_halt("end")
+	check(player.screen.message_label.get_parsed_text() == "しずかだ。", "text.append without text: %s" % player.screen.message_label.get_parsed_text())
+	player._click_pending = true
+	await _settle()
+
+	# ---- 段階12：[gaiji=ID]（素材の画像を文中に入れる。1文字として数え、ログには alt を出す）
+	player.core.assets.entry("image", "lamp")["alt"] = "（ランプ）"
+	var gj: Dictionary = player._gaiji("lamp")
+	check(String(gj.get("path", "")).begins_with("res://.adv80s_gaiji/") and gj.get("texture") is Texture2D, "gaiji: image loaded: %s" % str(gj))
+	check(player._gaiji("lamp").get("texture") == gj.get("texture"), "gaiji: loaded once")
+	_run_ev([AdvEvents.make("text.show", {"body": "ランプ[gaiji=lamp]が ある。"})])
+	await _until_halt("end")
+	tml = player.screen.message_label
+	check(tml.text.contains("[img]res://.adv80s_gaiji/") and tml.get_total_character_count() == "ランプ".length() + 1 + "が ある。".length(),
+		"gaiji: inline image counted as one character: %s / %d" % [tml.text, tml.get_total_character_count()])
+	await _shot("25_gaiji")
+	player._click_pending = true
+	await _settle()
+	check(player.message_log.last_text().get("body", "") == "ランプ（ランプ）が ある。", "gaiji: alt text in the log: %s" % player.message_log.last_text().get("body"))
+	# keep_colors: true の外字は、減色しない範囲に写しを置く（文字と、ほかの画像は写しでは透明）
+	player.core.assets.entry("image", "sparkle")["keep_colors"] = true
+	var gk: Dictionary = player._gaiji("sparkle")
+	check(String(gk.get("path", "")).begins_with(AdvTextMarkup.GAIJI_KEEP_PREFIX), "gaiji keep_colors: keep path: %s" % str(gk.get("path")))
+	check(player._gaiji("lamp").get("path") == gj.get("path"), "gaiji: other images keep their path")
+	_run_ev([AdvEvents.make("text.show", {"body": "[pal=2]あ[/pal][gaiji=sparkle]と[gaiji=lamp]"})])
+	await _until_halt("end")
+	await _settle_frames(2)
+	var kl: RichTextLabel = player.screen._keep_label
+	check(player.display._keep_on and kl != null, "gaiji keep_colors: mask on")
+	check(kl != null and kl.text.contains("[img]" + String(gk["path"])) and kl.text.contains("[img color=#00000000]") and not kl.text.contains("[color="),
+		"gaiji keep_colors: mirror text: %s" % (kl.text if kl else ""))
+	check(kl != null and kl.visible_characters == player.screen.message_label.visible_characters, "gaiji keep_colors: mirror follows typing")
+	player._click_pending = true
+	await _settle()
+	_run_ev([AdvEvents.make("text.show", {"body": "ふつうの [gaiji=lamp]"})])
+	await _until_halt("end")
+	await _settle_frames(2)
+	check(not player.display._keep_on, "gaiji: mask off without keep_colors")
+	player._click_pending = true
+	await _settle()
+	player.core.assets.entry("image", "sparkle").erase("keep_colors")
+	_run_ev([AdvEvents.make("text.show", {"body": "[gaiji=nothing_here]なし"})])
+	await _until_halt("end")
+	check(player.screen.message_label.get_parsed_text() == "なし", "gaiji: unknown ID is left out: %s" % player.screen.message_label.get_parsed_text())
+	player._click_pending = true
+	await _settle()
+	player.auto_click = true
 
 	# ---- 段階10：ページめくり
 	player.auto_click = false

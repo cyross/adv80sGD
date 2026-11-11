@@ -16,6 +16,9 @@ var filters_enabled: bool = true
 var _material: ShaderMaterial
 var _passes: Array = []                ## 自作フィルターの段（BackBufferCopy と ColorRect）
 var _aspect: bool = false
+var _keep_vp: SubViewport              ## 減色しない範囲（外字の keep_colors: true）を描く画面。使うときだけ作る
+var _keep_root: Control
+var _keep_on: bool = false
 
 
 func _init() -> void:
@@ -40,6 +43,8 @@ func _init() -> void:
 	container.add_child(viewport)
 	screen = AdvScreen.new()
 	screen.name = "Screen"
+	screen.keep_layer_provider = keep_layer
+	screen.keep_mask_toggle = set_keep_mask
 	viewport.add_child(screen)
 	resized.connect(_relayout)
 
@@ -50,6 +55,8 @@ func setup(template: AdvTemplate, filter_override: Variant = null) -> void:
 	var sz := tpl.screen_size
 	viewport.size = sz
 	container.size = Vector2(sz)
+	if _keep_vp != null:
+		_keep_vp.size = sz
 	screen.build(tpl)
 	set_filters(AdvVisuals.resolve_filters(tpl, filter_override))
 
@@ -63,6 +70,7 @@ func set_filters(list: Array) -> void:
 	_material = built["material"]
 	_material.set_shader_parameter("enabled", filters_enabled)
 	container.material = _material
+	_apply_keep_mask()
 	_aspect = built["aspect"] or bool(tpl.get_section("display").get("aspect_correction", false))
 	for p in built["passes"]:
 		var mat := AdvVisuals.build_custom_pass(p, tpl)
@@ -78,6 +86,39 @@ func set_filters(list: Array) -> void:
 		_passes.append(bb)
 		_passes.append(r)
 	_relayout()
+
+
+## 減色しない範囲を描く Control（元の解像度の画面と同じ座標）。はじめて呼ばれたときに作る。
+func keep_layer() -> Control:
+	if _keep_vp == null:
+		_keep_vp = SubViewport.new()
+		_keep_vp.name = "KeepMask"
+		_keep_vp.transparent_bg = true
+		_keep_vp.disable_3d = true
+		_keep_vp.gui_disable_input = true
+		_keep_vp.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
+		_keep_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		_keep_vp.size = viewport.size
+		add_child(_keep_vp)
+		_keep_root = Control.new()
+		_keep_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_keep_vp.add_child(_keep_root)
+	return _keep_root
+
+
+## 減色しない範囲を使う・使わない（外字の keep_colors: true が出ているあいだだけ使う）。
+func set_keep_mask(on: bool) -> void:
+	_keep_on = on
+	_apply_keep_mask()
+
+
+func _apply_keep_mask() -> void:
+	if _material == null:
+		return
+	var on := _keep_on and _keep_vp != null
+	_material.set_shader_parameter("use_keep_mask", on)
+	if on:
+		_material.set_shader_parameter("keep_mask", _keep_vp.get_texture())
 
 
 ## フィルターをまとめて切り替える（モダン機能 filter_toggle）。

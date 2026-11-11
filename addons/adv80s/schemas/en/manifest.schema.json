@@ -163,6 +163,14 @@
               "maxItems": 2,
               "description": "Cursor image hotspot"
             },
+            "alt": {
+              "type": "string",
+              "description": "Text used for the image as gaiji ([gaiji=ID]) in the message log and speech"
+            },
+            "keep_colors": {
+              "type": "boolean",
+              "description": "Keep the image's own colours: when shown as gaiji ([gaiji=ID]), skip the colour-reduction filter (default false; scanlines etc. still apply)"
+            },
             "ext": {
               "type": "object",
               "description": "Extension area. Free-form"

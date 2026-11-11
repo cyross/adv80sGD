@@ -2,7 +2,7 @@
 
 80年代風アドベンチャーゲームを作るための Godot 4 アドオン。仕様はリポジトリ直下の `SPEC.md` を参照。
 
-## 現在の段階：段階11「セットアップ画面、絵の中の対象を選ぶコマンド方式」まで
+## 現在の段階：段階14「シナリオエディタ」まで
 
 | 範囲 | 内容 |
 | --- | --- |
@@ -111,7 +111,10 @@
 ```
 godot --headless --path . --script res://tests/run_tests.gd
 godot --headless --path . --script res://tests/run_ui_tests.gd
+godot --headless --path . --script res://tests/run_editor_tests.gd
 ```
+
+`run_editor_tests.gd` は画面ありで動かすと、シナリオエディタの画面を `tests/_shots/editor_*.png` に書き出す。
 
 ## マニフェストのコマンドライン
 
@@ -123,9 +126,39 @@ godot --headless --path . --script res://addons/adv80s/tools/manifest_cli.gd -- 
 - 一度も読み込んでいないプロジェクト（CI で取り出した直後など）では、先に自動でインポートしてから実行する。
 - 仕様の引数に加えて `--project <ファイル>` でプロジェクト設定のファイルを指定できる。
 
+## 段階14の決めごと（シナリオエディタ）
+
+- **シナリオエディタ**（仕様 6.8）：エディタの「adv80s」画面で種類「シナリオエディタ」を選ぶ。パンくず（フォルダ › ゲーム › シナリオ › チャプター › シーン › セリフ／コマンド）で戻れる。中身は `editor/scenario/`：データの読み書き `adv_scenario_model.gd`（`AdvScenarioModel`）、画面 `adv_scenario_editor.gd`（`AdvScenarioEditor`）、カードの一覧 `adv_card_grid.gd`（`AdvCardGrid`）、手順のエディタ `adv_step_editor.gd`（`AdvStepEditor`）、式エディタ `adv_expr_editor.gd`（`AdvExprEditor`）。
+- **ファイル**：シナリオのフォルダ（`ext.adv80s_editor.scenario_root`、既定 `res://game/scenario`）の下に、シナリオごとのフォルダ、その中にシナリオ共通の設定 `_scenario.scenario.json` とチャプターごとの `<ID>.scenario.json`、Ink は `ink/`。ゲームから見ると、これまでどおりの JSON シナリオのファイルが並んでいるだけ（プロジェクト設定の `scenarios` をエディタが書き直す）。表示名と並び順は `ext.adv80s_editor` に書く。シナリオの直下の古い形のファイルは「（フォルダの外のファイル）」というシナリオのチャプターとして見せ、`scenarios` の中の位置も変えない。
+- **ID**：名前から作る（`AdvSetup.to_id`。日本語だけの名前なら `scenario`・`chapter`・`scene`）。名前の変更は表示名だけで、ID は変えない。
+- **複写**：シーンと会話の ID に `_copy`（重なれば `_copy_2`…）を付け、複写したものの中の参照（`goto`、`call`、`dialogue`、`start`、`scene`、`exits` のキー、`scene.goto`、条件の `visited`・`talked`・`scene ==`）を付け替える（`AdvScenarioModel._remap`）。
+- **削除**：`OS.move_to_trash`（ごみ箱がなければ消す）。
+- **設定のタブ**：その段のファイルのスキーマから、タブの項目だけのスキーマ（`definitions` つき）を作って AdvSchemaForm で出す（`AdvScenarioEditor.sub_schema`）。シーンの設定は、手順の項目（`on`・`first`・`enter`、もの・出口の `on`）を除いたスキーマで出し、保存するときに元の手順を戻す（`strip_steps`・`merge_steps`）。
+- **手順のエディタ**：Tree の3列（種類・内容・条件）。木で書けない形（`set`、`dialogue`、`id` や `voice` のある `say`、出力イベントなど）は「そのほか（JSON）」の行にして、書き換えずに保存する。台詞は `@話者 文章` の短い形で書き出す。
+- **式エディタ**：CodeEdit の候補（`code_completion_requested`）。候補は `AdvExprEditor.collect_candidates`（変数の一覧 `AdvVariableIndex.collect`、組み込み、シーン、会話、アイテム、機能）。確かめるのは `AdvCondition.check` と `AdvExpr.parse_let`。Godot の CodeEdit は `(` の直後では候補を出さないので、引数の候補は1文字打ってから出る。
+- **Ink のコンパイル**：エディタ設定 `adv80s/inklecate_path` の inklecate を `OS.execute` で動かす（`-o <名前>.ink.json <名前>.ink`）。
+- **保存**：画面ごとの「保存」か Ctrl+S。ほかの画面へ移るときは保存してから移る。
+- **セットアップ**：最初のシナリオを、シナリオのフォルダの形（`scenario/main/_scenario.scenario.json` と `chapter1.scenario.json`）で作り、`ext.adv80s_editor.scenario_root` を書くようにした。
+
+## 段階13の決めごと（スプライトの出し入れの演出、動く背景の重ね合わせ、Ink の乱数、MAG）
+
+- **スプライトの出し入れの演出**：`fade`・`fade_color` は不透明度を変える。そのほかは、演出のあいだだけスプライトの絵（`_body`）を CanvasGroup に入れ（`AdvSprite.begin_transition_group`）、画像の切り替えと同じシェーダーをかける（`AdvScreen._sprite_transition`）。範囲はスプライトの見えている四角（`AdvSprite.screen_bounds`、回転は考えない）。スプライトそのものは層に置いたままなので、演出中も ID で探せる。テンプレートの `transitions.replace` も効く（98 では `fade` が `dissolve` になる）。動画のスプライトは `fade`。段階9の「どれも fade」は取りやめた。
+- **動く背景の重ね合わせ**：重ねる画像にアニメーション画像（コマが2つ以上、またはマニフェストの `grid`・`anims`）があれば、1枚にまとめず、要素ごとの AdvSprite を重ねた Control にする（`_layer_visual`、`_layer_anim_node`。最初の画像の大きさの枠を、絵の窓に合わせて拡大する）。要素の `anim` で再生するアニメーションを選べる（既定 `default`）。動くものがなければ、これまでどおり1枚の画像にする。1枚だけの背景でも、アニメーション画像なら動かす。
+- **MAG**：`media/adv_mag.gd`（`AdvMag.decode`・`load_frames`）。アニメーション画像の取り込み（`adv80s.anim_image`）が `.mag` も受け持ち、コマが1つの `AdvImageFrames` にする。MAKI02 の 16色・256色。フラグAの1ビットごとにフラグBから1バイトを読んで前の行と XOR し、フラグの4ビットで「新しい2バイト」か「決まった位置（`VECTORS`）から写す」かを決める。ヘッダーの左右の範囲（8ドット・4ドット単位に広げて読む）から切り出す。200ライン用の画像も縦に伸ばさない。確かめ用の画像は `tools/build_test_mag.py` で作る（`tests/media/mag16.mag`・`mag256.mag` と、同じ絵の PNG）。マニフェストの生成と「素材ファイルから追加…」も `.mag` を画像として扱う。
+- **Ink の乱数**：`AdvDotNetRandom`（.NET の System.Random と同じ Knuth の減算法）を使い、`RANDOM`・`SEED_RANDOM`・シャッフルの結果を inklecate と同じにした。C# の int の足し算のあふれも同じにする（`wrap32`）。最初の種は本家と同じく時刻から 0〜99。確かめ用の物語は `tests/ink/src/random.ink`（期待する出力は `tests/ink/random.expected.txt`、inklecate -p の出力）。
+
+## 段階12の決めごと（text.append、外字、動画の切り替え演出と音）
+
+- **text.append**：いまの文章の続きに本文を足す（`AdvScreen.append_text`）。話者のある文章では「」の中に足し、足したところから文字送りを続ける。ページはそのまま続ける。メッセージログは最後の記録に足す（`AdvMessageLog.append_text`。間に入力があれば新しい記録）。セーブの `view.text` には続けた本文が入る。文章が出ていなければ `text.show` と同じ。JSON シナリオの手順に直接書いた `text.show`・`text.append` には行のIDをつけ（`_with_line_id`）、Core が既読を記録する。足す文章が `[page]` で始まるときは、前の文章との間で改行する。
+- **外字**：`[gaiji=ID]` は素材の画像を `[img]` で文中に入れ、1文字として数える。画像は AdvPlayer が読み込み（カラーキー、機種別の差し替えも効く）、仮のパス `res://.adv80s_gaiji/<ハッシュ>.tex` に置いて使う（`AdvTextMarkup.gaiji_resolver`）。そのままの大きさで入れる。ログと読み上げはマニフェストの `alt`。素材がなければ何も出さない。`validate` は文章の中の外字の素材も確かめる。
+- **減色しない外字**：マニフェストで `keep_colors: true` にした画像は、外字として出すときに減色フィルターをかけない。画像の写しを `res://.adv80s_gaiji/keep/` に置き（`AdvTextMarkup.GAIJI_KEEP_PREFIX`）、文章の窓と同じ並びの写し（文字は透明、ほかの画像も透明）を別の SubViewport（`AdvDisplay.keep_layer`）に描く。フィルターのシェーダーは、その写しが不透明なところだけ減色を飛ばす（`keep_mask`）。走査線などのほかのフィルターはかかる。写しは減色しない外字が出ているあいだだけ作る。
+- **動画の切り替え演出**：動画と黒い余白を CanvasGroup にまとめ、画像と同じ切り替え演出をかける（`AdvScreen.reveal_video`、`stop_video_with`）。`video.play` の `transition` は現れるときと消えるとき（終わったとき、飛ばしたとき）の両方。繰り返しの動画は演出を待たずに次へ進む。`video.stop` は演出があれば終わるまで待つ。演出をかける範囲は動画の置き場所から求めるので、`filters: false`（フィルターの外）でも使える。
+- **動画の音**：スプライトの動画は `mute: false` で音を出す（音量は `volume` × マニフェストの `volume` × BGM の音量）。プレイヤー設定の BGM の音量を変えると、スプライトの動画と流している動画の音量も変わる（`apply_volumes`）。`video.play` の音量にもマニフェストの `volume` をかけるようにした。
+- **マニフェスト**：`alt`（外字を文字で表すとき）と `keep_colors`（`true` で外字を減色しない）を足した。
+
 ## 段階11の決めごと（セットアップ画面、絵の中の対象を選ぶコマンド方式）
 
-- **セットアップ画面**（仕様 6.7）：エディタの「adv80s」画面で種類「セットアップ」を選ぶ（`adv80s.project.json` がなければ最初に出る）。ゲームID、タイトル、画面テンプレート、コマンド方式、入力デバイスを決めて「作成する」を押すと、プロジェクト設定、素材フォルダ（`res://game/assets/` と種類フォルダ）、最初のシナリオ（`scenario/main.scenario.json`）、メインシーン（`main.tscn`）を作る。すでにあるファイルは残し、プロジェクト設定はセットアップの項目だけを書き換える。中身は `editor/adv_setup.gd`（`AdvSetup.check`・`plan`・`apply`）、画面は `editor/adv_setup_view.gd`。
+- **セットアップ画面**（仕様 6.7）：エディタの「adv80s」画面で種類「セットアップ」を選ぶ（`adv80s.project.json` がなければ最初に出る）。ゲームID、タイトル、画面テンプレート、コマンド方式、入力デバイスを決めて「作成する」を押すと、プロジェクト設定、素材フォルダ（`res://game/assets/` と種類フォルダ）、最初のシナリオ（段階14からは `scenario/main/` の下に `_scenario.scenario.json` と `chapter1.scenario.json`）、メインシーン（`main.tscn`）を作る。すでにあるファイルは残し、プロジェクト設定はセットアップの項目だけを書き換える。中身は `editor/adv_setup.gd`（`AdvSetup.check`・`plan`・`apply`）、画面は `editor/adv_setup_view.gd`。
 - **プロジェクト設定の新しい項目**：`game_id`、`title`（ウィンドウのタイトルにも使う）、`inputs`（テンプレートの `inputs` を項目ごとに上書き）、`input_devices`（`keyboard`、`mouse`、`gamepad`、`touch`。書かなければすべて）。
 - **ゲームID**：セーブデータに入れ、違うゲームのセーブデータは読まない（`load_game` が `GAME_MISMATCH` を返す）。ゲームIDのないセーブデータは確かめない。
 - **コマンド方式**（仕様 4.5。`inputs.enabled` に書く）：`verb_click`（動詞リスト＋クリック）、`verb_cursor`（アイコン切り替え。右クリックでカーソルの動詞を切り替える）、`context`（コンテキスト。対象に合わせて動詞が決まり、右クリックは「みる」）。どれも同じ意図を出すので、シナリオは変えなくてよい。
@@ -138,20 +171,20 @@ godot --headless --path . --script res://addons/adv80s/tools/manifest_cli.gd -- 
 ## 段階10の決めごと（背景の重ね合わせ、共通の変数と定数、ページめくり）
 
 - **背景の重ね合わせ**：シーンの `image` を配列にすると、`when` に合う要素（素材IDか `{id, variant?, x?, y?, when?}`）を、最初の画像の大きさの1枚に重ねて背景にする（`Image.blend_rect`）。コマンドを実行するたびに条件を見直し、変わったらシーンの `image_transition`（既定 `cut`）で描き直す。`image.show` の `id` にも配列を書ける。重ねる画像のカラーキーも効く。アニメーション画像は最初のコマ。いま重ねているものは JSON アダプタのセーブ（`image`）と、表示のセーブ（`view.images`）に入る。
-- 背景（`image.show`）も GIF・APNG・MNG とカラーキーを使えるようにした（最初のコマ）。
+- 背景（`image.show`）も GIF・APNG・MNG とカラーキーを使えるようにした（段階13から動かす）。
 - **共通の変数と定数**：プロジェクト設定の `variables`（シナリオの宣言の前に重ねる。同じ名前はシナリオが優先し、validate が警告 `DUPLICATE_ID`）と `constants`。シナリオにも `constants` を書ける。定数は状態（`AdvState.constants`）に置き、`get_var` で読める。書き換えは無視して警告 `CONST_WRITE`、validate はエラー `CONST_WRITE`。定数はセーブに入れない。エディタの「変数の一覧」に共通の変数と定数も出す。
 - **ページめくり**：文章の窓（`TextClip` で切り取る）に入りきらない文章は、行単位でページに分ける（`RichTextLabel.get_line_offset`・`get_line_range` で窓に入る行を数え、文章をずらす）。文字送りのタグ `[p]`、`[p=秒]`、`[page]`、`[page=秒]`、`[w=秒]`（既定 0.5 秒）、`[se=ID]`、`[speed=n]…[/speed]`、`[instant]…[/instant]` を実装した（`AdvTextMarkup.to_bbcode_stops` が表示する文字の数で止まる位置を返す）。`[page]` の前には改行を入れる。`[blink]` は `[pulse]` で描く。
 - 文字送り中のクリックは、次の止まる位置かページの終わりまで出す。ページの終わりと `[p]` などが重なったときは、二度待たない。
 - **待ちの印**：テンプレートの `ui.wait_mark`、`ui.page_mark`（文字か画像。画像はアニメーションを再生する）。既定は「▼」の点滅。
 - **時間で進む**：`[p=秒]`、`[page=秒]`、`text.show` の `wait` の秒数。オート送りはページの終わりと `[p]`、`[page]` にも効く（待ち時間はプレイヤー設定 `auto_delay` ＋ 最後に待ってから出した文字の数 × `auto_per_char`）。
-- まだのもの：`[gaiji]`、`text.append`。
+- `[gaiji]` と `text.append` は段階12で実装した。
 - サンプルのろうかの最初の文章に `[p]` を入れた。
 
 ## 段階9の決めごと（スプライト、マウスカーソル、アニメーション画像、動画）
 
 - **スプライトの置き場所**：画像の層（`bg`、`char` など）ごとに、その層のすぐ上に `Sprites_<層>` を置く。画面の層は `layout.screen_layers`（既定 `["back", "front"]`）。名前が `back` で始まる層は絵の窓より後ろ（画面の背景のすぐ上）、それ以外は窓より前に置く。`layer` を省くと `char`、知らない名前なら `char`（なければ最初の画像の層）。
 - **座標**：画像の層・絵の窓の中のネイティブ解像度の座標。描くときは整数に丸める（`smooth: true` で丸めない）。`anchor` は `top_left`（既定）、`top`、`center`、`bottom` など9か所。
-- **出し入れの演出**：`sprite.show`・`sprite.hide` の `transition` は、いまはどれを書いても薄く出す・薄く消す（`fade`）になる。書かなければ演出なし（テンプレートの既定の演出は使わない）。`duration` で長さを変えられる。
+- **出し入れの演出**：`sprite.show`・`sprite.hide` の `transition` は、段階9ではどれを書いても薄く出す・薄く消す（`fade`）だった（段階13で各演出に対応）。書かなければ演出なし（テンプレートの既定の演出は使わない）。`duration` で長さを変えられる。
 - **シーンのスプライト**：JSON シナリオのシーンの `sprites`。`when` が合うものを出し、合わなくなったら `hide` の演出で消す（コマンドを1つ実行するたびに確かめる）。シーンを移ると消える。物（`objects`）と出口（`exits`）に `sprite` を書くと、そのスプライトの形（不透明な画素）が調べられる場所になり、動けば当たり判定もついていく。出口をクリックすると MOVE になる。
 - **イベントで出したスプライト**は `sprite.hide`・`sprite.clear` まで残る。`"keep": false` ならシーンを移ると消える。
 - **セーブ**：スプライトの状態（位置などは動いている途中なら終わりの値、繰り返しの動き、かけている効果、アニメーション）、繰り返しの動画、`cursor.set` の固定をセーブに入れる。テンプレートを切り替えても出し直す。
@@ -198,7 +231,7 @@ godot --headless --path . --script res://addons/adv80s/tools/manifest_cli.gd -- 
 ## 段階7の決めごと（Ink アダプタ）
 
 - Ink の実行部分は GDScript で一から書いた（`adapters/ink/adv_ink_story.gd`、inkle 社の C# 版の動きにそろえた）。inklecate は制作時だけ使い、ゲームには含めない。対応する inkVersion は 19〜21。
-- 未対応：`LIST`（使うと validate が `INK_LIST` を出す）。`RANDOM` とシャッフルのシーケンスは乱数の作り方が C# 版と違うので、同じ種でも結果は一致しない。
+- 未対応：`LIST`（使うと validate が `INK_LIST` を出す）。`RANDOM` とシャッフルは段階13で C# 版と同じ結果にした。
 - シナリオの一覧の `.ink.json` は Ink のアダプタが読む。`.ink.json` だけなら Ink が主のアダプタになる。複数の `.ink.json` を並べると、ノットを持つ最初のファイルを使う。
 - 受け渡し：JSON の `{"ink": "ノット"}` は出力イベント `adapter.enter` を出して止まる。Core が Ink を積んで `start`、Ink が選択肢なしで止まる（DONE、END、終わり）と `adapter.exit` を出し、Core が Ink を外して JSON の `resume` を呼ぶ。この2つのイベントは表示側へは渡さない。アダプタの基底クラスに `resume(result)` を足した。
 - セーブは、すべてのアダプタの状態と積み上げの順番を持つ（`adapters`、`active`）。段階6までの形（`adapter`）も読める。

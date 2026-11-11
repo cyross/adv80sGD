@@ -163,6 +163,14 @@
               "maxItems": 2,
               "description": "カーソル画像の指す位置"
             },
+            "alt": {
+              "type": "string",
+              "description": "外字（[gaiji=ID]）を文字で表すときの文字（メッセージログ、読み上げ）"
+            },
+            "keep_colors": {
+              "type": "boolean",
+              "description": "色をそのまま出す。有効なら、外字（[gaiji=ID]）として出すときに減色フィルターをかけない（既定 無効。走査線などはかかる）"
+            },
             "ext": {
               "type": "object",
               "description": "拡張領域。中身は自由"

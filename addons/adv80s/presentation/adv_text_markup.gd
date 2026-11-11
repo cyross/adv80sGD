@@ -2,12 +2,17 @@ class_name AdvTextMarkup
 extends RefCounted
 ## 本文の装飾記法（BBCode拡張、5.4）を、表示用の RichTextLabel の BBCode に変換する。
 ## 扱うもの：{変数}（{{ で "{" を出す）、[var=名前]、[pal=n]…[/pal]、[ruby=よみ]…[/ruby]、[em]…[/em]、[blink]…[/blink]、
-## Godot の [b]、[i]、[u]、[s]、[color]。
+## [gaiji=ID]（素材の画像を文中に入れる。1文字として数える）、Godot の [b]、[i]、[u]、[s]、[color]。
 ## 文字送りのタグ（[p]、[p=秒]、[page]、[page=秒]、[w=秒]、[se=ID]、[speed=n]…[/speed]、[instant]…[/instant]）は、
 ## to_bbcode_stops が「止まる位置」（表示する文字の数）として返す。to_bbcode は取り除くだけ。
 
 static var _re_var: RegEx
 static var _re_tag: RegEx
+## 外字の画像を探す関数 func(id) -> {path?: [img] に書くパス, alt?: 文字で表すとき（ログ、読み上げ）}。AdvPlayer が設定する。
+static var gaiji_resolver: Callable
+## 減色しない外字（マニフェストの keep_colors: true）の画像を置く仮のパス。表示はこれを見て、減色しない範囲を作る
+const GAIJI_KEEP_PREFIX := "res://.adv80s_gaiji/keep/"
+static var _plain := false
 
 
 static func _init_re() -> void:
@@ -52,6 +57,17 @@ static func to_bbcode_stops(body: String, state: AdvState, tpl: AdvTemplate) -> 
 		if tag in denied:
 			continue
 		match tag:
+			"gaiji":
+				if closing or arg == "":
+					continue
+				var g: Dictionary = gaiji_resolver.call(arg) if gaiji_resolver.is_valid() else {}
+				if not _plain and String(g.get("path", "")) != "":
+					out += "[img]%s[/img]" % String(g["path"])
+					count += 1
+				else:
+					var alt := String(g.get("alt", ""))
+					out += _escape(alt)
+					count += alt.length()
 			"var":
 				var vt := _var_text(arg, state)
 				out += _escape(vt)
@@ -97,7 +113,7 @@ static func to_bbcode_stops(body: String, state: AdvState, tpl: AdvTemplate) -> 
 			"instant":
 				stops.append({"at": count, "kind": "speed", "value": -1.0 if closing else 0.0})
 			_:
-				pass  # gaiji など：表示には出さない
+				pass  # 知らないタグ：表示には出さない
 	var rest := s.substr(pos)
 	out += _escape(rest)
 	return {"bbcode": out, "stops": stops}
@@ -113,7 +129,9 @@ static func to_speech(body: String, state: AdvState) -> String:
 ## 装飾を取り除いた文字列（メッセージログや読み上げ用）。
 static func to_plain(body: String, state: AdvState, tpl: AdvTemplate) -> String:
 	_init_re()
+	_plain = true
 	var bb := to_bbcode(body, state, tpl)
+	_plain = false
 	var re := RegEx.create_from_string("\\[(/?)([a-z_]+)(=[^\\]]*)?\\]")
 	var out := ""
 	var pos := 0

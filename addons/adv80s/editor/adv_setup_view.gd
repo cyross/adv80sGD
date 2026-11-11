@@ -194,7 +194,8 @@ func _refresh() -> void:
 	var lines := PackedStringArray(["作るもの（すでにあるものは残します）："])
 	lines.append("・%s（プロジェクト設定%s）" % [project_path, "。いまの設定に書き足します" if FileAccess.file_exists(project_path) else ""])
 	lines.append("・%s/（素材フォルダ：%s）" % [pl["assets"], "、".join(AdvSetup.ASSET_DIRS)])
-	lines.append("・%s（最初のシナリオ）" % pl["scenario"])
+	lines.append("・%s（シナリオ共通の設定）" % pl["scenario_main"])
+	lines.append("・%s（最初のチャプター）" % pl["scenario"])
 	lines.append("・%s（メインシーン。ゲームの入口）" % pl["scene"])
 	_preview.text = "\n".join(lines)
 

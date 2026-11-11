@@ -27,6 +27,9 @@ var _anchor: Vector2 = Vector2.ZERO
 var _smooth: bool = false
 var _xy: Vector2 = Vector2.ZERO
 var _tweens: Array = []
+## 動画の音（6.6）。既定は音を出さない。volume は 0〜1 で、BGM の音量をかけて鳴らす
+var video_mute: bool = true
+var video_volume: float = 1.0
 
 ## トゥイーンで動かす位置（整数にそろえる）
 var xy: Vector2:
@@ -103,6 +106,56 @@ func set_visual(res: Resource, entry: Dictionary = {}, frame_loader: Callable = 
 				fr.append(int(f))
 		_anims[String(name)] = {"frames": fr, "fps": float(a.get("fps", 8)), "loop": a.get("loop", true)}
 	_show_frame(0)
+
+
+## 出し入れの演出のあいだだけ、絵を CanvasGroup に入れる（演出のシェーダーをスプライト1枚にかけるため）。
+## スプライトそのものは層に置いたままにする（ID で探せるように）。動画のスプライトでは使わない。
+var _tgroup: CanvasGroup
+
+
+func begin_transition_group() -> CanvasGroup:
+	if _tgroup != null and is_instance_valid(_tgroup):
+		return _tgroup
+	_tgroup = CanvasGroup.new()
+	_tgroup.name = "Transition"
+	add_child(_tgroup)
+	move_child(_tgroup, _body.get_index())
+	remove_child(_body)
+	_tgroup.add_child(_body)
+	return _tgroup
+
+
+func end_transition_group() -> void:
+	if _tgroup == null or not is_instance_valid(_tgroup):
+		_tgroup = null
+		return
+	var at := _tgroup.get_index()
+	_tgroup.remove_child(_body)
+	add_child(_body)
+	move_child(_body, at)
+	_tgroup.queue_free()
+	_tgroup = null
+
+
+## 画面（SubViewport）の中での見えている範囲。
+func screen_bounds() -> Rect2:
+	var par := get_parent() as CanvasItem
+	return (par.get_global_transform_with_canvas() * bounds()) if par != null else bounds()
+
+
+## 動画の音量を決める（bgm_volume はプレイヤー設定の BGM の音量）。
+func apply_video_audio(bgm_volume: float) -> void:
+	if _video == null:
+		return
+	_video.volume_db = -80.0 if video_mute else linear_to_db(maxf(video_volume * bgm_volume, 0.0001))
+
+
+func has_video() -> bool:
+	return _video != null
+
+
+func video_volume_db() -> float:
+	return _video.volume_db if _video != null else -80.0
 
 
 func anim_names() -> Array:

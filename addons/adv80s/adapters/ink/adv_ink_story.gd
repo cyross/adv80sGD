@@ -185,7 +185,7 @@ func load_json(text: String) -> Error:
 	if ink_version < 19 or ink_version > 21:
 		warnings.append("inkVersion %d is not tested (expected 19-21)" % ink_version)
 	root = _to_container(d["root"], null)
-	_seed = randi() % 100
+	_seed = AdvDotNetRandom.new(int(Time.get_ticks_msec() % 1000)).next() % 100   # 本家と同じく、時刻から 0〜99
 	reset_callstack()
 	# グローバル変数の初期値（"global decl" を実行する）
 	if root.named.has("global decl"):
@@ -1178,10 +1178,13 @@ func _command(o: InkObj) -> void:
 		"rnd":
 			var mx := int(_eval.pop_back())
 			var mn := int(_eval.pop_back())
-			var rng := RandomNumberGenerator.new()
-			rng.seed = _seed + _prev_random
-			var next := rng.randi() & 0x7fffffff
-			_eval.append(next % maxi(1, mx - mn + 1) + mn)
+			# 本家（C#）と同じ：種 + 前の乱数で System.Random を作り、最初の値を使う
+			var next := AdvDotNetRandom.new(AdvDotNetRandom.wrap32(_seed + _prev_random)).next()
+			var span := mx - mn + 1
+			if span <= 0 or span > 2147483647:
+				errors.append("RANDOM was called with minimum as %d and maximum as %d. The maximum must be larger" % [mn, mx])
+				span = maxi(1, mini(span, 2147483647))
+			_eval.append(next % span + mn)
 			_prev_random = next
 		"srnd":
 			_seed = int(_eval.pop_back())
@@ -1217,11 +1220,10 @@ func _shuffle_index() -> int:
 	var h := 0
 	for c in _ptr[0].path():
 		h += c.unicode_at(0)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = h + loop_index + _seed
+	var rng := AdvDotNetRandom.new(AdvDotNetRandom.wrap32(h + loop_index + _seed))
 	var unpicked := range(num)
 	for i in iteration + 1:
-		var chosen := (rng.randi() & 0x7fffffff) % unpicked.size()
+		var chosen := rng.next() % unpicked.size()
 		var idx: int = unpicked[chosen]
 		unpicked.remove_at(chosen)
 		if i == iteration:

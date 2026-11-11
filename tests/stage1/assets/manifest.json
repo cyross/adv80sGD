@@ -1,33 +1,45 @@
 {
   "manifest_version": 1,
   "assets": {
-    "theme": {
-      "type": "bgm",
-      "loop_start": 9.6,
-      "volume": 0.8
-    },
-    "sparkle": {
-      "type": "image",
-      "grid": [
-        3,
-        1
-      ],
-      "anims": {
-        "default": {
-          "frames": [
-            0,
-            1,
-            2,
-            1
-          ],
-          "fps": 6,
-          "loop": true
-        }
-      }
-    },
-    "lamp": {
-      "type": "image",
-      "color_key": "#000000"
-    }
+	"theme": {
+	  "type": "bgm",
+	  "loop_start": 9.6,
+	  "volume": 0.8
+	},
+	"sparkle": {
+	  "type": "image",
+	  "grid": [
+		3,
+		1
+	  ],
+	  "anims": {
+		"default": {
+		  "frames": [
+			0,
+			1,
+			2,
+			1
+		  ],
+		  "fps": 6,
+		  "loop": true
+		}
+	  }
+	},
+	"lamp": {
+	  "type": "image",
+	  "color_key": "#000000"
+	},
+	"image:heart": {
+	  "type": "image",
+	  "file": "ui/heart.png",
+	  "alt": "(ハート)",
+	  "keep_colors": true
+	},
+	"image:key_icon": {
+	  "type": "image",
+	  "file": "ui/key_icon.png",
+	  "alt": "[鍵]",
+	  "keep_colors": true
+	}
   }
 }

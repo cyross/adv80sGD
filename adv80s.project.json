@@ -1,5 +1,5 @@
 {
-  "project_version": 1,
+  "project_version": 1.0,
   "template": "pc98_classic",
   "templates": [
     "pc98_classic",
@@ -47,7 +47,7 @@
       "allow": true,
       "default": true,
       "options": {
-        "max_steps": 50
+        "max_steps": 50.0
       }
     },
     "era_switch": {
@@ -77,5 +77,10 @@
   ],
   "hint_topics": {
     "door": "ドアについて"
+  },
+  "ext": {
+    "adv80s_editor": {
+      "scenario_root": "res://tests/stage1/scenario"
+    }
   }
 }

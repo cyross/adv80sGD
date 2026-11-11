@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://dxwcdolieqr5e"]
 
-[ext_resource type="Script" path="res://addons/adv80s/adv_player.gd" id="1_player"]
+[ext_resource type="Script" uid="uid://pkdfqnecam0h" path="res://addons/adv80s/adv_player.gd" id="1_player"]
 
-[node name="Stage1Main" type="Control"]
+[node name="Stage1Main" type="Control" unique_id=174682830]
 layout_mode = 3
 anchors_preset = 0
 offset_right = 640.0

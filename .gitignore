@@ -29,3 +29,7 @@ master.key
 
 # Ink の変換ツール（制作時だけ使う。リポジトリには入れない）
 /inklecate_*.zip
+
+# テストが書き出す画面と一時ファイル
+/tests/_shots/
+/tests/_tmp_*/

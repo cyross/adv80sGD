@@ -268,7 +268,7 @@ func _commit(events: Array) -> Array[Dictionary]:
 			state.apply_event(e)
 			if e["type"] == "scene.goto":
 				_reload_schema()
-		if e.get("type") == "text.show" and e.has("id"):
+		if e.get("type") in ["text.show", "text.append"] and e.has("id"):
 			# 既読スキップのため、この表示の前に読んでいたかを残しておく
 			if not e.has("ext"):
 				e["ext"] = {}

@@ -19,7 +19,7 @@ extends RefCounted
 
 const AUTO_NAME := "manifest.auto.json"
 const MANUAL_NAME := "manifest.json"
-const ASSET_EXT := ["png", "jpg", "jpeg", "webp", "bmp", "svg", "tga", "ktx", "dds", "gif", "apng", "mng", "ogv",
+const ASSET_EXT := ["png", "jpg", "jpeg", "webp", "bmp", "svg", "tga", "ktx", "dds", "gif", "apng", "mng", "mag", "ogv",
 	"ogg", "wav", "mp3", "ttf", "otf", "woff", "woff2", "fnt", "font", "gdshader"]
 
 ## Godot が再生できない動画の拡張子（.ogv に変換してから置く）

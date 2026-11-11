@@ -141,7 +141,10 @@ static func plan(opts: Dictionary, project_path: String = AdvProject.DEFAULT_PAT
 	var tid := String(opts["template"])
 	var devices: Array = opts.get("devices", DEVICES)
 	var style := command_style(String(opts.get("command", "template")))
-	var scenario := base + "/scenario/main.scenario.json"
+	# シナリオ：シナリオのフォルダ scenario/ の下に、シナリオ main（共通の設定）と最初のチャプター
+	var scenario_root := base + "/scenario"
+	var scenario_main := scenario_root + "/main/" + AdvScenarioModel.MAIN_FILE
+	var scenario := scenario_root + "/main/chapter1" + AdvScenarioModel.EXT
 	var assets := base + "/assets"
 	var scene := base + "/main.tscn"
 
@@ -169,8 +172,17 @@ static func plan(opts: Dictionary, project_path: String = AdvProject.DEFAULT_PAT
 		p["inputs"] = inputs
 	p["input_devices"] = DEVICES.filter(func(dv): return dv in devices)
 	var scenarios: Array = p.get("scenarios", [])
+	var ext: Dictionary = p.get("ext", {}) if p.get("ext") is Dictionary else {}
+	var ed: Dictionary = ext.get(AdvScenarioModel.EXT_KEY, {})
 	if scenarios.is_empty():
+		scenarios.append(scenario_main)
 		scenarios.append(scenario)
+		ed["scenario_root"] = scenario_root
+		ed["scenario_order"] = ["main"]
+	elif not ed.has("scenario_root"):
+		ed["scenario_root"] = scenario_root
+	ext[AdvScenarioModel.EXT_KEY] = ed
+	p["ext"] = ext
 	p["scenarios"] = scenarios
 	var roots: Array = p.get("asset_roots", [])
 	if roots.is_empty():
@@ -179,13 +191,15 @@ static func plan(opts: Dictionary, project_path: String = AdvProject.DEFAULT_PAT
 	if not p.has("lang"):
 		p["lang"] = "ja"
 
-	var dirs := [base, base + "/scenario", assets]
+	var dirs := [base, scenario_root, scenario_root + "/main", assets]
 	for d in ASSET_DIRS:
 		dirs.append("%s/%s" % [assets, d])
 	var files := {}
 	for d in ASSET_DIRS:
 		files["%s/%s/.gitkeep" % [assets, d]] = ""
 	files[assets + "/manifest.json"] = JSON.stringify({"manifest_version": 1, "assets": {}}, "  ") + "\n"
+	files[scenario_main] = JSON.stringify({"scenario_version": 1, "start": "start",
+		"ext": {AdvScenarioModel.EXT_KEY: {"name": title, "chapter_order": ["chapter1"]}}}, "  ", false) + "\n"
 	files[scenario] = JSON.stringify(_first_scenario(title, scenario), "  ", false) + "\n"
 	files[scene] = _main_scene()
 
@@ -210,7 +224,7 @@ static func plan(opts: Dictionary, project_path: String = AdvProject.DEFAULT_PAT
 			settings["display/window/stretch/aspect"] = "keep"
 			settings["display/window/stretch/scale_mode"] = "integer"
 	return {"dirs": dirs, "files": files, "project": p, "project_path": project_path, "settings": settings,
-		"scenario": scenario, "assets": assets, "scene": scene}
+		"scenario": scenario, "scenario_main": scenario_main, "scenario_root": scenario_root, "assets": assets, "scene": scene}
 
 
 ## 作る。{created: [作ったファイル], skipped: [すでにあって残したファイル], errors: [失敗]}
@@ -258,8 +272,7 @@ static func _write(path: String, text: String) -> bool:
 static func _first_scenario(title: String, path: String) -> Dictionary:
 	return {
 		"scenario_version": 1,
-		"start": "start",
-		"variables": {},
+		"ext": {AdvScenarioModel.EXT_KEY: {"name": "第1章"}},
 		"scenes": {
 			"start": {
 				"name": "はじまり",

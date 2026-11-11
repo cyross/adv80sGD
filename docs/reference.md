@@ -12,7 +12,7 @@
 | `template.json` | `templates/<ID>/` | 画面の見た目（機種） | 同上 |
 | `manifest.json` | 素材フォルダの直下 | 素材の属性（手書き） | 同上 |
 | `manifest.auto.json` | 素材フォルダの直下 | 素材の一覧（自動生成。手で直さない） | 自動 |
-| `*.scenario.json` | 自由 | JSON のシナリオ | VS Code（スキーマ付き） |
+| `*.scenario.json` | 自由（シナリオエディタを使うならシナリオのフォルダ） | JSON のシナリオ | 「adv80s」画面のシナリオエディタ、VS Code（スキーマ付き） |
 | `*.ink` → `*.ink.json` | 自由 | Ink のシナリオ（inklecate で変換） | Inky など |
 | `*.effect.json` | 自由 | 自作のフィルター・演出 | VS Code |
 
@@ -177,6 +177,8 @@
 | `grid` | 画像 | スプライトシートの切り方 [横の数, 縦の数] |
 | `anims` | 画像 | アニメーション名 → `{frames, fps, loop}`。`frames` はコマ番号か画像 ID、`loop` は真偽か回数 |
 | `hotspot` | 画像 | カーソル画像の指す位置 [x, y] |
+| `alt` | 画像 | 外字（`[gaiji=ID]`）を文字で表すときの文字（メッセージログ、読み上げ） |
+| `keep_colors` | 画像 | 色をそのまま出す。`true` なら、外字として出すときに減色フィルターをかけない（既定 `false`。走査線などはかかる） |
 | `loop_start` | 音 | 繰り返しの戻り先（秒） |
 | `volume` | 音 | 音量（0〜1） |
 | `x.名前`、`ext` | すべて | 自作の項目 |
@@ -350,7 +352,7 @@
 | `[se=ID]` | その位置で効果音 |
 | `[speed=文字数]…[/speed]` | その範囲の表示速度（1秒あたりの文字数。プレイヤー設定の倍率をかける） |
 | `[instant]…[/instant]` | その範囲を一度に表示 |
-| `[gaiji=ID]` | 外字・小さなアイコン（まだ。表示から取り除く） |
+| `[gaiji=ID]` | 外字・小さなアイコン。素材の画像をそのままの大きさで文中に入れ、文字送りでは1文字として数える。ログと読み上げではマニフェストの `alt` の文字にする |
 
 **ページめくり**
 
@@ -376,19 +378,20 @@
 | イベント | 主な引数（`?` は省略可） | 既定の wait |
 | --- | --- | --- |
 | `text.show` | `body`、`speaker?`、`name?`、`voice?` | `click` |
+| `text.append` | `body` | `click` |
 | `text.clear` | — | `none` |
 | `image.show` | `layer`（既定 `bg`）、`id`、`variant?`、`transition?`、`duration?` | 演出あり `end`、`cut` は `none` |
 | `image.hide` | `layer`、`transition?`、`duration?` | 同上 |
 | `effect.play` | `name`（`flash`、`shake`、`invert`、`tint`、`palette_cycle`、`scroll`、`zoom`、`raster` など）、`duration?`、効果ごとの引数（`color`、`amount`、`amplitude` など。`args` にそのまま書く） | `end` |
-| `sprite.show` | `id`、`image`、`variant?`、`layer?`（既定 `char`）、`x`、`y`、`anchor?`、`z?`、`scale?`、`rotation?`、`opacity?`、`flip?`、`blend?`、`tint?`、`smooth?`、`color_key?`、`anim?`、`transition?`、`duration?`、`keep?` | 演出あり `end`、なし `none` |
+| `sprite.show` | `id`、`image`、`variant?`、`layer?`（既定 `char`）、`x`、`y`、`anchor?`、`z?`、`scale?`、`rotation?`、`opacity?`、`flip?`、`blend?`、`tint?`、`smooth?`、`color_key?`、`anim?`、`transition?`、`duration?`、`keep?`、`mute?`・`volume?`（動画のとき。既定は音なし） | 演出あり `end`、なし `none` |
 | `sprite.set` | `id`、変える項目、`duration?`、`ease?`、`loop?`（`-1` で終わりなし）、`yoyo?`、`path?` | `duration` があれば `end`（繰り返しは `none`） |
 | `sprite.hide` | `id`（配列も可）、`transition?`、`duration?` | 演出あり `end` |
 | `sprite.anim` | `id`、`anim`（`null` で止める）、`loop?` | `none` |
 | `sprite.effect` | `id`、`name`（`flash`、`shake`、`blink`、`mono`、`sepia`、`silhouette`、`mosaic`、`none`、シェーダーのパス）、`duration?`、`params?` | `end` |
 | `sprite.clear` | `layer?`（省くとすべて） | `none` |
 | `cursor.set` | `kind` か `image` と `hotspot`（`null` で自動に戻す） | `none` |
-| `video.play` | `id`、`area?`（`picture`、`screen`）、`fit?`（`contain`、`cover`、`stretch`）、`loop?`、`skippable?`、`volume?`、`bgm?`（`pause`、`keep`、`stop`）、`filters?` | `loop` なら `none`、ほかは `end` |
-| `video.stop` | — | `none` |
+| `video.play` | `id`、`area?`（`picture`、`screen`）、`fit?`（`contain`、`cover`、`stretch`）、`loop?`、`skippable?`、`volume?`、`bgm?`（`pause`、`keep`、`stop`）、`filters?`、`transition?` | `loop` なら `none`、ほかは `end` |
+| `video.stop` | `transition?` | 演出あり `end`、なし `none` |
 | `bgm.play` | `id`、`loop?`（既定 true）、`fade?`（秒）、`volume?` | `none` |
 | `bgm.stop` | `fade?` | `none` |
 | `se.play` | `id`、`volume?` | `none` |
@@ -413,12 +416,14 @@
 | `template.switch` | `template`、`transition?` | `end` |
 | `save.request` | — | `input` |
 
-**切り替え演出（`transition`）**：`cut`、`fade`、`fade_color`、`wipe`、`blinds`、`line_draw`、`interlace`、`plane_draw`、`mosaic`、`dissolve`、`blocks`、`iris`、`mask`（ルール画像）。名前だけか `{"type": "wipe", "direction": "right", "duration": 0.8}` のように書きます。スプライトの出し入れは、いまはどの演出も `fade` として扱います。
+**切り替え演出（`transition`）**：`cut`、`fade`、`fade_color`、`wipe`、`blinds`、`line_draw`、`interlace`、`plane_draw`、`mosaic`、`dissolve`、`blocks`、`iris`、`mask`（ルール画像）。名前だけか `{"type": "wipe", "direction": "right", "duration": 0.8}` のように書きます。スプライトの出し入れにも同じ演出が使え、スプライトの範囲だけにかかります（`fade_color` はスプライトでは `fade` と同じ。動画のスプライトはいつも `fade`）。
 
 - `image.show` の `id` には配列も書けます（要素は素材 ID か `{id, variant, x, y}`。順に重ねて1枚にする）。
 - `text.show` の `wait` に秒数を書くと、クリックかその秒数で次へ進みます。
+- `text.append` は、いまの文章の続きに本文を足します（話者のある文章では「」の中）。ログでは同じ記録になります。
+- `video.play` の `transition` は、動画が現れるときと、終わったときや飛ばしたときに消えるときの両方にかかります。繰り返しの動画は `video.stop` の `transition` で消します。
 
-いまは `text.append` と動画の `transition` はまだ実装していません。自作のイベントは `x.名前` で書きます。
+自作のイベントは `x.名前` で書きます。
 
 ## Ink との連携
 
@@ -456,7 +461,7 @@ Ink のシナリオは inklecate で `.ink.json` に変換して、プロジェ�
 
 - 選択肢の項目 ID は `c0`、`c1`…。選んだものは `chosen` に `ink:ノット#…` で残ります。
 - Ink が選択肢なしで止まる（`DONE`、`END`、終わり）と、呼んだ JSON の手順の続きに戻ります。
-- `LIST` はまだ使えません。`RANDOM` とシャッフルは、inkle 社の版と同じ種でも結果が一致しません。
+- `LIST` はまだ使えません。`RANDOM`、`SEED_RANDOM`、シャッフルは inkle 社の版と同じ乱数を使うので、同じ種なら同じ結果になります。
 
 ## GDScript から使う（AdvPlayer）
 

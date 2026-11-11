@@ -438,12 +438,12 @@ func _exec_dict(d: Dictionary, path: String) -> void:
 		_suspended = true
 		return
 	if d.has("type"):
-		_emit(d.duplicate(true))
+		_emit(_with_line_id(d.duplicate(true), path))
 		return
 	if d.size() == 1 and (String(d.keys()[0]).contains(".") or String(d.keys()[0]) in _DOTLESS_EVENTS):
 		var type := String(d.keys()[0])
 		var args = d[type]
-		_emit(AdvEvents.make(type, args.duplicate(true) if args is Dictionary else {}))
+		_emit(_with_line_id(AdvEvents.make(type, args.duplicate(true) if args is Dictionary else {}), path))
 		return
 	ctx.warn("UNKNOWN_KEY", "解釈できない手順です: %s（%s）" % [JSON.stringify(d), path])
 
@@ -578,6 +578,13 @@ func _say(speaker: String, body: String, path: String, id: String = "", voice: V
 	if voice != null:
 		_emit(AdvEvents.make("voice.play", {"id": String(voice)}))
 	_emit(ev)
+
+
+## 手順に直接書いた text.show・text.append に、行のIDをつける（既読スキップのため。手書きの id を優先）。
+func _with_line_id(ev: Dictionary, path: String) -> Dictionary:
+	if String(ev.get("type", "")) in ["text.show", "text.append"] and not ev.has("id"):
+		ev["id"] = _line_id(path, String(ev.get("args", {}).get("body", "")))
+	return ev
 
 
 ## 行のID：場所＋本文のハッシュ。同じ場所に同じ本文があれば出現順の番号を足す。
@@ -1029,6 +1036,8 @@ func _walk_step(step: Variant, jp: String, f: String, in_dialogue: bool) -> void
 			type = String(d.keys()[0])
 			args = d[type]
 			ap = "%s/%s" % [jp, _ptr(type)]
+		if type in ["text.show", "text.append"] and args is Dictionary:
+			_collect_text_vars(String(args.get("body", "")), ap + "/body", f)
 		if type == "state.set" and args is Dictionary:
 			_mark_write(String(args.get("name", args.get("var", args.get("flag", "")))), f, ap)
 		if type == "sprite.show" and args is Dictionary and args.has("image"):
@@ -1112,6 +1121,14 @@ func _collect_text_vars(s: String, jp: String, f: String) -> void:
 	for m in _re_text_var.search_all(s):
 		var name := m.get_string(1) if m.get_string(1) != "" else m.get_string(2)
 		_read(name, jp, f)
+	# 外字の素材
+	var at := s.find("[gaiji=")
+	while at >= 0:
+		var close := s.find("]", at)
+		if close < 0:
+			break
+		_v_refs.append({"kind": "image", "id": s.substr(at + 7, close - at - 7), "file": f, "path": jp})
+		at = s.find("[gaiji=", close)
 
 
 func _read(name: String, jp: String, f: String) -> void:

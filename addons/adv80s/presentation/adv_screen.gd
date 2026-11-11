@@ -41,6 +41,7 @@ var _since_wait: int = 0             ## 最後に待ってから出した文字�
 
 func build(template: AdvTemplate) -> void:
 	tpl = template
+	_keep_dirty = true
 	for c in get_children():
 		remove_child(c)
 		c.queue_free()
@@ -137,6 +138,7 @@ var _style_opacity: float = 1.0
 ## 文章の表示調整（モダン機能 text_options）：文字の大きさの倍率、色（パレットの番号、-1 でテンプレートの色）、窓の背景の不透明度。
 ## ドットのフォントは整数倍でないと形が崩れるので、倍率は 1.0、1.5、2.0 のように選ばせる（1.5 は読みやすいフォント向け）。
 func set_text_style(size_scale: float, color_index: int, opacity: float) -> void:
+	_keep_dirty = true
 	_style_size = size_scale
 	_style_color = color_index
 	_style_opacity = opacity
@@ -347,14 +349,15 @@ func _make_theme() -> Theme:
 
 ## 画像を表示する。path が空なら代わりの表示（IDを書いた枠）を出す。tr は AdvVisuals.resolve_transition の結果。
 ## 切り替え演出が終わるまで待つ（await できる）。
-func show_image(layer: String, id: String, path: String, tr: Dictionary = {"type": "cut"}, tex: Texture2D = null) -> void:
+## 層に画像を出す。visual は Texture2D か、組み立て済みの Control（動く画像を重ねたもの）。
+func show_image(layer: String, id: String, path: String, tr: Dictionary = {"type": "cut"}, visual: Variant = null) -> void:
 	var l: Control = layers.get(layer, layers.get("bg"))
 	if l == null:
 		return
 	var old := l.get_children()
 	var g := CanvasGroup.new()
 	g.name = "Image"
-	g.add_child(_image_node(id, path, tex))
+	g.add_child(visual if visual is Control else _image_node(id, path, visual as Texture2D))
 	l.add_child(g)
 	await _transition(g, old, tr, false)
 	for o in old:
@@ -398,18 +401,22 @@ func _image_node(id: String, path: String, tex: Texture2D = null) -> Control:
 
 
 ## 切り替え演出を行う。new_g が現れる側、old は消える側。hiding なら old を消すだけ。
-func _transition(new_g: CanvasGroup, old: Array, tr: Dictionary, hiding: bool) -> void:
+## area は演出をかける範囲 {region: 画面の中の範囲, screen: 画面の大きさ, host: 色で隠すときに覆いを置く Control}（既定は絵の窓）。
+func _transition(new_g: CanvasGroup, old: Array, tr: Dictionary, hiding: bool, area: Dictionary = {}) -> void:
 	var t := String(tr.get("type", "cut"))
+	var region: Rect2 = area.get("region", Rect2(picture.position, picture.size))
+	var screen_sz: Vector2 = area.get("screen", size)
+	var host: Control = area.get("host", picture)
 	var dur := float(tr.get("duration", AdvVisuals.DEFAULT_DURATION))
 	if t == "cut" or dur <= 0.0:
 		return
 	if t == "fade_color":
 		var cover := ColorRect.new()
 		cover.color = Color.html(String(tr.get("color", "#000000")))
-		cover.size = picture.size
+		cover.size = host.size
 		cover.modulate.a = 0.0
 		cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		picture.add_child(cover)
+		host.add_child(cover)
 		if new_g != null:
 			new_g.visible = false
 		await _tween(cover, "modulate:a", 0.0, 1.0, dur * 0.5)
@@ -421,11 +428,10 @@ func _transition(new_g: CanvasGroup, old: Array, tr: Dictionary, hiding: bool) -
 		await _tween(cover, "modulate:a", 1.0, 0.0, dur * 0.5)
 		cover.queue_free()
 		return
-	var region := Rect2(picture.position, picture.size)
 	var rule: Texture2D = tr.get("rule_texture")
 	if t == "mosaic":
 		var half := dur * 0.5
-		var mo := AdvVisuals.build_transition_material(tr, region, size)
+		var mo := AdvVisuals.build_transition_material(tr, region, screen_sz)
 		mo.set_shader_parameter("invert", true)
 		for o in old:
 			if o is CanvasItem:
@@ -438,13 +444,13 @@ func _transition(new_g: CanvasGroup, old: Array, tr: Dictionary, hiding: bool) -
 				o.visible = false
 		if new_g == null:
 			return
-		var mn := AdvVisuals.build_transition_material(tr, region, size)
+		var mn := AdvVisuals.build_transition_material(tr, region, screen_sz)
 		new_g.material = mn
 		new_g.visible = true
 		await _tween(mn, "shader_parameter/progress", 0.0, 1.0, half)
 		new_g.material = null
 		return
-	var mat := AdvVisuals.build_transition_material(tr, region, size, rule)
+	var mat := AdvVisuals.build_transition_material(tr, region, screen_sz, rule)
 	if hiding:
 		mat.set_shader_parameter("invert", true)
 		for o in old:
@@ -603,26 +609,41 @@ func remove_sprite(id: String, tr: Dictionary = {"type": "cut"}) -> void:
 	if s == null:
 		return
 	s.stop_motion()
-	var dur := float(tr.get("duration", AdvVisuals.DEFAULT_DURATION))
-	if String(tr.get("type", "cut")) != "cut" and dur > 0.0:
-		var tw := s.create_tween()
-		tw.tween_property(s, "modulate:a", 0.0, dur)
-		await tw.finished
+	await _sprite_transition(s, tr, true)
 	if is_instance_valid(s):
 		s.get_parent().remove_child(s)
 		s.queue_free()
 
 
-## スプライトを出す演出（いまは fade だけ。そのほかの演出も薄く出す）。
+## スプライトを出す演出。
 func reveal_sprite(s: AdvSprite, tr: Dictionary) -> void:
+	await _sprite_transition(s, tr, false)
+
+
+## スプライト1枚に切り替え演出をかける（hiding なら消える側）。fade と fade_color は薄くする・濃くする。
+## そのほかの演出は、スプライトの絵を CanvasGroup に入れて、画像の切り替えと同じシェーダーをかける。
+## 範囲はスプライトの見えている四角。動画のスプライトは fade にする。
+func _sprite_transition(s: AdvSprite, tr: Dictionary, hiding: bool) -> void:
+	var t := String(tr.get("type", "cut"))
 	var dur := float(tr.get("duration", AdvVisuals.DEFAULT_DURATION))
-	if String(tr.get("type", "cut")) == "cut" or dur <= 0.0:
+	if t == "cut" or dur <= 0.0 or s == null:
 		return
-	var a := s.modulate.a
-	s.modulate.a = 0.0
-	var tw := s.create_tween()
-	tw.tween_property(s, "modulate:a", a, dur)
-	await tw.finished
+	if t in ["fade", "fade_color"] or s.has_video() or s.bounds().size == Vector2.ZERO:
+		var a := s.modulate.a
+		if not hiding:
+			s.modulate.a = 0.0
+		var tw := s.create_tween()
+		tw.tween_property(s, "modulate:a", 0.0 if hiding else a, dur)
+		await tw.finished
+		return
+	var g := s.begin_transition_group()
+	var mat := AdvVisuals.build_transition_material(tr, s.screen_bounds(), size, tr.get("rule_texture"))
+	if hiding:
+		mat.set_shader_parameter("invert", true)
+	g.material = mat
+	await _tween(mat, "shader_parameter/progress", 0.0, 1.0, dur)
+	if is_instance_valid(s) and not hiding:
+		s.end_transition_group()
 
 
 func clear_sprites(layer: String = "") -> void:
@@ -646,6 +667,7 @@ func sprite_ids() -> Array:
 
 var video_player: VideoStreamPlayer
 var _video_back: ColorRect
+var _video_group: CanvasGroup      ## 動画と黒い余白をまとめたもの（切り替え演出をかける）
 
 
 ## 動画を流す。area は picture か screen。parent を渡すとそこに置く（フィルターをかけないとき）。
@@ -656,17 +678,20 @@ func play_video(stream: VideoStream, area: String, fit: String, loop: bool, volu
 		rect = Rect2(picture.position, picture.size)
 	var host: Control = parent if parent != null else (self if area == "screen" else picture)
 	var origin := rect.position if host != picture else Vector2.ZERO
+	_video_group = CanvasGroup.new()
+	_video_group.name = "Video"
 	_video_back = ColorRect.new()
 	_video_back.color = Color.BLACK
 	_video_back.position = origin
 	_video_back.size = rect.size
 	_video_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_video_back.clip_contents = true
-	host.add_child(_video_back)
+	_video_group.add_child(_video_back)
+	host.add_child(_video_group)
 	if host == picture:
-		picture.move_child(_video_back, hotspot_layer.get_index())
+		picture.move_child(_video_group, hotspot_layer.get_index())
 	elif host == self and _overlay != null:
-		move_child(_video_back, _overlay.get_index())
+		move_child(_video_group, _overlay.get_index())
 	video_player = VideoStreamPlayer.new()
 	video_player.stream = stream
 	video_player.loop = loop
@@ -691,10 +716,38 @@ func play_video(stream: VideoStream, area: String, fit: String, loop: bool, volu
 
 
 func stop_video() -> void:
-	if _video_back != null and is_instance_valid(_video_back):
-		_video_back.queue_free()
+	if _video_group != null and is_instance_valid(_video_group):
+		_video_group.queue_free()
+	_video_group = null
 	_video_back = null
 	video_player = null
+
+
+## 流し始めた動画を、切り替え演出で現す（終わるまで待つ）。
+func reveal_video(tr: Dictionary) -> void:
+	if _video_group == null or not is_instance_valid(_video_group):
+		return
+	await _transition(_video_group, [], tr, false, _video_area())
+
+
+## 動画を切り替え演出で消してから止める（終わるまで待つ）。
+func stop_video_with(tr: Dictionary) -> void:
+	if _video_group != null and is_instance_valid(_video_group) and String(tr.get("type", "cut")) != "cut":
+		var g := _video_group
+		await _transition(null, [g], tr, true, _video_area())
+		if g != _video_group:
+			# 演出の間に別の動画が始まった
+			if is_instance_valid(g):
+				g.queue_free()
+			return
+	stop_video()
+
+
+## 動画に演出をかける範囲（フィルターの外に置いたときも、その画面の座標で求める）。
+func _video_area() -> Dictionary:
+	var xf := _video_back.get_global_transform_with_canvas()
+	var r := xf * Rect2(Vector2.ZERO, _video_back.size)
+	return {"region": r, "screen": _video_back.get_viewport().get_visible_rect().size, "host": _video_group.get_parent() as Control}
 
 
 func reset_layer(layer: String) -> void:
@@ -709,13 +762,11 @@ func reset_layer(layer: String) -> void:
 ## 文章を表示する（文字送りあり）。name があれば「名前「本文」」の形にする。
 ## stops は AdvTextMarkup.to_bbcode_stops の止まる位置。instant なら最後まで一度に出す（最後のページを見せる）。
 func show_text(bbcode: String, speaker_name: String = "", instant: bool = false, stops: Array = []) -> void:
-	var t := bbcode
-	var offset := 0
-	if speaker_name != "":
-		var nc := tpl.color(int(tpl.get_section("text").get("name_color", 6))).to_html(false)
-		t = "[color=#%s]%s[/color]「%s」" % [nc, AdvTextMarkup._escape(speaker_name), bbcode]
-		offset = speaker_name.length() + 1
-	message_label.text = t
+	_cur_body = bbcode
+	_cur_speaker = speaker_name
+	var offset := 0 if speaker_name == "" else speaker_name.length() + 1
+	message_label.text = _compose_text(bbcode, speaker_name)
+	_keep_dirty = true
 	set_wait_mark(false)
 	_stops = []
 	for st in stops:
@@ -734,6 +785,123 @@ func show_text(bbcode: String, speaker_name: String = "", instant: bool = false,
 	_shown = 0.0
 	message_label.visible_characters = 0
 	_start_typing()
+
+
+## いまの文章の続きに足して、足したところから文字送りをする（text.append）。
+## 話者のある文章では「」の中に足す。ページはそのまま続け、窓に入りきらなければページをめくる。
+func append_text(bbcode: String, instant: bool = false, stops: Array = []) -> void:
+	if message_label.text == "":
+		show_text(bbcode, "", instant, stops)
+		return
+	var shift := 0
+	# 足す文章が [page] で始まるときは、前の文章との間で改行する
+	if not stops.is_empty() and String(stops[0]["kind"]) == "page" and int(stops[0]["at"]) == 0 and not _cur_body.ends_with("\n"):
+		bbcode = "\n" + bbcode
+		shift = 1
+	var at := message_label.get_total_character_count() - (1 if _cur_speaker != "" else 0)
+	_cur_body += bbcode
+	message_label.text = _compose_text(_cur_body, _cur_speaker)
+	_keep_dirty = true
+	set_wait_mark(false)
+	_stops = []
+	for st in stops:
+		var d: Dictionary = st.duplicate()
+		d["at"] = int(d["at"]) + at + shift
+		_stops.append(d)
+	_stop_i = 0
+	_stop = {}
+	_inline_speed = -1.0
+	_since_wait = 0
+	_scroll_to_page()
+	if instant:
+		show_all()
+		return
+	_shown = float(at)
+	message_label.visible_characters = at
+	_start_typing()
+
+
+# ---------------------------------------------------------------- 減色しない外字（keep_colors: true）
+# 文章の窓と同じ並びの写しを、減色しない範囲を描く画面（AdvDisplay.keep_layer）に置く。
+# 写しでは文字を透明にし、減色しない外字の画像だけを描く。フィルターは、そこが不透明なところだけ減色を飛ばす。
+
+var keep_layer_provider: Callable   ## func() -> Control（AdvDisplay が設定する）
+var keep_mask_toggle: Callable      ## func(on: bool)
+var _keep_clip: Control
+var _keep_label: RichTextLabel
+var _keep_dirty: bool = false
+static var _re_keep_strip: RegEx
+static var _re_keep_img: RegEx
+
+
+func _sync_keep() -> void:
+	if _keep_dirty:
+		_keep_dirty = false
+		_rebuild_keep()
+	if _keep_label == null or not is_instance_valid(_keep_label) or message_label == null:
+		return
+	var xf := _text_clip.get_global_transform_with_canvas()
+	_keep_clip.position = xf.origin
+	_keep_clip.scale = xf.get_scale()
+	_keep_clip.size = _text_clip.size
+	_keep_clip.visible = message_label.is_visible_in_tree()
+	_keep_label.position = message_label.position
+	_keep_label.size = message_label.size
+	_keep_label.visible_characters = message_label.visible_characters
+
+
+func _rebuild_keep() -> void:
+	var has := message_label != null and message_label.text.contains(AdvTextMarkup.GAIJI_KEEP_PREFIX)
+	if _keep_label != null and is_instance_valid(_keep_label):
+		_keep_label.queue_free()
+	_keep_label = null
+	if not has or not keep_layer_provider.is_valid():
+		if _keep_clip != null and is_instance_valid(_keep_clip):
+			_keep_clip.visible = false
+		if keep_mask_toggle.is_valid():
+			keep_mask_toggle.call(false)
+		return
+	if _keep_clip == null or not is_instance_valid(_keep_clip):
+		_keep_clip = Control.new()
+		_keep_clip.name = "KeepText"
+		_keep_clip.clip_contents = true
+		_keep_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		(keep_layer_provider.call() as Control).add_child(_keep_clip)
+	_keep_clip.theme = theme
+	_keep_label = message_label.duplicate(0) as RichTextLabel
+	_keep_label.add_theme_color_override("default_color", Color(0, 0, 0, 0))
+	_keep_label.text = keep_bbcode(message_label.text)
+	_keep_clip.add_child(_keep_label)
+	if keep_mask_toggle.is_valid():
+		keep_mask_toggle.call(true)
+	_sync_keep()
+
+
+## 写しの BBCode：色の指定と点滅を外して文字を透明にし、減色しない外字のほかの画像も透明にする（並びは変えない）。
+static func keep_bbcode(bb: String) -> String:
+	if _re_keep_strip == null:
+		_re_keep_strip = RegEx.create_from_string("\\[/?(color|pulse)(=[^\\]]*| [^\\]]*)?\\]")
+		_re_keep_img = RegEx.create_from_string("\\[img\\]([^\\[]*)\\[/img\\]")
+	var out := _re_keep_strip.sub(bb, "", true)
+	var res := ""
+	var at := 0
+	for m in _re_keep_img.search_all(out):
+		res += out.substr(at, m.get_start() - at)
+		var path := m.get_string(1)
+		res += m.get_string() if path.begins_with(AdvTextMarkup.GAIJI_KEEP_PREFIX) else "[img color=#00000000]%s[/img]" % path
+		at = m.get_end()
+	return res + out.substr(at)
+
+
+func _compose_text(bbcode: String, speaker_name: String) -> String:
+	if speaker_name == "":
+		return bbcode
+	var nc := tpl.color(int(tpl.get_section("text").get("name_color", 6))).to_html(false)
+	return "[color=#%s]%s[/color]「%s」" % [nc, AdvTextMarkup._escape(speaker_name), bbcode]
+
+
+var _cur_body: String = ""       ## いま出している本文（BBCode。話者の名前と「」は含まない）
+var _cur_speaker: String = ""
 
 
 ## 最後まで一度に出す（ロードしたときなど）。いちばん後ろのページを見せる。
@@ -766,6 +934,9 @@ func set_inline_speed(chars_per_sec: float) -> void:
 
 func clear_text() -> void:
 	message_label.text = ""
+	_keep_dirty = true
+	_cur_body = ""
+	_cur_speaker = ""
 	set_wait_mark(false)
 	_typing = false
 	_stops = []
@@ -948,6 +1119,7 @@ func is_waiting_mark() -> bool:
 
 
 func _process(delta: float) -> void:
+	_sync_keep()
 	if not _typing:
 		return
 	var spd := _speed if _inline_speed < 0.0 else _inline_speed

@@ -1,6 +1,6 @@
 @tool
 extends EditorImportPlugin
-## アニメーション画像（.gif、.apng、.mng）を読み込む（Godot にはこれらを読む機能がないため）。
+## アニメーション画像（.gif、.apng、.mng）と、当時の画像形式（.mag）を読み込む（Godot にはこれらを読む機能がないため）。
 ## AdvImageFrames（各コマの画像、表示時間、繰り返し回数）として保存する。静止画もコマが1つの AdvImageFrames になる。
 
 
@@ -13,7 +13,7 @@ func _get_visible_name() -> String:
 
 
 func _get_recognized_extensions() -> PackedStringArray:
-	return PackedStringArray(["gif", "apng", "mng"])
+	return PackedStringArray(["gif", "apng", "mng", "mag"])
 
 
 func _get_save_extension() -> String:
@@ -51,7 +51,11 @@ func _get_import_order() -> int:
 
 func _import(source_file: String, save_path: String, _options: Dictionary, _platform_variants: Array[String],
 		_gen_files: Array[String]) -> Error:
-	var res := AdvGif.load_frames(source_file) if source_file.get_extension().to_lower() == "gif" else AdvPngAnim.load_frames(source_file)
+	var res: AdvImageFrames
+	match source_file.get_extension().to_lower():
+		"gif": res = AdvGif.load_frames(source_file)
+		"mag": res = AdvMag.load_frames(source_file)
+		_: res = AdvPngAnim.load_frames(source_file)
 	if res == null:
 		return ERR_PARSE_ERROR
 	return ResourceSaver.save(res, "%s.%s" % [save_path, _get_save_extension()])

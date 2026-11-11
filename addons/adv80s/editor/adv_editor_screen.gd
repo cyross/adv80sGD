@@ -17,7 +17,8 @@ const KIND_MANIFEST := 2
 const KIND_VARIABLES := 3
 const KIND_SCENE_GRAPH := 4
 const KIND_SETUP := 5
-const KIND_NAMES := ["プロジェクト設定", "テンプレート", "マニフェスト", "変数の一覧", "シーングラフ", "セットアップ"]
+const KIND_SCENARIO := 6
+const KIND_NAMES := ["プロジェクト設定", "テンプレート", "マニフェスト", "変数の一覧", "シーングラフ", "セットアップ", "シナリオエディタ"]
 const SCHEMAS := ["project", "template", "manifest"]
 ## 新しく作るテンプレートを置くフォルダ（AdvTemplate.SEARCH_DIRS の最初）
 const TEMPLATE_DIR := "res://game/templates"
@@ -39,6 +40,7 @@ var _vars_tree: Tree
 var _vars: Array = []
 var _scene_graph_view: Control
 var _setup_view: Control
+var _scenario_view: AdvScenarioEditor
 var _setup_offered: bool = false
 var _file_dialog: EditorFileDialog
 var _new_dialog: ConfirmationDialog
@@ -59,7 +61,7 @@ func _init() -> void:
 
 ## エディタ上でスクリプトがホットリロードされた際にメンバ変数が null になっていたら UI を再構築する。
 func _ensure_ui() -> void:
-	if _form != null and _kind != null and _split != null and _scene_graph_view != null and _setup_view != null:
+	if _form != null and _kind != null and _split != null and _scene_graph_view != null and _setup_view != null and _scenario_view != null:
 		return
 	var prev_sel := 0
 	if get_child_count() > 0 and get_child(0) is HBoxContainer:
@@ -76,7 +78,8 @@ func _ensure_ui() -> void:
 
 
 func _build_editor_ui() -> void:
-	var bar := HBoxContainer.new()
+	# 幅が足りないときは折り返す（ドックで狭くなっても、右のボタンが隠れないように）
+	var bar := HFlowContainer.new()
 	add_child(bar)
 	_kind = OptionButton.new()
 	for n in KIND_NAMES:
@@ -198,6 +201,17 @@ func _build_editor_ui() -> void:
 	)
 	add_child(_setup_view)
 
+	_scenario_view = AdvScenarioEditor.new()
+	_scenario_view.visible = false
+	_scenario_view.status.connect(func(t: String) -> void:
+		if _status != null:
+			_status.text = t)
+	_scenario_view.open_assets_requested.connect(func() -> void:
+		_ensure_ui()
+		_kind.select(KIND_MANIFEST)
+		_refresh_files())
+	add_child(_scenario_view)
+
 	_file_dialog = EditorFileDialog.new()
 	_file_dialog.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILES
 	_file_dialog.access = EditorFileDialog.ACCESS_RESOURCES
@@ -245,7 +259,7 @@ func _offer_setup() -> void:
 ## 画面に切り替えたとき。保存していない変更がなければ、ファイルの一覧と中身を読み直す。
 func on_shown() -> void:
 	_ensure_ui()
-	if not _dirty:
+	if not _dirty and not (_kind.selected == KIND_SCENARIO and _scenario_view.is_dirty()):
 		_refresh_files()
 
 
@@ -271,6 +285,18 @@ func _refresh_files() -> void:
 	var is_setup := _kind.selected == KIND_SETUP
 	if _setup_view != null:
 		_setup_view.visible = is_setup
+	var is_scenario := _kind.selected == KIND_SCENARIO
+	if _scenario_view != null:
+		_scenario_view.visible = is_scenario
+	if is_scenario:
+		_split.visible = false
+		_vars_box.visible = false
+		_file.visible = false
+		for b in _file_buttons:
+			b.visible = false
+		_scenario_view.set_project_path(AdvProject.DEFAULT_PATH)
+		_scenario_view.reload()
+		return
 	if is_setup:
 		_split.visible = false
 		_vars_box.visible = false
@@ -384,6 +410,9 @@ func _reload() -> void:
 		if _setup_view != null:
 			_setup_view.call("reload")
 		return
+	if _kind.selected == KIND_SCENARIO:
+		_scenario_view.reload()
+		return
 	if _kind.selected == KIND_SCENE_GRAPH:
 		if _scene_graph_view != null:
 			_scene_graph_view.call("setup_from_project", AdvProject.DEFAULT_PATH)
@@ -397,6 +426,9 @@ func _reload() -> void:
 
 func save() -> void:
 	_ensure_ui()
+	if _kind.selected == KIND_SCENARIO:
+		_scenario_view.save()
+		return
 	if _kind.selected >= SCHEMAS.size() or _path == "" or _form.read_only:
 		return
 	DirAccess.make_dir_recursive_absolute(_path.get_base_dir())
@@ -621,7 +653,11 @@ func _register_template(id: String) -> void:
 
 func _on_add_files() -> void:
 	_ensure_ui()
-	if _root_of_manifest == "" or _form.read_only:
+	if _root_of_manifest == "":
+		_status.text = "上の一覧から、項目を足すマニフェストを選んでください"
+		return
+	if _form.read_only:
+		_status.text = "アドオンのマニフェストは読むだけです。上の一覧から、プロジェクトの素材フォルダのマニフェストを選んでください"
 		return
 	_file_dialog.current_dir = _root_of_manifest
 	_file_dialog.popup_file_dialog()
@@ -661,7 +697,7 @@ static func entry_for_file(path: String, root: String, folders: Dictionary) -> D
 		id_parts = parts.slice(1)
 	else:
 		match path.get_extension().to_lower():
-			"png", "jpg", "jpeg", "webp", "svg", "gif", "apng", "mng": kind = "image"
+			"png", "jpg", "jpeg", "webp", "svg", "gif", "apng", "mng", "mag": kind = "image"
 			"ogv": kind = "video"
 			"wav", "ogg", "mp3": kind = "se"
 			"ttf", "otf", "woff", "woff2", "fnt": kind = "font"

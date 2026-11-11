@@ -18,6 +18,14 @@ func add_text(body: String, speaker_name: String = "", id: String = "", voice: S
 	_add(e)
 
 
+## 最後の記録が文章なら、その本文に足す（text.append）。そうでなければ新しい記録にする。
+func append_text(body: String) -> void:
+	if not entries.is_empty() and entries.back()["kind"] == "text":
+		entries.back()["body"] = String(entries.back()["body"]) + body
+	else:
+		add_text(body)
+
+
 func add_input(text: String) -> void:
 	_add({"kind": "input", "body": text})
 

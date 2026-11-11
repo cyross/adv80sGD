@@ -10,7 +10,7 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 
 | 分類 | イベント | 既定の wait | 状態 |
 | --- | --- | --- | --- |
-| 文章 | `text.show` | `click` |  |
+| 文章 | `text.show`、`text.append` | `click` |  |
 | 文章 | `text.clear` | `none` |  |
 | 画像 | `image.show`、`image.hide` | 演出あり `end`、なし `none` |  |
 | 画像 | `effect.play` | `end` |  |
@@ -21,7 +21,7 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | スプライト | `sprite.effect` | `end` |  |
 | カーソル | `cursor.set` | `none` |  |
 | 動画 | `video.play` | `end`（`loop` なら `none`） |  |
-| 動画 | `video.stop` | `none` |  |
+| 動画 | `video.stop` | 演出あり `end`、なし `none` |  |
 | 音 | `bgm.play`、`bgm.stop`、`se.play`、`voice.play` | `none` |  |
 | 状態 | `state.set`、`item.add`、`item.remove` | `none` | ○ |
 | 進行 | `scene.goto` | `end` | ○ |
@@ -84,7 +84,7 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | `[se=ID]` | 効果音 | ○ |
 | `[speed=n]…[/speed]` | 文字の速さ | ○ |
 | `[instant]…[/instant]` | 一度に表示 | ○ |
-| `[gaiji=ID]` | 外字 | まだ |
+| `[gaiji=ID]` | 外字（素材の画像を1文字として入れる） | ○ |
 
 **条件式の演算子**：`and`（`&&`）、`or`（`||`）、`not`（`!`）、`==`、`!=`、`<`、`<=`、`>`、`>=`、`( )`。計算式は `+`、`-`、`*`、`/`、`%`。JSON の形は `all`、`any`、`not`、`var` と `eq`、`ne`、`lt`、`le`、`gt`、`ge`、`in`。
 
@@ -183,7 +183,7 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 
 | 種類 | 既定のフォルダ | 使える形式 | マニフェストの属性 |
 | --- | --- | --- | --- |
-| `image` | `bg/`、`chara/`、`cg/`、`ui/`、`sprite/` | PNG、JPG、WebP、BMP、SVG、TGA、GIF、APNG、MNG | `variants`、`by_preset`、`pivot`、`region`、`color_key`、`grid`、`anims`、`hotspot` |
+| `image` | `bg/`、`chara/`、`cg/`、`ui/`、`sprite/` | PNG、JPG、WebP、BMP、SVG、TGA、GIF、APNG、MNG、MAG | `variants`、`by_preset`、`pivot`、`region`、`color_key`、`grid`、`anims`、`hotspot` |
 | `bgm` | `bgm/` | WAV、OGG、MP3 | `loop_start`、`volume` |
 | `se` | `se/` | WAV、OGG、MP3 | `volume` |
 | `voice` | `voice/` | WAV、OGG、MP3 | `volume` |
@@ -266,7 +266,24 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 
 **入力機器（プロジェクト設定 `input_devices`）**：`keyboard`、`mouse`、`gamepad`、`touch`。
 
-**セットアップ画面が作るもの**：`adv80s.project.json`（`game_id`、`title`、`template`、`inputs.enabled`、`input_devices`）、`game/assets/`（`bg`、`chara`、`sprite`、`ui`、`bgm`、`se`、`voice`、`font`、`movie`、`manifest.json`）、`game/scenario/main.scenario.json`、`game/main.tscn`。
+**セットアップ画面が作るもの**：`adv80s.project.json`（`game_id`、`title`、`template`、`inputs.enabled`、`input_devices`）、`game/assets/`（`bg`、`chara`、`sprite`、`ui`、`bgm`、`se`、`voice`、`font`、`movie`、`manifest.json`）、`game/scenario/main/_scenario.scenario.json`（シナリオ共通の設定）と `chapter1.scenario.json`（最初のチャプター）、`game/main.tscn`。プロジェクト設定の `ext.adv80s_editor.scenario_root` にシナリオのフォルダを書く。
+
+**シナリオエディタ**（「adv80s」画面の種類「シナリオエディタ」）：
+
+| 画面 | できること |
+| --- | --- |
+| フォルダ | シナリオのフォルダを決める（セットアップで決めていれば出ない） |
+| ゲーム | ゲーム共通の設定（プロジェクト設定）とシナリオのカード |
+| シナリオ | シナリオ共通の設定（`_scenario.scenario.json`）とチャプターのカード |
+| チャプター | チャプターの設定（`<ID>.scenario.json`）とシーンのカード |
+| シーン | シーンの設定（背景、もの、出口、スプライト）、セリフの一覧（JSON・Ink）、コマンドの一覧 |
+| セリフエディタ | JSON の会話（手順のエディタ）、Ink（`.ink` を書いて inklecate でコンパイル） |
+| コマンドエディタ | 対象（入ったとき、初めて入ったとき、シーン、もの、出口）と動詞、手順 |
+| 式エディタ | 条件式と変数の計算を複数行で書く。名前の候補、その場の確認 |
+
+- 設定のタブ：初期設定・変数・コマンド・セリフ・アセット・その他。「アセットエディタ…」でマニフェストへ。
+- カードの操作：ダブルクリック（Enter）で開く、Ctrl・Shift+クリックで複数選択、右クリックで 開く・名前を変更（F2）・新規作成・複写…（いくつ作るか）・別のシナリオ（チャプター）へ複写…・削除（Delete。ファイルはごみ箱へ）。
+- 手順の種類：地の文、台詞、条件分岐、選択肢、選択肢の項目、変数の計算、移動、会話の呼び出し、Ink のノット、そのほか（JSON）。
 
 **マウスカーソルの種類**：`default`、`look`、`talk`、`take`、`use`、`exit`、`wait`、`next`、`text`（自作の種類も書ける）。OS 標準の形：`arrow`、`pointing_hand`、`cross`、`help`、`move`、`busy`、`ibeam`、`wait`。
 
@@ -287,7 +304,7 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | `DUPLICATE_ID` | 確認 | ID の重複、プロジェクト設定と同じ名前の変数・定数 |
 | `INVALID_ID` | 確認 | ID に `/` を使っている |
 | `ASSET_NOT_FOUND` | 確認（エラー）・実行 | 素材がない（実行中は `missing_asset` に従う） |
-| `ASSET_UNSUPPORTED` | 確認・実行 | 読めない形式（mp4 などの動画、MNG の未対応の命令） |
+| `ASSET_UNSUPPORTED` | 確認・実行 | 読めない形式（mp4 などの動画、MNG の未対応の命令、MAKI02 でない MAG） |
 | `VARIANT_NOT_FOUND` | 実行 | 差分がないので既定のファイルを使う |
 | `NO_DEFAULT_FILE` | 確認 | 機種別の差し替えだけで既定のファイルがない |
 | `NAMING` | 確認 | ファイル名に英小文字・数字・`_`・`-` 以外を使っている |
@@ -317,13 +334,6 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 
 | 対象 | いまの動き |
 | --- | --- |
-| `[gaiji=ID]` | 表示から取り除く |
-| `text.append` | 未実装（`[p]` で代わりになる） |
-| スプライトの出し入れの演出 | どの演出も `fade` として扱う |
-| 動画の `transition` | 未実装（すぐに流れる） |
-| スプライトの動画の音（`mute: false`） | 未実装（いつも音なし） |
-| 背景の重ね合わせのアニメーション画像 | 最初のコマだけ（動かすものはスプライトで） |
 | Ink の `LIST` | 未対応（validate が `INK_LIST`） |
-| Ink の `RANDOM`、シャッフル | 動くが、inkle 社の版と同じ種でも結果が一致しない |
-| 当時の画像形式（MAG など） | 読まない（PNG などに変換して置く） |
+| 当時の画像形式 | MAG は読む、PI など他形式は読まない（PNG などに変換して置く）。200ライン用の MAG も縦に伸ばさない |
 | mp4 などの動画 | 読まない（`.ogv` に変換して置く） |
