@@ -1,0 +1,119 @@
+{
+  "scenario_version": 1,
+  "start": "hall",
+  "aliases": {
+    "hero": "[pal=6]{name}[/pal]",
+    "greet": {"params": ["who", "words"], "text": "[alias=hero]は {arg.who}に「{arg.words}」と いった。"},
+    "mood": "[if=money >= 10]ゆうふく[elif=money > 0]ふつう[else]びんぼう[/if]"
+  },
+  "variables": {
+    "money": {"type": "int", "default": 0},
+    "name": {"type": "string", "default": "たろう"},
+    "result": {"type": "int", "default": 0},
+    "bought": {"type": "string", "default": ""}
+  },
+  "scenes": {
+    "op": {
+      "kind": "opening",
+      "name": "オープニング",
+      "replay": "skippable",
+      "bgm": "theme",
+      "enter": ["オープニング その1", "オープニング その2", "オープニング その3"]
+    },
+    "title": {
+      "kind": "title",
+      "name": "タイトル",
+      "bgm": "theme",
+      "transition": "fade",
+      "image": "hallway",
+      "variants": [
+        {"when": "sys.endings_seen >= 2", "image": "room"},
+        {"when": "sys.all_endings and sys.extras", "menu": [
+          {"label": "はじめから", "do": {"game.new": {}}},
+          {"label": "おまけ", "do": {"extras.open": {}}}
+        ]}
+      ],
+      "enter": "ゲームの タイトル",
+      "menu": [
+        {"label": "はじめから", "do": {"game.new": {}}},
+        {"label": "つづきから", "do": {"game.continue": {}}},
+        {"label": "エンディング", "do": {"endings.open": {}}},
+        {"label": "オープニング", "when": "sys.opening_replay", "do": {"opening.play": {}}},
+        {"label": "ひみつ", "when": "money > 100", "do": "ひみつの へや"}
+      ]
+    },
+    "hall": {
+      "name": "ひろま",
+      "enter": [
+        "[alias=greet あゆみ \"こんにちは です\"]",
+        "いまは [alias=mood]。",
+        {"call_scene": "shop", "args": {"price": "=money + 5"}, "into": "result"},
+        "かいもの おわり {result} {bought}",
+        {"goto": "end_good"}
+      ]
+    },
+    "ink_hall": {
+      "name": "インクの ひろま",
+      "enter": [{"ink": "shop_talk"}, "インクから もどった。"]
+    },
+    "shop": {
+      "kind": "sub",
+      "name": "みせ",
+      "params": {"price": {"default": 3}, "item": {"default": "パン"}},
+      "enter": [
+        "{arg.item}は {arg.price}えん。",
+        {"choice": {"id": "buy", "options": [
+          {"id": "yes", "label": "かう", "do": [{"set": {"bought": "=arg.item"}}, {"call_scene": "deep", "args": {"n": 1}}, {"return": "=arg.price * 2"}]},
+          {"id": "no", "label": "かわない", "do": {"return": 0}}
+        ]}}
+      ]
+    },
+    "deep": {
+      "kind": "sub",
+      "params": {"n": {"default": 0}},
+      "enter": [
+        "ふかさ {arg.n}",
+        {"if": "arg.n < 3", "then": {"call_scene": "deep", "args": {"n": "=arg.n + 1"}}},
+        {"return": null}
+      ]
+    },
+    "end_good": {
+      "kind": "ending",
+      "ending": "good",
+      "enter": [
+        {"credits.roll": {"items": [
+          {"text": "スタッフ", "pal": 6, "size": 24},
+          {"image": "hallway", "scale": 0.25, "gap": 8},
+          {"text": "[alias=hero]", "align": "right"}
+        ], "speed": 400}},
+        "おしまい",
+        {"game.title": {}}
+      ]
+    },
+    "end_bad": {
+      "kind": "ending",
+      "ending": "bad",
+      "bgm": null,
+      "fin": {"text": "おわり", "pal": 2, "advance": ["click", 0.6], "min_time": 0.2, "then": "title", "transition": {"type": "fade", "duration": 0.2}},
+      "enter": "バッドエンド。"
+    },
+    "end_quiet": {
+      "kind": "ending",
+      "ending": "bad",
+      "fin": false,
+      "enter": "しずかな おわり。"
+    },
+    "sys_save": {
+      "kind": "system",
+      "name": "セーブ",
+      "enter": "[if=sys.mode == \"load\"]どこから よみこむ？[else]どこに セーブする？[/if]",
+      "menu": [
+        {"label": "01：[if=sys.slot_01_exists]{sys.slot_01}[else]（からっぽ）[/if]", "do": [
+          {"if": "sys.mode == \"load\"", "then": {"system.load": {"slot": "01"}}, "else": {"system.save": {"slot": "01"}}}
+        ]},
+        {"label": "おとを ちいさく", "do": {"settings.set": {"key": "bgm_volume", "value": 0.25}}},
+        {"label": "もどる", "do": {"system.close": {}}}
+      ]
+    }
+  }
+}

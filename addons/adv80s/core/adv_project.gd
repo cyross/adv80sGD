@@ -70,7 +70,8 @@ func asset_folders() -> Dictionary:
 ## Core の setup に渡す設定。
 func core_config() -> Dictionary:
 	var cfg := {}
-	for key in ["lang", "dictionaries", "slot_mode", "intent_schema", "event_defaults", "missing_asset", "seed", "verbs", "variables", "constants"]:
+	for key in ["lang", "dictionaries", "slot_mode", "intent_schema", "event_defaults", "missing_asset", "seed", "verbs", "variables", "constants",
+			"aliases", "subscene_max_depth", "endings"]:
 		if data.has(key):
 			cfg[key] = data[key]
 	return cfg

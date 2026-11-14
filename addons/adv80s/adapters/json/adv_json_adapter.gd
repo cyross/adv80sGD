@@ -30,6 +30,7 @@ var items: Dictionary = {}
 var topics: Dictionary = {}
 var variables: Dictionary = {}
 var constants: Dictionary = {}       ## 定数（名前 → 値）
+var aliases: Dictionary = {}         ## エイリアス（名前 → 文字列か {params, text}）
 var start_scene: String = ""
 var intent_schema_layer: Variant = null
 var event_defaults: Dictionary = {}
@@ -56,6 +57,10 @@ var _suspended: bool = false  ## ほかのアダプタ（Ink）に処理を渡�
 var _shown_sprites: Dictionary = {}  ## シーンの sprites で出しているもの（スプライトID → シーンID）
 var _shown_image: Variant = null     ## シーンの image を配列で書いたとき、いま出している重ね合わせ
 var _last_trace: Dictionary = {}     ## デバッグコンソール用：直近に実行したブロックとステップ位置
+var _scene_calls: Array = []         ## サブシーンを呼んだときの、呼び出し元の手順の続き [{stack}]（state.frames と同じ数）
+const DEFAULT_SUBSCENE_DEPTH := 10
+## 特殊シーンの種類（6.9）。コマンドの入力を出さない
+const SPECIAL_KINDS := ["title", "opening", "ending"]
 
 
 # ---------------------------------------------------------------- 読み込み
@@ -81,7 +86,7 @@ func _merge_source(d: Dictionary, path: String) -> void:
 		_origin["scenes/%s" % id] = path
 		if start_scene == "":
 			start_scene = id
-	for key in ["scenes", "dialogues", "characters", "items", "topics", "variables", "constants"]:
+	for key in ["scenes", "dialogues", "characters", "items", "topics", "variables", "constants", "aliases"]:
 		var table: Dictionary = get(key)
 		var src: Dictionary = d.get(key, {})
 		for id in src:
@@ -131,11 +136,114 @@ func start(entry: String) -> Array[Dictionary]:
 func _start_inner(entry: String) -> void:
 	_begin()
 	_stack.clear()
+	_scene_calls.clear()
 	_choice = {}
 	_suspended = false
 	var id := entry if entry != "" else start_scene
 	_goto_scene(id)
 	_resume()
+
+
+## シーンに入ってから、入ったときの手順の代わりに、会話（dialogue、line は何番目の手順から）か Ink のノット（knot）から始める。
+## 背景・スプライト・曲はふつうに入ったときと同じ。会話・ノットが終わればそのシーンで入力を待つ。
+## 会話が見つからなければ、知らせてふつうに入る。
+func start_at(entry: String, at: Dictionary) -> Array[Dictionary]:
+	pre_set_log = {}
+	_pre_logging = false
+	_shown_sprites = {}
+	_begin()
+	_stack.clear()
+	_scene_calls.clear()
+	_choice = {}
+	_suspended = false
+	_goto_scene(entry if entry != "" else start_scene)
+	var dl := String(at.get("dialogue", ""))
+	var knot := String(at.get("knot", ""))
+	if dl != "" and dialogues.has(dl):
+		_stack.clear()
+		_call_dialogue(dl)
+		var path: Array = at["path"] if at.get("path") is Array and not at["path"].is_empty() else [int(at.get("line", 0))]
+		if not _stack.is_empty():
+			var ps = at.get("pre_sets", false)
+			_enter_path(path, (ps is bool and ps) or str(ps) == "cond", str(ps) == "cond")
+	elif dl != "":
+		ctx.warn("MISSING_TARGET", "会話が見つかりません: %s" % dl)
+	elif knot != "":
+		_stack.clear()
+		_emit(AdvEvents.make("adapter.enter", {"adapter": "ink", "entry": knot}))
+		_suspended = true
+	_resume()
+	_sync_sprites()
+	return _out
+
+
+## 積んだ会話の中の道筋（[2, "then", 0] など。数は手順の番目、文字はキー。選択肢の項目の番目は "0" のように文字）まで入る。
+## 通った「もし」や選択肢はその中から始め、終われば外の続きへ（条件は見ない）。いちばん上の段だけの番目は最後の手順までにそろえる。
+## pre_sets なら、通り道のそれぞれの段で始める場所より前にある「設定する」（set・let）を、始める前に順に動かす（「もし」の中までは見ない）。
+## pre_cond なら、その前にある「もし」も、中を「設定する」と「もし」だけにして動かす（条件は動かすときの値で見る）。
+func _enter_path(path: Array, pre_sets: bool = false, pre_cond: bool = false) -> void:
+	var f: Dictionary = _stack.back()
+	var fpath := String(f["path"])
+	var arr: Array = f["steps"]
+	var pre: Array = []
+	var k := 0
+	while k < path.size():
+		var last := k == path.size() - 1
+		var idx := int(path[k])
+		idx = clampi(idx, 0, maxi(arr.size() - 1, 0)) if last and k == 0 else clampi(idx, 0, arr.size())
+		k += 1
+		if pre_sets:
+			pre.append_array(sets_before(arr, idx, pre_cond))
+		if last or idx >= arr.size():
+			f["i"] = idx
+			break
+		f["i"] = idx + 1
+		var node: Variant = arr[idx]
+		while k < path.size() and not (path[k] is int or path[k] is float):
+			if node is Dictionary:
+				node = node.get(String(path[k]))
+			elif node is Array and String(path[k]).is_valid_int():
+				node = node[int(path[k])] if int(path[k]) < node.size() else null
+			else:
+				node = null
+			k += 1
+		if node == null:
+			break   # その枝がない：外の続きから
+		arr = node if node is Array else [node]
+		_push(arr, fpath)
+		f = _stack.back()
+		if k >= path.size():
+			break
+	if not pre.is_empty():
+		# 前後に印を付け、その間の「設定する」で入った値を pre_set_log に残す（実行のお知らせ・ログ用）
+		_push([{"_pre_sets": "begin"}] + pre + [{"_pre_sets": "end"}], fpath)
+
+
+## 手順の並びの idx 番目より前にある「設定する」（set・let の手順）。
+## with_ifs なら「もし」も、そうなら・そうでないならの中を「設定する」と「もし」だけにして入れる（中が空になる「もし」は入れない）。
+static func sets_before(arr: Array, idx: int, with_ifs: bool = false) -> Array:
+	return sets_only(arr.slice(0, mini(idx, arr.size())), with_ifs)
+
+
+## 手順から「設定する」（と with_ifs なら中を絞った「もし」）だけを残す。手順は配列・ひとつの手順のどちらでも。
+static func sets_only(steps: Variant, with_ifs: bool = false) -> Array:
+	var arr: Array = steps if steps is Array else ([] if steps == null else [steps])
+	var out: Array = []
+	for st in arr:
+		if st is Array:
+			out.append_array(sets_only(st, with_ifs))
+		elif st is Dictionary and (st.has("set") or st.has("let")):
+			out.append(st)
+		elif with_ifs and st is Dictionary and st.has("if"):
+			var th := sets_only(st.get("then"), true)
+			var el := sets_only(st.get("else"), true)
+			if th.is_empty() and el.is_empty():
+				continue
+			var d := {"if": st["if"], "then": th}
+			if not el.is_empty():
+				d["else"] = el
+			out.append(d)
+	return out
 
 
 func handle_intent(intent: Dictionary) -> Array[Dictionary]:
@@ -198,6 +306,31 @@ func _handle_intent_inner(intent: Dictionary) -> Array[Dictionary]:
 	_stack.clear()
 	_push(reaction, path, "reaction")
 	_resume()
+	return _out
+
+
+## ほかのアダプタ（Ink）から頼まれた手順を1つ実行する。いまはサブシーンの呼び出し（call_scene）だけ。
+## サブシーンから戻ると adapter.exit を出し、頼んだアダプタの続きに戻る。
+func call_step(step: Dictionary) -> Array[Dictionary]:
+	_begin()
+	if not step.has("call_scene"):
+		ctx.warn("UNSUPPORTED", "ほかのアダプタからは呼べない手順です: %s" % JSON.stringify(step))
+		_emit(AdvEvents.make("adapter.exit", {"error": "unsupported"}))
+		return _out
+	var was := _suspended
+	_suspended = false
+	var depth := _scene_calls.size()
+	_call_scene(String(step["call_scene"]), step.get("args", {}) if step.get("args") is Dictionary else {},
+		String(step.get("into", "")), "ink")
+	if _scene_calls.size() == depth:
+		# 呼べなかった（シーンがない、深すぎる）：すぐ戻る
+		_suspended = was
+		_emit(AdvEvents.make("adapter.exit", {"error": "call_failed"}))
+		return _out
+	_scene_calls.back()["from_adapter"] = true
+	_scene_calls.back()["suspended"] = was
+	_resume()
+	_sync_sprites()
 	return _out
 
 
@@ -392,7 +525,16 @@ func _exec(step: Variant, path: String) -> void:
 		_exec_dict(step, path)
 
 
+var pre_set_log: Dictionary = {}   ## 「設定を先に」で入った値（名前 → 値。入った順）
+var _pre_logging := false
+
+
 func _exec_dict(d: Dictionary, path: String) -> void:
+	if d.has("_pre_sets"):
+		_pre_logging = String(d["_pre_sets"]) == "begin"
+		if _pre_logging:
+			pre_set_log = {}
+		return
 	if d.has("if"):
 		var branch = d.get("then") if ctx.eval(d["if"], _scratch) else d.get("else")
 		if branch != null:
@@ -405,6 +547,8 @@ func _exec_dict(d: Dictionary, path: String) -> void:
 			if v is String and String(v).begins_with("="):
 				v = ctx.eval_expr(String(v).substr(1), _scratch)
 			_emit(AdvEvents.make("state.set", {"name": name, "value": v}))
+			if _pre_logging:
+				pre_set_log[name] = v
 		return
 	if d.has("let"):
 		var stmts = AdvExpr.parse_let(String(d["let"]))
@@ -414,6 +558,8 @@ func _exec_dict(d: Dictionary, path: String) -> void:
 		for st in stmts:
 			var v = AdvCondition.eval_ast(st[1], _scratch, ctx.extra())
 			_emit(AdvEvents.make("state.set", {"name": st[0], "value": v}))
+			if _pre_logging:
+				pre_set_log[st[0]] = v
 		return
 	if d.has("say"):
 		_say(String(d["say"]), String(d.get("text", "")), path, String(d.get("id", "")), d.get("voice"))
@@ -431,6 +577,15 @@ func _exec_dict(d: Dictionary, path: String) -> void:
 	if d.has("choice"):
 		if d["choice"] is Dictionary:
 			_show_choice(d["choice"], path)
+		return
+	if d.has("call_scene"):
+		_call_scene(String(d["call_scene"]), d.get("args", {}) if d.get("args") is Dictionary else {}, String(d.get("into", "")), path)
+		return
+	if d.has("return"):
+		_return_scene(d["return"], path)
+		return
+	if d.has("_menu"):
+		_push_menu(String(d["_menu"]))
 		return
 	if d.has("ink"):
 		# Ink に処理を渡す。Core が Ink のアダプタを積み、終わったら resume で続きに戻る
@@ -466,24 +621,142 @@ func _jump_dialogue(id: String) -> void:
 	_call_dialogue(id)
 
 
-## シーンへ移る。いま実行中の手順は打ち切る。
+## シーンへ移る。いま実行中の手順は打ち切る（サブシーンの中なら、呼び出しもすべて終わる）。
 func _goto_scene(id: String) -> void:
 	if not scenes.has(id):
 		ctx.warn("MISSING_TARGET", "シーンが見つかりません: %s" % id)
 		return
 	_stack.clear()
+	_scene_calls.clear()
 	var first := not _scratch.visited.has(id)
-	_emit(AdvEvents.make("scene.goto", {"scene": id}))
-	var sc: Dictionary = scenes[id]
+	var ga := {"scene": id}
+	if scenes[id].has("transition"):
+		ga["transition"] = scenes[id]["transition"]
+	_emit(AdvEvents.make("scene.goto", ga))
+	_enter_scene(id, first)
+
+
+## シーンに入ったときの共通の処理：背景、スプライト、エンディングの記録、タイトルのメニュー、手順。
+func _enter_scene(id: String, first: bool) -> void:
+	var sc: Dictionary = _with_variants(scenes[id])
 	_shown_image = null
 	if sc.has("image"):
 		_shown_image = _scene_image(sc)
 		_emit(AdvEvents.make("image.show", {"layer": "bg", "id": _shown_image}))
 	_sync_sprites()
+	_scene_bgm(sc)
+	if String(sc.get("kind", "")) == "ending" and String(sc.get("ending", "")) != "":
+		_emit(AdvEvents.make("ending.reach", {"id": String(sc["ending"])}))
+	if sc.get("menu") is Array:
+		_push_menu(id)
 	if first and sc.has("first"):
 		_push(sc["first"], "%s/first" % id, "scene")
 	elif sc.has("enter"):
 		_push(sc["enter"], "%s/enter" % id, "scene")
+
+
+## シーンの variants：[{when, image, bgm, bgm_fade}] の when に合うものを順に重ねる（後ろほど優先）。
+## タイトルの背景や BGM を、見たエンディングの数（sys.endings_seen など）で変えるのに使う。
+func _with_variants(sc: Dictionary) -> Dictionary:
+	if not sc.get("variants") is Array:
+		return sc
+	var out := sc.duplicate()
+	for v in sc["variants"]:
+		if v is Dictionary and ctx.eval(v.get("when", true), _scratch):
+			for k in ["image", "bgm", "bgm_fade", "menu"]:
+				if v.has(k):
+					out[k] = v[k]
+	return out
+
+
+## シーンの bgm：ID か {id, fade, loop, volume} なら鳴らす（同じ曲が鳴っていればそのまま）、null なら止める。
+func _scene_bgm(sc: Dictionary) -> void:
+	if not sc.has("bgm"):
+		return
+	var b = sc["bgm"]
+	if b == null or (b is String and b == ""):
+		_emit(AdvEvents.make("bgm.stop", {"fade": float(sc.get("bgm_fade", 0.0))}))
+	elif b is Dictionary:
+		_emit(AdvEvents.make("bgm.play", b.duplicate(true)))
+	else:
+		_emit(AdvEvents.make("bgm.play", {"id": str(b)}))
+
+
+## タイトルのメニュー（シーンの menu）を選択肢として出す。選んだ項目の手順が終わったら、また出す。
+func _push_menu(id: String) -> void:
+	var sc: Dictionary = _with_variants(scenes.get(id, {}))
+	var opts := []
+	for o in sc.get("menu", []):
+		if not o is Dictionary:
+			continue
+		var c: Dictionary = o.duplicate(true)
+		var steps = c.get("do", [])
+		c["do"] = (steps if steps is Array else [steps]) + [{"_menu": id}]
+		opts.append(c)
+	_push({"choice": {"id": "%s#menu" % id, "options": opts, "style": "menu"}}, "%s/menu" % id, "scene")
+
+
+## サブシーンを呼ぶ（6.9）。呼び出し元の手順の続きを残して、サブシーンに入る（絵は置き換える）。
+func _call_scene(id: String, raw_args: Dictionary, into: String, path: String) -> void:
+	if not scenes.has(id):
+		ctx.warn("MISSING_TARGET", "サブシーンが見つかりません: %s" % id)
+		return
+	var limit := int(ctx._core.config.get("subscene_max_depth", DEFAULT_SUBSCENE_DEPTH))
+	if limit > 0 and _scratch.frames.size() >= limit:
+		ctx.warn("SUBSCENE_DEPTH", "サブシーンの呼び出しが深すぎます（%d）: %s" % [limit, id])
+		return
+	# 引数：宣言の既定値に、渡した値を重ねる（"=式" は呼び出し元で計算する）
+	var sc: Dictionary = scenes[id]
+	var args := {}
+	var params = sc.get("params", {})
+	if params is Dictionary:
+		for k in params:
+			var pd = params[k]
+			args[String(k)] = pd.get("default") if pd is Dictionary else pd
+	for k in raw_args:
+		var v = raw_args[k]
+		if v is String and String(v).begins_with("="):
+			v = ctx.eval_expr(String(v).substr(1), _scratch)
+		args[String(k)] = v
+	for k in args:
+		# JSON の数は小数になるので、整数の値は整数にそろえる（文中の {arg.x} が "5.0" にならないように）
+		if args[k] is float and is_finite(args[k]) and args[k] == floorf(args[k]) and absf(args[k]) < 1e15:
+			args[k] = int(args[k])
+	_scene_calls.append({"stack": _stack.duplicate(true), "image": _shown_image})
+	_stack.clear()
+	var first := not _scratch.visited.has(id)
+	var ca := {"scene": id, "args": args, "into": into}
+	if sc.has("transition"):
+		ca["transition"] = sc["transition"]
+	_emit(AdvEvents.make("scene.call", ca))
+	_enter_scene(id, first)
+
+
+## サブシーンから戻る。value は戻り値（"=式" なら計算する）。
+func _return_scene(value: Variant, path: String) -> void:
+	if _scratch.frames.is_empty() or _scene_calls.is_empty():
+		ctx.warn("SUBSCENE_RETURN", "サブシーンの外で return を使っています（%s）" % path)
+		return
+	if value is String and String(value).begins_with("="):
+		value = ctx.eval_expr(String(value).substr(1), _scratch)
+	var caller := String(_scratch.frames.back().get("from", ""))
+	var saved: Dictionary = _scene_calls.pop_back()
+	_emit(AdvEvents.make("scene.return", {"scene": caller, "value": value}))
+	# 呼び出し元の絵とスプライトに戻し、手順の続きから
+	_shown_image = saved.get("image")
+	var sc: Dictionary = scenes.get(caller, {})
+	if sc.has("image"):
+		_shown_image = _scene_image(sc)
+		_emit(AdvEvents.make("image.show", {"layer": "bg", "id": _shown_image}))
+	_sync_sprites()
+	_scene_bgm(sc)
+	_stack = saved.get("stack", []).duplicate(true)
+	for f in _stack:
+		f["i"] = int(f.get("i", 0))
+	if bool(saved.get("from_adapter", false)):
+		# Ink から呼ばれたサブシーン：Ink の続きに戻る
+		_suspended = bool(saved.get("suspended", true))
+		_emit(AdvEvents.make("adapter.exit", {"from": "subscene"}))
 
 
 ## 選択肢を出して、選ばれるまで止まる。
@@ -515,6 +788,8 @@ func _show_choice(c: Dictionary, path: String) -> void:
 	var args := {"id": cid, "choices": shown}
 	if prompt != "":
 		args["prompt"] = prompt
+	if c.has("style"):
+		args["style"] = String(c["style"])
 	_emit(AdvEvents.make("choice.show", args))
 	_choice = {"id": cid, "path": path, "options": map, "args": args}
 
@@ -604,10 +879,25 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 			return {"id": ctx.state.scene, "name": String(sc.get("name", ctx.state.scene))}
 		"targets":
 			return _targets()
+		"pre_set_log":
+			return pre_set_log.duplicate() if not pre_set_log.is_empty() else null
+		"location":
+			# いま動いている会話（いちばん内側の dialogue の手順）
+			var dl := ""
+			for f in _stack:
+				if String(f.get("kind", "")) == "dialogue":
+					dl = String(f.get("path", "")).trim_prefix("dlg:")
+			return {"scene": ctx.state.scene, "dialogue": dl}
+		"item_info":
+			var iid := String(args.get("id", ""))
+			var idf = items.get(iid, {})
+			return {"label": item_label(iid), "icon": String(idf.get("icon", "")) if idf is Dictionary else ""}
 		"items":
 			var list := []
 			for id in ctx.state.item_ids():
-				list.append({"type": "item", "id": id, "label": item_label(id), "count": ctx.state.item_count(id)})
+				var idef = items.get(id, {})
+				list.append({"type": "item", "id": id, "label": item_label(id), "count": ctx.state.item_count(id),
+					"icon": String(idef.get("icon", "")) if idef is Dictionary else ""})
 			return list
 		"hotspots":
 			var list := []
@@ -666,6 +956,25 @@ func query(what: String, args: Dictionary = {}) -> Variant:
 			return intent_schema_layer
 		"start":
 			return start_scene
+		"scene_info":
+			# シーンの設定（kind、replay、next、bgm など。手順は含めない）
+			var si = scenes.get(String(args.get("id", ctx.state.scene)))
+			if not si is Dictionary:
+				return null
+			var info := {}
+			for k in ["kind", "name", "replay", "next", "ending", "bgm", "transition", "params", "fin"]:
+				if si.has(k):
+					info[k] = si[k]
+			return info
+		"scene_kind":
+			var sid := String(args.get("id", ctx.state.scene))
+			var sk = scenes.get(sid, {})
+			return String(sk.get("kind", "normal")) if sk is Dictionary else "normal"
+		"aliases":
+			return aliases if not aliases.is_empty() else null
+		"alias_refs":
+			validate()
+			return _v_alias_refs.duplicate(true)
 		"character":
 			var c = characters.get(String(args.get("id", "")))
 			return c.duplicate() if c is Dictionary else null
@@ -778,7 +1087,7 @@ func _all_names() -> Array:
 
 func save_state() -> Dictionary:
 	return {"stack": _stack.duplicate(true), "choice": _choice.duplicate(true), "suspended": _suspended,
-		"sprites": _shown_sprites.duplicate(), "image": _shown_image}
+		"sprites": _shown_sprites.duplicate(), "image": _shown_image, "scene_calls": _scene_calls.duplicate(true)}
 
 
 func load_state(data: Dictionary) -> Error:
@@ -787,8 +1096,12 @@ func load_state(data: Dictionary) -> Error:
 	_suspended = bool(data.get("suspended", false))
 	_shown_sprites = data.get("sprites", {}).duplicate()
 	_shown_image = data.get("image")
+	_scene_calls = data.get("scene_calls", []).duplicate(true)
 	for f in _stack:
 		f["i"] = int(f.get("i", 0))
+	for c in _scene_calls:
+		for f in c.get("stack", []):
+			f["i"] = int(f.get("i", 0))
 	return OK
 
 
@@ -805,6 +1118,8 @@ var _v_write_locs: Dictionary = {} ## 変数 → 書いている場所の配列
 var _v_targets: Dictionary = {}   ## goto・出口の行き先
 var _v_refs: Array = []           ## 素材の参照 [{kind, id, file, path}]
 var _v_ink_refs: Array = []       ## Ink への受け渡し [{entry, file, path}]
+var _v_alias_refs: Array = []     ## エイリアスの参照 [{name, file, path}]
+var _v_kind: String = ""          ## いまたどっているシーンの kind（会話では ""）
 var _v_out: Array[Dictionary] = []
 
 
@@ -816,6 +1131,7 @@ func validate() -> Array[Dictionary]:
 	_v_targets = {}
 	_v_refs = []
 	_v_ink_refs = []
+	_v_alias_refs = []
 	_v_out = diags.duplicate()
 	for f in sources:
 		for d in AdvSchemaValidator.check(sources[f], "scenario", f):
@@ -852,7 +1168,8 @@ func validate() -> Array[Dictionary]:
 			_v_out.append(AdvDiag.make("warning", "DUPLICATE_ID", "プロジェクト設定と同じ名前の変数・定数を宣言しています（シナリオの宣言を使います）: %s" % name,
 				"Same name as a project-wide variable or constant (the scenario's declaration wins): %s" % name, _file_of("variables", name), "/variables/" + _ptr(name)))
 	for sid in scenes:
-		if sid != start_scene and not _v_targets.has(sid):
+		var sk = scenes[sid].get("kind", "normal") if scenes[sid] is Dictionary else "normal"
+		if sid != start_scene and not _v_targets.has(sid) and not sk in ["title", "system", "opening"]:
 			_v_out.append(AdvDiag.make("info", "UNREACHABLE", "どこからも移動してこないシーンです: %s" % sid,
 				"No goto or exit leads to this scene: %s" % sid, _file_of("scenes", sid), "/scenes/%s" % sid))
 	return _v_out
@@ -878,6 +1195,7 @@ func _walk_all() -> void:
 			continue
 		var f := _file_of("scenes", sid)
 		var jp := _scene_pointer(sid, f)
+		_v_kind = String(sc.get("kind", "normal"))
 		if sc.get("image") is Array:
 			for i in sc["image"].size():
 				var e = sc["image"][i]
@@ -887,6 +1205,27 @@ func _walk_all() -> void:
 					_walk_cond(e["when"], "%s/image/%d/when" % [jp, i], f)
 		elif sc.has("image"):
 			_v_refs.append({"kind": "image", "id": String(sc["image"]), "file": f, "path": jp + "/image"})
+		if sc.get("variants") is Array:
+			for vi in sc["variants"].size():
+				var v = sc["variants"][vi]
+				if not v is Dictionary:
+					continue
+				var vp := "%s/variants/%d" % [jp, vi]
+				if v.has("when"):
+					_walk_cond(v["when"], vp + "/when", f)
+				if v.get("image") is String and v["image"] != "":
+					_v_refs.append({"kind": "image", "id": String(v["image"]), "file": f, "path": vp + "/image"})
+				var vb = v.get("bgm")
+				if vb is String and vb != "" or vb is Dictionary:
+					_v_refs.append({"kind": "bgm", "id": String(vb.get("id", "")) if vb is Dictionary else String(vb), "file": f, "path": vp + "/bgm"})
+		var sbgm = sc.get("bgm")
+		if sbgm is String and sbgm != "" or sbgm is Dictionary:
+			_v_refs.append({"kind": "bgm", "id": String(sbgm.get("id", "")) if sbgm is Dictionary else String(sbgm), "file": f, "path": jp + "/bgm"})
+		if sc.has("next"):
+			_v_targets[String(sc["next"])] = true
+			if not scenes.has(String(sc["next"])):
+				_v_out.append(AdvDiag.make("error", "MISSING_TARGET", "next のシーンが見つかりません: %s" % sc["next"],
+					"next scene not found: %s" % sc["next"], f, jp + "/next"))
 		for key in ["first", "enter"]:
 			if sc.has(key):
 				_walk_step(sc[key], "%s/%s" % [jp, key], f, false)
@@ -907,6 +1246,23 @@ func _walk_all() -> void:
 					_v_out.append(AdvDiag.make("info", "MISSING_TARGET", "シーンの sprites にないスプライトに結び付けています（イベントで出すなら問題ありません）: %s" % o["sprite"],
 						"Linked sprite is not in the scene's sprites (fine if shown by an event): %s" % o["sprite"], f, "%s/%s/%s/sprite" % [jp, table, oid]))
 		_walk_on(sc.get("on", {}), jp + "/on", f)
+		var menu = sc.get("menu")
+		if menu is Array:
+			for i in menu.size():
+				if menu[i] is Dictionary:
+					_walk_cond(menu[i].get("when"), "%s/menu/%d/when" % [jp, i], f)
+					if menu[i].has("do"):
+						_walk_step(menu[i]["do"], "%s/menu/%d/do" % [jp, i], f, false)
+		var kind := String(sc.get("kind", "normal"))
+		if kind == "ending":
+			var eid := String(sc.get("ending", ""))
+			var known = ctx._core.config.get("endings", [])
+			if eid == "":
+				_v_out.append(AdvDiag.make("warning", "ENDING_UNKNOWN", "エンディングのシーンに ending（エンディングID）がありません: %s" % sid,
+					"Ending scene has no ending id: %s" % sid, f, jp))
+			elif known is Array and not known.is_empty() and not known.any(func(e): return e is Dictionary and String(e.get("id", "")) == eid):
+				_v_out.append(AdvDiag.make("warning", "ENDING_UNKNOWN", "プロジェクト設定の endings にないエンディングです: %s" % eid,
+					"Ending is not listed in the project endings: %s" % eid, f, jp + "/ending"))
 		for oid in sc.get("objects", {}):
 			var obj = sc["objects"][oid]
 			if obj is Dictionary:
@@ -927,6 +1283,7 @@ func _walk_all() -> void:
 	for iid in items:
 		if items[iid] is Dictionary:
 			_walk_on(items[iid].get("on", {}), "/items/%s/on" % iid, _file_of("items", iid))
+	_v_kind = ""
 	for did in dialogues:
 		_walk_step(dialogues[did], "/dialogues/%s" % did, _file_of("dialogues", did), true)
 	for cid in topics:
@@ -1016,6 +1373,40 @@ func _walk_step(step: Variant, jp: String, f: String, in_dialogue: bool) -> void
 					"Dialogue not found: %s" % d[k], f, "%s/%s" % [jp, k]))
 		if d.has("ink"):
 			_v_ink_refs.append({"entry": String(d["ink"]), "file": f, "path": jp + "/ink"})
+		if d.has("call_scene"):
+			var sid := String(d["call_scene"])
+			_v_targets[sid] = true
+			if not scenes.has(sid):
+				_v_out.append(AdvDiag.make("error", "MISSING_TARGET", "サブシーンが見つかりません: %s" % sid,
+					"Subscene not found: %s" % sid, f, jp + "/call_scene"))
+			else:
+				var ssc = scenes[sid]
+				if ssc is Dictionary and String(ssc.get("kind", "")) != "sub":
+					_v_out.append(AdvDiag.make("warning", "SUBSCENE_KIND", "kind が sub でないシーンをサブシーンとして呼んでいます: %s" % sid,
+						"Calling a scene whose kind is not sub: %s" % sid, f, jp + "/call_scene"))
+				var params = ssc.get("params", {}) if ssc is Dictionary else {}
+				var given: Dictionary = d.get("args", {}) if d.get("args") is Dictionary else {}
+				for k in given:
+					if params is Dictionary and not params.has(k):
+						_v_out.append(AdvDiag.make("warning", "SUBSCENE_ARG", "サブシーンにない引数です: %s（%s）" % [k, sid],
+							"Unknown subscene argument: %s (%s)" % [k, sid], f, "%s/args/%s" % [jp, _ptr(String(k))]))
+					var gv = given[k]
+					if gv is String and String(gv).begins_with("="):
+						_collect_expr(String(gv).substr(1), "%s/args/%s" % [jp, k], f)
+				if params is Dictionary:
+					for k in params:
+						var pd = params[k]
+						if pd is Dictionary and bool(pd.get("required", false)) and not given.has(k):
+							_v_out.append(AdvDiag.make("warning", "SUBSCENE_ARG", "サブシーンの引数が足りません: %s（%s）" % [k, sid],
+								"Missing subscene argument: %s (%s)" % [k, sid], f, jp + "/args"))
+			if d.has("into"):
+				_mark_write(String(d["into"]), f, jp + "/into")
+		if d.has("return"):
+			if d["return"] is String and String(d["return"]).begins_with("="):
+				_collect_expr(String(d["return"]).substr(1), jp + "/return", f)
+			if _v_kind != "sub" and _v_kind != "":
+				_v_out.append(AdvDiag.make("warning", "SUBSCENE_RETURN", "kind が sub でないシーンで return を使っています",
+					"return is used in a scene whose kind is not sub", f, jp + "/return"))
 		if d.has("choice") and d["choice"] is Dictionary:
 			var opts = d["choice"].get("options", [])
 			if opts is Array:
@@ -1121,6 +1512,25 @@ func _collect_text_vars(s: String, jp: String, f: String) -> void:
 	for m in _re_text_var.search_all(s):
 		var name := m.get_string(1) if m.get_string(1) != "" else m.get_string(2)
 		_read(name, jp, f)
+	# エイリアスと、文中の条件
+	var ap := s.find("[alias=")
+	while ap >= 0:
+		var close := s.find("]", ap)
+		if close < 0:
+			break
+		_v_alias_refs.append({"name": String(AdvTextMarkup.parse_alias_tag(s.substr(ap + 7, close - ap - 7))[0]), "file": f, "path": jp})
+		ap = s.find("[alias=", close)
+	for tag in ["[if=", "[elif="]:
+		var ip := s.find(tag)
+		while ip >= 0:
+			var close := s.find("]", ip)
+			if close < 0:
+				break
+			_walk_cond(s.substr(ip + tag.length(), close - ip - tag.length()), jp, f)
+			ip = s.find(tag, close)
+	if s.count("[if=") != s.count("[/if]"):
+		_v_out.append(AdvDiag.make("warning", "IF_UNCLOSED", "[if] と [/if] の数が合いません: %s" % s,
+			"[if] and [/if] do not match: %s" % s, f, jp))
 	# 外字の素材
 	var at := s.find("[gaiji=")
 	while at >= 0:
@@ -1132,6 +1542,8 @@ func _collect_text_vars(s: String, jp: String, f: String) -> void:
 
 
 func _read(name: String, jp: String, f: String) -> void:
+	if name.begins_with("arg.") or name.begins_with("sys."):
+		return   # サブシーンの引数とシステムの値は、宣言しなくてよい
 	if not _v_reads.has(name):
 		_v_reads[name] = [f, jp]
 	if not _v_read_locs.has(name):

@@ -1,0 +1,19 @@
+A: green / small / [] / 1
+B: blue 5 red []
+C: red, blue, yellow 3 red yellow
+D: red, yellow true false true true true
+E: red, green, yellow red, green, blue, yellow blue red, blue, yellow
+F: green, blue green, blue, yellow []
+G: small, green, large 3 small large 4
+H: small, green true true true false true true
+I: green green [] green 6
+J: 0 1 true empty_colors false
+K: [] red, green, blue, yellow red, green, blue, yellow
+L: front, back, cellar front back small cellar
+M: has red
+N: empty
+R1: yellow front R2: red front R3: blue large R4: blue medium R5: green medium R6: blue small
+O: green red, yellow all doors
+P: red, green, yellow! true front
+Q: []
+Q2: back cellar front, cellar

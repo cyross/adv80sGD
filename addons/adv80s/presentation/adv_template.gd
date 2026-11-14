@@ -78,6 +78,34 @@ func color(index: int) -> Color:
 	return Color.WHITE
 
 
+## 窓の地の色（段階63）：ui.window_skin の fill（書いていなければ 0）。ただし文字の色（text.color）と
+## 明るさが近すぎて読めないとき（受け継いだテンプレートの fill が合わないときなど。GB は 98 の fill 0 を受け継いで文字と同じ色になっていた）は、
+## 文字の色といちばん見分けやすい（明るさのいちばん違う）パレットの色。パレットがなければ、文字が明るければ黒、暗ければ白。
+## 見える範囲（段階63）：プリセットの visible（FC などは上下を隠す）。なければ画面全体。
+func visible_rect() -> Rect2:
+	var v = preset.get("visible", Rect2i(Vector2i.ZERO, screen_size))
+	return Rect2(v) if v is Rect2i else Rect2(Vector2.ZERO, Vector2(screen_size))
+
+
+const WINDOW_FILL_MIN_CONTRAST := 0.3
+
+func window_fill_color() -> Color:
+	var skin = get_section("ui").get("window_skin", {})
+	var fill := color(int(skin.get("fill", 0)) if skin is Dictionary else 0)
+	var tc := color(int(get_section("text").get("color", 7)))
+	var tl := tc.get_luminance()
+	if absf(fill.get_luminance() - tl) >= WINDOW_FILL_MIN_CONTRAST:
+		return fill
+	var pal: PackedColorArray = preset.get("palette", PackedColorArray())
+	if pal.is_empty():
+		return Color.BLACK if tl > 0.5 else Color.WHITE
+	var best := pal[0]
+	for c in pal:
+		if absf(c.get_luminance() - tl) > absf(best.get_luminance() - tl):
+			best = c
+	return best
+
+
 ## 名前付きのレイアウトに切り替える（空文字で元に戻す）。
 func set_layout(name: String) -> void:
 	_layout_name = name

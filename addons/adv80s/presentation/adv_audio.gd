@@ -5,6 +5,8 @@ extends Node
 ## - 効果音は同時に4つまで鳴らせる
 ## - 音量はプレイヤー設定（bgm_volume、se_volume、voice_volume。0〜1）をかける
 
+signal bgm_finished   ## ループしない BGM が最後まで鳴った（おまけの音楽の「つづけて」で使う）
+
 const SE_CHANNELS := 4
 
 var bgm_volume: float = 1.0
@@ -19,12 +21,14 @@ var _se: Array[AudioStreamPlayer] = []
 var _se_next := 0
 var _voice: AudioStreamPlayer
 var _tweens: Array = [null, null]
+var _loop_start := 0.0
 
 
 func _ready() -> void:
 	for i in 2:
 		var p := AudioStreamPlayer.new()
 		p.name = "BGM%d" % i
+		p.finished.connect(_on_bgm_finished.bind(i))
 		add_child(p)
 		_bgm.append(p)
 	for i in SE_CHANNELS:
@@ -66,6 +70,7 @@ func play_bgm(id: String, path: String, loop: bool = true, fade: float = 0.0, vo
 	var stream := load_stream(path, loop, loop_start) if path != "" else null
 	stop_bgm(fade)
 	current_bgm = {"id": id, "loop": loop, "volume": volume}
+	_loop_start = loop_start
 	if stream == null:
 		return
 	_bgm_index = 1 - _bgm_index
@@ -90,6 +95,31 @@ func stop_bgm(fade: float = 0.0) -> void:
 		_fade(_bgm_index, -60.0, fade, true)
 	else:
 		p.stop()
+
+
+## 鳴らしている BGM をくりかえすかを変える（おまけの音楽で鳴らし方を変えたとき）。
+func set_bgm_loop(loop: bool) -> void:
+	if current_bgm.is_empty():
+		return
+	current_bgm["loop"] = loop
+	var s := _bgm[_bgm_index].stream
+	if s is AudioStreamWAV:
+		var w := s as AudioStreamWAV
+		if loop:
+			w.loop_begin = int(_loop_start * w.mix_rate)
+			w.loop_end = int(round(w.get_length() * w.mix_rate))
+			w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		else:
+			w.loop_mode = AudioStreamWAV.LOOP_DISABLED
+	elif s != null and s.get("loop") != null:
+		s.set("loop", loop)
+		if s.get("loop_offset") != null:
+			s.set("loop_offset", _loop_start)
+
+
+func _on_bgm_finished(i: int) -> void:
+	if i == _bgm_index and not current_bgm.is_empty():
+		bgm_finished.emit()
 
 
 ## 動画を流す間、BGM を一時停止する（6.6）。resume_bgm で続きから鳴らす。

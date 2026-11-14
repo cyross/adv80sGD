@@ -20,6 +20,7 @@ const SceneGraph = preload("res://addons/adv80s/debug/adv_scene_graph.gd")
 const QUADRANT_NAMES: Array[String] = ["左上↖", "右上↗", "左下↙", "右下↘"]
 
 var core: AdvCore
+var player: Node   ## AdvPlayer（おまけやエンディングの記録を扱うコマンドで使う。なければ使えない）
 var _dirty_data: bool = false
 var _dirty_scene: bool = false
 ## 2x2で区切った4領域のどこに表示するか (0:左上, 1:右上, 2:左下, 3:右下)
@@ -103,6 +104,8 @@ func setup(p_core: AdvCore) -> void:
 		_log_view.clear()
 	_append_log("[color=#38bdf8]== adv80s デバッグコンソール (help:一覧 / ESC:閉) ==[/color]")
 	_print_compact_snapshot()
+	if player != null and not player.missing_ids.is_empty():
+		_append_log("[color=#fbbf24]見つからない ID が %d 件あります（ids で一覧）[/color]" % player.missing_ids.size())
 	if _cmd_input != null:
 		_cmd_input.call_deferred("grab_focus")
 
@@ -1057,6 +1060,174 @@ func execute_command(line: String) -> void:
 			refresh_all()
 		"code", "list":
 			_print_current_code_to_log()
+		"extras":
+			_cmd_extras(tokens[1] if tokens.size() >= 2 else "")
+		"ids", "missing":
+			_cmd_ids()
+		"edit":
+			if player == null:
+				_append_log("[color=#f87171]AdvPlayer 未接続[/color]")
+			elif player.request_open_in_editor(tokens[1] if tokens.size() >= 2 else ""):
+				_append_log("[color=#34d399]エディタで開きます。[/color]")
+			else:
+				_append_log("[color=#f87171]エディタにつながっていません（エディタから実行したときだけ使えます）[/color]")
+		"noticestyle", "nstyle":
+			if player == null:
+				_append_log("[color=#f87171]AdvPlayer 未接続[/color]")
+			else:
+				# noticestyle [game] …：game を付けるとふつうのお知らせ（遊ぶ人が見るもの）、付けなければデバッグのお知らせ
+				var args: Array = tokens.slice(1)
+				var game := not args.is_empty() and String(args[0]).to_lower() == "game"
+				if game:
+					args = args.slice(1)
+				var keys: Array = player.GAME_NOTICE_STYLE_KEYS if game else player.DEBUG_NOTICE_STYLE_KEYS
+				var over: Dictionary = player.notice_style_override if game else player.debug_notice_style_override
+				var where := "notice_style" if game else "debug.notice_style"
+				var sample := func():
+					if game:
+						player.show_notice("お知らせの見た目のためし")
+					else:
+						player.show_debug_notice("お知らせの見た目のためし")
+				if args.is_empty():
+					_append_log("%sの見た目：%s（試しているもの：%s）" % ["ふつうのお知らせ" if game else "デバッグのお知らせ",
+						JSON.stringify(player.notice_style() if game else player.debug_notice_style_now()), JSON.stringify(over)])
+				else:
+					var sub := String(args[0]).to_lower()
+					match sub:
+						"test":
+							sample.call()
+						"reset":
+							if args.size() >= 2:
+								over.erase(String(args[1]))
+							else:
+								over.clear()
+							_append_log("[color=#34d399]設定の見た目に戻しました[/color]")
+						"keep":
+							if args.size() < 2:
+								_append_log("[color=#f87171]使い方：noticestyle [game] keep 名前[/color]")
+							elif player.keep_notice_style(game, String(args[1])):
+								_append_log("[color=#34d399]いまの見た目を「%s」として取っておきました[/color]" % args[1])
+							else:
+								_append_log("[color=#f87171]試している見た目がありません[/color]")
+						"use":
+							if args.size() >= 2 and player.use_notice_style(game, String(args[1])):
+								sample.call()
+								_append_log("[color=#34d399]「%s」：%s[/color]" % [args[1], JSON.stringify(over)])
+							else:
+								_append_log("[color=#f87171]取っておいた見た目がありません：%s[/color]" % (String(args[1]) if args.size() >= 2 else ""))
+						"next":
+							var nn: String = player.next_notice_style(game)
+							if nn == "":
+								_append_log("取っておいた見た目がありません（noticestyle %skeep 名前）" % ("game " if game else ""))
+							else:
+								sample.call()
+								_append_log("[color=#34d399]「%s」：%s[/color]" % [nn, JSON.stringify(over)])
+						"list":
+							var sets: Dictionary = player.notice_style_sets(game)
+							if sets.is_empty():
+								_append_log("取っておいた見た目がありません")
+							else:
+								for sn in sets:
+									_append_log("「%s」：%s" % [sn, JSON.stringify(sets[sn])])
+						"drop":
+							if args.size() >= 2 and player.drop_notice_style(game, String(args[1])):
+								_append_log("[color=#34d399]「%s」を消しました[/color]" % args[1])
+							else:
+								_append_log("[color=#f87171]取っておいた見た目がありません[/color]")
+						"save":
+							var r: int = player.save_game_notice_style_to_editor() if game else player.save_debug_notice_style_to_editor()
+							if r > 0:
+								_append_log("[color=#34d399]試している見た目をプロジェクト設定（%s）に書くようエディタへ渡しました（エディタに戻ると書かれます）[/color]" % where)
+							elif r == 0:
+								_append_log("試している見た目がありません")
+							else:
+								_append_log("[color=#f87171]書けません[/color]")
+						_:
+							if args.size() < 2:
+								_append_log("[color=#f87171]使い方：noticestyle [game] キー 値（キー：%s）、noticestyle [game] test・reset [キー]・save[/color]" % "・".join(keys))
+							else:
+								var err: String = player.set_game_notice_style(String(args[0]), String(args[1])) if game else player.set_debug_notice_style(String(args[0]), String(args[1]))
+								if err != "":
+									_append_log("[color=#f87171]%s[/color]" % err)
+								else:
+									sample.call()
+									_append_log("[color=#34d399]%s[/color]" % JSON.stringify(over))
+		"notice", "notices":
+			if player == null:
+				_append_log("[color=#f87171]AdvPlayer 未接続[/color]")
+			elif tokens.size() < 2:
+				_append_log(player.debug_notice_report())
+			else:
+				# notice 種類 on/off、notice all on/off、notice on/off（全部）、notice reset [種類]
+				var a1 := String(tokens[1]).to_lower()
+				if a1 == "save":
+					var ns: int = player.save_debug_notices_to_editor()
+					if ns > 0:
+						_append_log("[color=#34d399]切り替えた %d 種類をプロジェクト設定（debug.notices）に書くようエディタへ渡しました（エディタに戻ると書かれます）[/color]" % ns)
+					elif ns == 0:
+						_append_log("コンソールで切り替えたものがありません")
+					else:
+						_append_log("[color=#f87171]書けません[/color]")
+					return
+				var kind := "all"
+				var mode := a1
+				if a1 == "reset":
+					kind = String(tokens[2]) if tokens.size() >= 3 else "all"
+				elif tokens.size() >= 3:
+					kind = a1
+					mode = String(tokens[2]).to_lower()
+				var on: Variant = null
+				if mode in ["on", "1", "true", "入"]:
+					on = true
+				elif mode in ["off", "0", "false", "切"]:
+					on = false
+				elif mode != "reset":
+					_append_log("[color=#f87171]使い方：notice [種類|all] on/off、notice reset [種類]。種類：%s[/color]" % "・".join(player.DEBUG_NOTICE_KINDS))
+					return
+				var got: Array = player.set_debug_notice(kind, on)
+				if got.is_empty():
+					_append_log("[color=#f87171]知らない種類：%s（%s）[/color]" % [kind, "・".join(player.DEBUG_NOTICE_KINDS)])
+				else:
+					_append_log("[color=#34d399]%s[/color]" % player.debug_notice_report())
+		"preset":
+			if player == null:
+				_append_log("[color=#f87171]AdvPlayer 未接続[/color]")
+			else:
+				var pn: String = player.send_preset_to_editor(" ".join(tokens.slice(1)))
+				if pn != "":
+					_append_log("[color=#34d399]ひな形にしました：%s（シナリオエディタの「実行：」で選べます）[/color]" % pn)
+				else:
+					_append_log("[color=#f87171]ひな形を書けません[/color]")
+		"autoreload", "watch":
+			if player == null:
+				_append_log("[color=#f87171]AdvPlayer 未接続[/color]")
+				return
+			if tokens.size() >= 2:
+				player.set_auto_reload(tokens[1] in ["on", "1", "true"])
+			_append_log("自動の読み直し（保存したら読み直す）：%s（autoreload on / off）" % ("入" if player.is_auto_reload() else "切"))
+		"reload":
+			if player == null:
+				_append_log("[color=#f87171]AdvPlayer 未接続[/color]")
+				return
+			var re = true if tokens.size() >= 2 and tokens[1] == "enter" else null
+			var why: String = await player.debug_reload(re)
+			if why == "":
+				_append_log("[color=#34d399]シナリオ・プロジェクト設定・素材の一覧を読み直しました。[/color]")
+				for c in player.last_reload_changes:
+					_append_log("  変わったファイル：%s" % c)
+				refresh_all()
+				_cmd_ids()
+			else:
+				_append_log("[color=#f87171]読み直せません（%s）[/color]" % why)
+		"read", "flow", "chapters", "openings", "progress":
+			_cmd_progress(cmd, tokens[1] if tokens.size() >= 2 else "")
+		"endings":
+			if tokens.size() >= 2 and tokens[1] == "clear" and player != null:
+				player.progress.clear_endings()
+				player.progress.save()
+				_append_log("[color=#34d399]見たエンディングの記録を消しました。[/color]")
+			elif player != null:
+				_append_log("見たエンディング: %s (endings clear で消す)" % str(player.progress.endings.keys()))
 		"graph":
 			open_scene_graph_requested.emit()
 		"clear", "cls":
@@ -1068,6 +1239,82 @@ func execute_command(line: String) -> void:
 			_append_log("[color=#f87171]不明: '%s' (help参照)[/color]" % cmd)
 
 
+## 起動時の確認で見つからなかった ID を一覧にする。
+func _cmd_ids() -> void:
+	if player == null:
+		_append_log("[color=#f87171]AdvPlayer 未接続[/color]")
+		return
+	var list: Array = player.missing_ids
+	if list.is_empty():
+		_append_log("[color=#34d399]見つからない ID はありません。[/color]")
+		return
+	_append_log("[color=#fbbf24]見つからない ID: %d 件[/color]" % list.size())
+	for d in list:
+		_append_log(" %s　[color=#94a3b8]%s %s[/color]" % [String(d.get("message", "")), String(d.get("file", "")).get_file(), String(d.get("path", ""))])
+
+
+## 全プレイ共通の記録を見る・消す。read（既読）、flow・chapters（到達点）、openings（見たオープニング）、progress（全部）。
+func _cmd_progress(what: String, sub: String) -> void:
+	if player == null:
+		_append_log("[color=#f87171]AdvPlayer 未接続[/color]")
+		return
+	var p = player.progress
+	if sub != "clear":
+		_append_log("記録: 既読 %d 行、到達点 %d、オープニング %d、エンディング %d、見た画像 %d、聞いた曲 %d（<種類> clear で消す）" % [
+			p.read.size(), p.reached.size(), p.openings.size(), p.endings.size(), p.seen.get("image", {}).size(), p.seen.get("bgm", {}).size()])
+		return
+	match what:
+		"read":
+			p.clear_read()
+			core.state.read.clear()
+			_append_log("[color=#34d399]既読の記録を消しました（いまのプレイの既読も）。[/color]")
+		"flow", "chapters":
+			p.clear_flow()
+			_append_log("[color=#34d399]フローチャートとチャプター選択の到達点を消しました。[/color]")
+		"openings":
+			p.clear_openings()
+			_append_log("[color=#34d399]見たオープニングの記録を消しました。[/color]")
+		"progress":
+			p.clear()
+			core.state.read.clear()
+			_append_log("[color=#34d399]全プレイ共通の記録をすべて消しました。[/color]")
+	p.save()
+
+
+## extras：おまけの開き具合を出す。extras clear：記録を消す。extras unlock：全部見た・聞いたことにする。
+func _cmd_extras(sub: String) -> void:
+	if player == null:
+		_append_log("[color=#f87171]AdvPlayer 未接続[/color]")
+		return
+	var ex = player.project.get_value("extras")
+	match sub:
+		"clear":
+			player.progress.clear_extras()
+			player.progress.save()
+			_append_log("[color=#34d399]おまけの記録（見た画像・聞いた曲・知らせた特典）を消しました。[/color]")
+		"unlock":
+			if ex is Dictionary:
+				for kind in player.EXTRA_LISTS:
+					for e in ex.get(player.EXTRA_LISTS[kind], []):
+						if e is Dictionary and not bool(e.get("bonus", false)):
+							for id in player.extra_ids(e):
+								player.progress.mark_seen(kind, String(id))
+			player.progress.save()
+			_append_log("[color=#34d399]おまけの画像と曲を、全部見た・聞いたことにしました。[/color]")
+			var news: Array = player.check_bonus_unlocks()
+			if not news.is_empty():
+				_append_log("開いた特典: %s" % ", ".join(news))
+		"":
+			pass
+		_:
+			_append_log("使い方: extras [clear | unlock]")
+			return
+	player.fill_extras_sys()
+	var s: Dictionary = player.core.state.sys
+	_append_log("おまけ: ギャラリー %d / %d、おんがく %d / %d" % [int(s.get("gallery_opened", 0)), int(s.get("gallery_total", 0)),
+		int(s.get("music_opened", 0)), int(s.get("music_total", 0))])
+
+
 func _print_help() -> void:
 	var help_lines := [
 		"[color=#38bdf8]--- コマンド一覧 ---[/color]",
@@ -1075,6 +1322,14 @@ func _print_help() -> void:
 		" [b]get <名|式>[/b] : 値参照 | [b]set <名> <値>[/b] : 値変更",
 		" [b]toggle <名>[/b] : 真偽反転 | [b]reset <名|all>[/b] : 初期化",
 		" [b]give/take <id> [数][/b] : 所持品増減 | [b]scene <id>[/b] : 移動",
+		" [b]extras [clear|unlock][/b] : おまけの開き具合・記録を消す・全部開く | [b]endings [clear][/b] : 見たエンディング・記録を消す",
+		" [b]ids[/b] : 見つからない ID の一覧（起動時の確認） | [b]reload [enter][/b] : 読み直す（F8。enter でシーンに入り直す）",
+		" [b]autoreload on/off[/b] : 保存したら自動で読み直す | [b]edit [シーン][/b] : エディタで開く | [b]preset [名前][/b] : いまの値を実行のひな形に",
+		" [b]notice[/b] : デバッグのお知らせの出す・出さない | [b]notice 種類|all on/off[/b] : 切り替え（動かしている間だけ） | [b]notice reset [種類][/b] : 設定に戻す | [b]notice save[/b] : 切り替えを設定に書く",
+		" [b]noticestyle キー 値[/b] : デバッグのお知らせの見た目を試す（fg・bg・border・se・icon・position・seconds） | [b]noticestyle test・reset [キー]・save[/b]",
+		" [b]noticestyle game キー 値[/b] : ふつうのお知らせ（遊ぶ人が見るもの）の見た目を試す（position・fg・bg・border・se・seconds・margin・icon_size・max・overflow・click_close・log） | [b]noticestyle game test・reset・save[/b]",
+		" [b]noticestyle [game] keep 名前[/b] : いまの見た目を取っておく | [b]use 名前[/b]・[b]next[/b] : 取っておいたものを試す（next は順に） | [b]list[/b]・[b]drop 名前[/b]",
+		" [b]read clear[/b] : 既読 | [b]flow clear[/b] : 到達点（チャプター選択） | [b]openings clear[/b] : 見たオープニング | [b]progress [clear][/b] : 記録の数・すべて消す",
 		" [b]resume[/b] / [b]ESC[/b] : コンソールを閉じて変更データで再開"
 	]
 	_append_log("\n".join(help_lines))

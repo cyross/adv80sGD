@@ -11,7 +11,7 @@ func _init(p: AdvPlayer) -> void:
 
 
 func _panel(title: String) -> AdvMenuPanel:
-	return AdvMenuPanel.new().setup(title, player.template, Vector2(player.template.screen_size))
+	return AdvMenuPanel.new().setup(title, player.template, player.template.visible_rect().size)   # 見える範囲の大きさ（段階63）
 
 
 func _on(key: String) -> bool:
@@ -38,7 +38,11 @@ func open_system_menu() -> void:
 		m.add_button("フローチャート", func(): m.close(); open_flowchart())
 	if _on("chapter_select") and player.core.query("chapters") != null:
 		m.add_button("チャプター", func(): m.close(); open_chapters())
+	if has_endings():
+		m.add_button("エンディング", func(): m.close(); open_endings())
 	m.add_button("せってい", func(): m.close(); open_settings())
+	if String(player.project.get_value("title_screen", "")) != "":
+		m.add_button("タイトルへ", func(): m.close(); player.go_title(), idle or player.core.query("pending_choice") != null)
 	m.add_back()
 	m.focus_first()
 	await player.show_overlay(m)
@@ -99,8 +103,15 @@ func open_notebook() -> void:
 
 func open_flowchart() -> void:
 	var m := _panel("フローチャート")
+	var flow = player.core.query("flow")
+	if not flow is Dictionary:   # フローチャートのないゲーム（段階65。前はここで止まっていた）
+		m.add_text("フローチャートは ありません。")
+		m.add_back()
+		m.focus_first()
+		await player.show_overlay(m)
+		return
 	var v := AdvFlowView.new()
-	v.setup(player.template, player.core.query("flow"))
+	v.setup(player.template, flow)
 	v.node_chosen.connect(func(id: String):
 		m.close()
 		player.jump_to_node(id))
@@ -112,7 +123,11 @@ func open_flowchart() -> void:
 
 func open_chapters() -> void:
 	var m := _panel("チャプター")
-	for c in player.core.query("chapters"):
+	var chs = player.core.query("chapters")
+	if not chs is Array or chs.is_empty():   # チャプターのないゲーム（段階65）
+		m.add_text("チャプターは ありません。")
+		chs = []
+	for c in chs:
 		var node := String(c["node"])
 		var ok: bool = c["unlocked"] and c["can_jump"]
 		m.add_button(String(c["label"]) if c["unlocked"] else "？？？", func(): m.close(); player.jump_to_node(node), ok)
@@ -121,8 +136,255 @@ func open_chapters() -> void:
 	await player.show_overlay(m)
 
 
+## おまけ（プロジェクト設定 extras）：ギャラリー（gallery）と音楽（music）。
+## 項目は {id, label, when?, hint?}。when がなければ、一度でも出した画像・鳴らした曲なら開く。開いていない項目は「？？？」。
+func open_extras() -> void:
+	var ex: Dictionary = player.project.get_value("extras", {})
+	var labels := {"gallery": String(ex.get("gallery_label", "ギャラリー")), "music": String(ex.get("music_label", "おんがく")),
+		"endings": String(ex.get("endings_label", "エンディング")), "opening": String(ex.get("opening_label", "オープニング"))}
+	while true:
+		var pick := [""]
+		var m := _panel(String(ex.get("title", "おまけ")))
+		for k in player.extras_menu():
+			if k == "opening" and not _at_title():
+				continue   # 遊んでいる途中の状態を消さないため、タイトルからだけ
+			var key: String = k
+			m.add_button(labels[key], func(): pick[0] = key; m.close())
+		m.add_back()
+		m.focus_first()
+		await player.show_overlay(m)
+		match pick[0]:
+			"gallery":
+				await open_gallery()
+			"music":
+				await open_music()
+			"endings":
+				await open_endings()
+			"opening":
+				await player.replay_opening()
+				return
+			_:
+				return
+
+
+## タイトル（タイトルのシーンかタイトル画面）から開いているか。
+func _at_title() -> bool:
+	return player.core.state.scene == "" or player.core.query("scene_kind") == "title"
+
+
+## ギャラリーの項目の見本の画像（thumb、なければ見た最初の画像）。
+func gallery_thumb(e: Dictionary) -> Texture2D:
+	var id := String(e.get("thumb", ""))
+	if id == "":
+		var pages: Array = player.extra_pages(e)
+		if pages.is_empty():
+			return null
+		id = String(pages[0])
+	return player._layer_texture(id)
+
+
+## ボタンの左に見本を出す（開いていない項目は同じ大きさの空き）。
+func _set_thumb(b: Button, tex: Texture2D) -> void:
+	if tex == null:
+		var img := Image.create(THUMB_SIZE, THUMB_SIZE * 5 / 8, false, Image.FORMAT_RGBA8)
+		img.fill(player.template.color(1))
+		tex = ImageTexture.create_from_image(img)
+	b.icon = tex
+	b.expand_icon = true
+	b.add_theme_constant_override("icon_max_width", THUMB_SIZE)
+	b.custom_minimum_size.y = THUMB_SIZE * 5 / 8 + 4
+	b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+
+
+func _extra_text(e: Dictionary, unlocked: bool) -> String:
+	if unlocked:
+		return String(e.get("label", e.get("id", "")))
+	var hint := String(e.get("hint", ""))
+	return "？？？" + ("　" + hint if hint != "" else "")
+
+
+const THUMB_SIZE := 64
+
+
+## ギャラリー：開いている項目を選ぶと、画像を画面いっぱいに出す（images があれば、めくれる）。
+## extras.thumbnails（既定 true）なら、開いている項目の横に小さな見本（thumb、なければ最初の画像）を出す。
+func open_gallery() -> void:
+	var ex: Dictionary = player.project.get_value("extras", {})
+	var list: Array = ex.get("gallery", [])
+	var thumbs := bool(ex.get("thumbnails", true))
+	while true:
+		var pick := [-1]
+		var m := _panel(String(ex.get("gallery_label", "ギャラリー")))
+		player.fill_extras_sys()
+		for i in list.size():
+			var e = list[i]
+			if not e is Dictionary or not player.extra_listed(e, "image"):
+				continue
+			var ok: bool = player.extra_unlocked(e, "image")
+			var idx := i
+			var b := m.add_button(_extra_text(e, ok), func(): pick[0] = idx; m.close(), ok)
+			if thumbs:
+				_set_thumb(b, gallery_thumb(e) if ok else null)
+		var sys: Dictionary = player.core.state.sys
+		m.add_text("%d / %d" % [int(sys.get("gallery_opened", 0)), int(sys.get("gallery_total", 0))])
+		m.add_back()
+		m.focus_first()
+		await player.show_overlay(m)
+		if pick[0] < 0:
+			return
+		var e: Dictionary = list[pick[0]]
+		var texs := []
+		for id in player.extra_pages(e):
+			var tex: Texture2D = player._layer_texture(String(id))
+			if tex != null:
+				texs.append(tex)
+		if not texs.is_empty():
+			await player.show_overlay(AdvImageViewer.new().setup(texs, player.template, String(e.get("label", ""))))
+
+
+const MUSIC_MODES := ["one", "next", "all"]
+const MUSIC_MODE_NAMES := {"one": "1きょく くりかえし", "next": "つづけて", "all": "ぜんぶ くりかえし"}
+
+var _music_list: Array = []
+var _music_index := -1
+var _music_now: RichTextLabel
+var _music_desc: RichTextLabel
+
+
+## 音楽の鳴らし方（one：1曲をくりかえす、next：開いている曲を順に鳴らして止まる、all：順に鳴らしてくりかえす）。
+## プレイヤー設定 music_mode（なければ extras.music_mode、既定 one）。
+func music_mode() -> String:
+	var ex: Dictionary = player.project.get_value("extras", {})
+	var m := String(player.settings.get_value("music_mode", ex.get("music_mode", "one")))
+	return m if m in MUSIC_MODES else "one"
+
+
+## 音楽：開いている曲を選ぶと鳴らす。閉じると、開く前の曲に戻す。
+func open_music() -> void:
+	var ex: Dictionary = player.project.get_value("extras", {})
+	player.fill_extras_sys()
+	_music_list = ex.get("music", []).filter(func(e): return e is Dictionary and player.extra_listed(e, "bgm"))
+	_music_index = -1
+	var before: Dictionary = player.audio.current_bgm.duplicate()
+	var m := _panel(String(ex.get("music_label", "おんがく")))
+	_music_now = m.add_text("")
+	_music_desc = m.add_text("", int(player.template.get_section("text").get("name_color", 6))) if bool(ex.get("music_desc", true)) else null
+	_update_music_now()
+	for i in _music_list.size():
+		var e: Dictionary = _music_list[i]
+		var idx := i
+		m.add_button(_extra_text(e, player.extra_unlocked(e, "bgm")), func(): music_play(idx), player.extra_unlocked(e, "bgm"))
+	var mb := [null]
+	mb[0] = m.add_button("さいせい：%s" % MUSIC_MODE_NAMES[music_mode()], func():
+		var nxt: String = MUSIC_MODES[(MUSIC_MODES.find(music_mode()) + 1) % MUSIC_MODES.size()]
+		player.settings.set_value("music_mode", nxt)
+		player.save_settings()
+		(mb[0] as Button).text = "さいせい：%s" % MUSIC_MODE_NAMES[nxt]
+		if _music_index >= 0:
+			player.audio.set_bgm_loop(nxt == "one"))
+	m.add_button("とめる", func():
+		_music_index = -1
+		player.audio.stop_bgm(0.3)
+		_update_music_now())
+	m.add_back()
+	m.focus_first()
+	player.audio.bgm_finished.connect(_on_music_finished)
+	await player.show_overlay(m)
+	player.audio.bgm_finished.disconnect(_on_music_finished)
+	_music_index = -1
+	_music_now = null
+	_music_desc = null
+	if before.is_empty():
+		player.audio.stop_bgm(0.3)
+	else:
+		player.audio.stop_bgm()
+		await player._play(AdvEvents.make("bgm.play", before))
+
+
+## 音楽の i 番目の曲を鳴らす（鳴らし方が one ならくりかえす）。
+func music_play(i: int) -> void:
+	if i < 0 or i >= _music_list.size():
+		return
+	_music_index = i
+	player.audio.stop_bgm()
+	_update_music_now()
+	await player._play(AdvEvents.make("bgm.play", {"id": String(_music_list[i].get("id", "")), "loop": music_mode() == "one"}))
+
+
+func _on_music_finished() -> void:
+	if _music_index < 0:
+		return
+	var mode := music_mode()
+	if mode == "one":
+		return
+	var n := _next_music(_music_index + 1, _music_list.size())
+	if n < 0 and mode == "all":
+		n = _next_music(0, _music_index + 1)
+	if n < 0:
+		_music_index = -1
+		player.audio.stop_bgm()
+		_update_music_now()
+		return
+	music_play(n)
+
+
+func _next_music(from: int, to: int) -> int:
+	for i in range(from, to):
+		if player.extra_unlocked(_music_list[i], "bgm"):
+			return i
+	return -1
+
+
+func _update_music_now() -> void:
+	if _music_now == null:
+		return
+	var name := String(_music_list[_music_index].get("label", _music_list[_music_index].get("id", ""))) if _music_index >= 0 else "―"
+	_music_now.text = "いま：%s" % name
+	if _music_desc != null:
+		var desc := String(_music_list[_music_index].get("desc", "")) if _music_index >= 0 else ""
+		_music_desc.text = AdvTextMarkup.to_bbcode(desc, player.core.state, player.template) if desc != "" else ""
+		_music_desc.visible = desc != ""
+
+
+## プロジェクト設定 endings があるか。
+func has_endings() -> bool:
+	var e = player.project.get_value("endings", [])
+	return e is Array and not e.is_empty()
+
+
+## エンディング一覧（6.9）：プロジェクト設定 endings の順に、見たものは名前、見ていないものは「？？？」とヒントを出す。
+func open_endings() -> void:
+	var m := _panel("エンディング")
+	var list: Array = player.project.get_value("endings", [])
+	var seen := 0
+	for e in list:
+		if e is Dictionary and player.progress.endings.has(String(e.get("id", ""))):
+			seen += 1
+	m.add_text("みた エンディング：%d / %d" % [seen, list.size()], int(player.template.get_section("text").get("name_color", 6)))
+	for e in list:
+		if not e is Dictionary:
+			continue
+		var id := String(e.get("id", ""))
+		if player.progress.endings.has(id):
+			var rec: Dictionary = player.progress.endings[id]
+			var label := AdvTextMarkup.to_bbcode(String(e.get("label", id)), player.core.state, player.template)
+			m.add_text("・%s%s" % [label, "（%dかい）" % int(rec.get("count", 1)) if int(rec.get("count", 1)) > 1 else ""])
+		else:
+			var hint := String(e.get("hint", ""))
+			m.add_text("・？？？" + ("　" + AdvTextMarkup.to_bbcode(hint, player.core.state, player.template) if hint != "" else ""))
+	# オープニングを見返すのは、タイトルから開いたときだけ（遊んでいる途中の状態を消さないため）
+	if player.can_replay_opening() and (player.core.state.scene == "" or player.core.query("scene_kind") == "title"):
+		m.add_button("オープニングを みる", func(): m.close(); player.replay_opening())
+	m.add_back()
+	m.focus_first()
+	await player.show_overlay(m)
+
+
 ## 設定（文字の表示調整、オート送り、スキップ、フィルター、旧表示と新表示、読みやすいフォント、読み上げ、印の表示）。
 func open_settings() -> void:
+	var custom: bool = await player._open_custom_system("settings")
+	if custom:
+		return
 	var m := _panel("せってい")
 	_fill_settings(m)
 	m.focus_first()

@@ -16,6 +16,9 @@ signal game_ended
 signal idle                     ## 出力イベントを実行し終えて、入力を待つ状態になった
 signal saved(slot: String)
 signal loaded(slot: String)
+signal fin_shown                 ## 「おわり」の画面を出した
+signal reloaded                  ## デバッグ実行中に読み直した
+signal system_scene_closed       ## JSON のシステムシーンを閉じた（ロードしたときは、ロードのあと）
 
 ## プロジェクト設定（adv80s.project.json）。下の項目を空にしておくと、ここに書いた値を使う
 @export_file("*.json") var project_path: String = AdvProject.DEFAULT_PATH
@@ -71,7 +74,22 @@ var _video_volume: float = 1.0         ## 流している動画の音量（BGM �
 var _cursor_forced: Variant = null     ## cursor.set で固定した形（種類の文字列か {image, hotspot}）
 var _cursor_kind: String = ""          ## いま出しているカーソルの種類
 var _devices: Variant = null            ## 使う入力機器（プロジェクト設定の input_devices。null ならすべて）
+var _notices: Array = []
+## 起動時の確認で見つからなかった ID の診断（素材・シーン・サブシーン）。デバッグコンソールの ids で一覧にする
+var missing_ids: Array = []
+var _allow_reload_in_release := false   ## テスト用
+var run_from_scene := ""                 ## エディタの「このシーンから実行」で始めたシーン
+var run_from: Dictionary = {}            ## そのときの頼み {scene, dialogue, line, knot, preset, vars, items}
+const MISSING_CODES := ["ASSET_NOT_FOUND", "MISSING_TARGET", "SUBSCENE_KIND"]
 var _debug_layer: Control = null       ## デバッグ専用UI層（配布アプリでは生成しない）
+var _initial_data: Dictionary = {}     ## 始める前の状態（はじめから・タイトルへ戻るときに戻す）
+var _pending_action: Callable          ## 実行中に届いた、流れを切る操作（はじめから、ロード、システム画面を閉じるなど）
+var _sys: Dictionary = {}              ## 開いている JSON のシステム画面 {id, mode, snapshot}（6.9）
+var _opening: Dictionary = {}          ## 再生中のオープニング {id, next, mode, seen, boot}（6.9）
+var _opening_hint: Control = null      ## 2回目からのオープニングに出す「とばす」の案内
+var _opening_replay := false           ## タイトルなどから見返しているオープニングか（終わったらタイトルへ戻る）
+var _fin_scene: String = ""            ## 「おわり」を出したエンディングのシーン（同じ入り方で2回出さない）
+var _clear_meta: Dictionary = {}       ## クリアデータをセーブするあいだ、セーブの meta に足すもの {clear, ending, resume}
 
 
 func _ready() -> void:
@@ -119,7 +137,11 @@ func _ready() -> void:
 	_resolve_features(diags)
 	key_provider = _make_key_provider(diags)
 	diags.append_array(core.validate())
+	diags.append_array(AdvIdCheck.check_project(project.data, func(k: String, id: String) -> bool: return core.assets.has(k, id), project_path))
+	missing_ids = diags.filter(func(d): return String(d.get("code", "")) in MISSING_CODES)
 	_report(diags)
+	if OS.is_debug_build() and not missing_ids.is_empty():
+		print("[adv80s] 見つからない ID: %d 件（デバッグコンソールの ids で一覧）" % missing_ids.size())
 
 	audio = AdvAudio.new()
 	audio.name = "Audio"
@@ -133,13 +155,1069 @@ func _ready() -> void:
 	_build_screen()
 	if OS.is_debug_build():
 		_setup_debug_ui()
+		_watch_snap = watch_snapshot()
+		if bool(_debug_conf().get("auto_reload", false)):
+			set_auto_reload(true)
+		_start_debug_poll()
 	var title := String(project.get_value("title", ""))
 	if title != "" and get_window() != null and get_parent() == get_tree().root:
 		get_window().title = title
 	if _devices is Array and not "mouse" in _devices:
 		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
-	var start_at := entry if entry != "" else String(project.get_value("entry", ""))
-	_run(core.start(start_at))
+	AdvTextMarkup.set_aliases(core.aliases())
+	AdvTextMarkup.cond_evaluator = func(t: String, st: AdvState) -> bool: return core.ctx.eval(t, st)
+	_initial_data = _make_save_data()
+	_boot()
+
+
+## 起動の流れ：プロジェクト設定 title_screen が "" ならそのまま始める、"template" ならテンプレートのタイトル画面、
+## それ以外ならタイトルのシーン（シーンID）から始める（6.9）。
+func _boot() -> void:
+	_fill_title_sys()
+	if OS.is_debug_build():
+		var req := take_run_from()
+		var rf := String(req.get("scene", ""))
+		if rf != "" and core.query("scene_info", {"id": rf}) != null:
+			# エディタの「このシーンから実行」：オープニングとタイトルを飛ばして、そのシーンから始める
+			run_from_scene = rf
+			run_from = req
+			apply_run_values(req)
+			var at := {}
+			for k in ["dialogue", "line", "path", "knot", "pre_sets"]:
+				if req.has(k) and str(req[k]) != "" and str(req[k]) != "[]":
+					at[k] = req[k]
+			_run(core.start_at(rf, at))
+			show_debug_notice(run_from_text(req), {}, -1.0, "", null, "run_from")
+			var pl = core.query("pre_set_log")
+			if pl is Dictionary and not pl.is_empty():
+				# 先に動かした「設定する」で入った値：お知らせは短く、ログには全部（debug.pre_set_notice・pre_set_log で切り替え）
+				if bool(_debug_conf().get("pre_set_notice", true)):
+					var pst = _debug_conf().get("pre_set_style", {})
+					show_debug_notice(pre_set_text(pl, 4), pst if pst is Dictionary else {}, float(_debug_conf().get("pre_set_seconds", -1.0)),
+						String(_debug_conf().get("pre_set_position", "")), false, "pre_set")
+				if bool(_debug_conf().get("pre_set_log", true)):
+					message_log.add_notice(pre_set_text(pl, 0))
+			return
+	var op := String(project.get_value("opening", ""))
+	if entry == "" and op != "":
+		# 起動時のオープニング。1回だけ流す設定で、もう見ていれば飛ばす
+		var sc = core.query("scene_info", {"id": op})
+		var mode := String(sc.get("replay", "always")) if sc is Dictionary else "always"
+		if mode == "once" and progress.openings.has(op):
+			_after_opening(String(sc.get("next", "")) if sc is Dictionary else "")
+			return
+		_opening_boot = true
+		_run(core.start(op))
+		return
+	_start_title_or_entry()
+
+
+var _opening_boot := false   ## いまのオープニングは起動時に流したものか
+
+
+## タイトル（あれば）か、開始シーンから始める。
+func _start_title_or_entry() -> void:
+	_fill_title_sys()
+	var ts := String(project.get_value("title_screen", ""))
+	if entry != "" or ts == "":
+		_run(core.start(_entry_scene()))
+	elif ts == "template":
+		open_title_screen()
+	else:
+		_run(core.start(ts))
+
+
+## オープニングのあと：next があればそのシーン、なければタイトル（あれば）か開始シーン。
+func _after_opening(next: String) -> void:
+	_opening_boot = false
+	if next != "":
+		_run(core.start(next))
+	else:
+		_start_title_or_entry()
+
+
+## オープニングを飛ばす（2回目からの Esc・右クリック、1回だけの設定で見たことがあるとき）。
+func skip_opening() -> void:
+	if _opening.is_empty():
+		return
+	var next := String(_opening.get("next", ""))
+	var was_replay := bool(_opening.get("replay", false))
+	_end_opening()
+	if was_replay:
+		await go_title()
+		return
+	skip_mode = false
+	_after_opening(next)
+
+
+## オープニングを見た記録を付けて、案内を消す。
+func _end_opening() -> void:
+	if _opening.is_empty():
+		return
+	progress.mark_opening(String(_opening["id"]))
+	if progress_path != "":
+		progress.save()
+	_opening = {}
+	if _opening_hint != null and is_instance_valid(_opening_hint):
+		_opening_hint.queue_free()
+	_opening_hint = null
+
+
+## オープニングを見返せるか（プロジェクト設定 opening_replay）：
+##   "seen"（既定。見たことがあれば）、"always"、"never"、"any_ending"（エンディングを1つでも見たら）、
+##   "all_endings"（すべて見たら）、{"endings": [ID…], "when": 条件式}（そのエンディングをすべて見ていて、条件にも合えば）
+func can_replay_opening(scene: String = "") -> bool:
+	var op := scene if scene != "" else String(project.get_value("opening", ""))
+	if op == "" or core.query("scene_info", {"id": op}) == null:
+		return false
+	var rule = project.get_value("opening_replay", "seen")
+	if rule is Dictionary:
+		for e in rule.get("endings", []):
+			if not progress.endings.has(String(e)):
+				return false
+		if rule.has("seen") and bool(rule["seen"]) and not progress.openings.has(op):
+			return false
+		if rule.has("when") and not core.ctx.eval(rule["when"], core.state):
+			return false
+		return true
+	match String(rule):
+		"always":
+			return true
+		"never":
+			return false
+		"any_ending":
+			return not progress.endings.is_empty()
+		"all_endings":
+			var list = project.get_value("endings", [])
+			if not list is Array or list.is_empty():
+				return false
+			for e in list:
+				if e is Dictionary and not progress.endings.has(String(e.get("id", ""))):
+					return false
+			return true
+	return progress.openings.has(op)
+
+
+## オープニングを見返す（始める前の状態に戻して流し、終わったら・飛ばしたらタイトルへ戻る）。
+func replay_opening(scene: String = "") -> void:
+	var op := scene if scene != "" else String(project.get_value("opening", ""))
+	if not can_replay_opening(op):
+		return
+	if _overlay != null:
+		_overlay.call("close")
+	await _reset_state()
+	_opening_replay = true
+	_run(core.start(op))
+
+
+## 「おわり」の画面の設定（プロジェクト設定 fin → layers の順に重ねる）。
+func fin_settings(layers: Array = []) -> Dictionary:
+	return AdvFinScreen.merge_settings([project.get_value("fin")] + layers)
+
+
+## 「おわり」の画面を出し、閉じたら then に従って進む。
+func show_fin(s: Dictionary) -> void:
+	var f := AdvFinScreen.new().setup(self, s)
+	f.reveal.call_deferred()
+	fin_shown.emit()
+	await show_overlay(f)
+	if bool(s.get("save_prompt", false)):
+		await offer_clear_save(s)
+	var then := String(s.get("then", "title"))
+	match then:
+		"title", "":
+			await go_title()
+		"new":
+			await new_game()
+		"quit":
+			get_tree().quit()
+		"stay":
+			_enter_idle()
+		_:
+			if bool(s.get("reset", false)):
+				await _reset_state()
+			_run(core.start(then))
+
+
+## クリアデータをセーブするか聞き、はいならセーブ画面を開く（「おわり」の画面の save_prompt）。
+## クリアデータをロードすると、save_resume のシーン（なければ開始シーン）から、変数などを引き継いで始まる。
+func offer_clear_save(s: Dictionary = {}) -> void:
+	var m := modern._panel(String(s.get("save_prompt_title", "クリアデータ")))
+	var answer := [false]
+	m.add_text(String(s.get("save_prompt_text", "クリアデータを セーブしますか？")))
+	m.add_button("はい", func(): answer[0] = true; m.close())
+	m.add_button("いいえ", func(): m.close())
+	m.focus_first()
+	await show_overlay(m)
+	if not answer[0]:
+		return
+	var info = core.query("scene_info")
+	_clear_meta = {"clear": true, "ending": String(info.get("ending", "")) if info is Dictionary else "",
+		"resume": String(s.get("save_resume", "")), "carry": s.get("save_carry", "all")}
+	await open_save_menu("save")
+	_clear_meta = {}
+
+
+## クリアデータから引き継ぐ（いまの状態はロードしたクリアデータ）。carry：
+##   "all"（全部引き継ぐ）、"none"（全部引き継がない：始める前の状態から）、
+##   {"vars": "all" | "none" | [名前…], "items": "all" | "none" | [ID…], "visited": bool, "notebook": bool}
+##   （書かなかったものは引き継がない）
+func _carry_over(carry: Variant) -> void:
+	if carry is String and carry == "all":
+		return
+	var old: AdvState = core.state.duplicate_state()
+	await _apply_save_data(_initial_data)
+	if not carry is Dictionary:
+		return   # "none"
+	var st := core.state
+	for part in ["vars", "items"]:
+		var spec = carry.get(part, "none")
+		var src: Dictionary = old.vars if part == "vars" else old.items
+		var dst: Dictionary = st.vars if part == "vars" else st.items
+		if spec is String and spec == "all":
+			for k in src:
+				dst[k] = src[k]
+		elif spec is Array:
+			for k in spec:
+				if src.has(String(k)):
+					dst[String(k)] = src[String(k)]
+				elif part == "items":
+					dst.erase(String(k))
+	for part in ["visited", "talked", "notebook", "chosen"]:
+		if bool(carry.get(part, false)):
+			st.set(part, old.get(part).duplicate(true))
+
+
+## 合図を送る（「おわり」の画面の advance の "trigger:名前" など）。受け取ったものがあれば true。
+func fire_trigger(name: String) -> bool:
+	if _overlay is AdvFinScreen:
+		return (_overlay as AdvFinScreen).trigger(name)
+	return false
+
+
+## おまけ（プロジェクト設定 extras）を開けるか。show が false なら出さない。when（既定 "sys.all_endings"）に合えば開ける。
+func can_open_extras() -> bool:
+	var ex = project.get_value("extras")
+	if not ex is Dictionary or not bool(ex.get("show", true)):
+		return false
+	if extras_menu().is_empty():
+		return false
+	_fill_title_sys_basic()
+	fill_extras_sys()
+	return core.ctx.eval(ex.get("when", "sys.all_endings"), core.state)
+
+
+## おまけの画面に並べる項目（extras.menu の順。既定は gallery、music）のうち、出せるもの。
+## endings はプロジェクト設定 endings があるとき、opening はタイトルからオープニングを見返せるときだけ。
+func extras_menu() -> Array:
+	var ex = project.get_value("extras")
+	if not ex is Dictionary:
+		return []
+	var out := []
+	for k in ex.get("menu", ["gallery", "music"]):
+		match String(k):
+			"gallery", "music":
+				if not ex.get(String(k), []).is_empty():
+					out.append(String(k))
+			"endings":
+				if modern.has_endings():
+					out.append("endings")
+			"opening":
+				if can_replay_opening():
+					out.append("opening")
+	return out
+
+
+const EXTRA_LISTS := {"image": "gallery", "bgm": "music"}
+
+
+## おまけの特典（bonus: true の項目）を使うか（extras.bonus、既定 true）。
+func extras_bonus_on() -> bool:
+	var ex = project.get_value("extras")
+	return ex is Dictionary and bool(ex.get("bonus", true))
+
+
+## おまけの開き具合を sys に入れる（特典の条件に使う）。特典の項目は数えない。
+## sys.gallery_opened、sys.gallery_total、sys.gallery_all、sys.music_opened、sys.music_total、sys.music_all。
+func fill_extras_sys() -> void:
+	var ex = project.get_value("extras")
+	for kind in EXTRA_LISTS:
+		var key: String = EXTRA_LISTS[kind]
+		var opened := 0
+		var total := 0
+		if ex is Dictionary:
+			for e in ex.get(key, []):
+				if e is Dictionary and not bool(e.get("bonus", false)):
+					total += 1
+					opened += 1 if extra_unlocked(e, kind) else 0
+		core.state.sys[key + "_opened"] = opened
+		core.state.sys[key + "_total"] = total
+		core.state.sys[key + "_all"] = total > 0 and opened == total
+	core.state.sys["extras_opened"] = int(core.state.sys["gallery_opened"]) + int(core.state.sys["music_opened"])
+	core.state.sys["extras_total"] = int(core.state.sys["gallery_total"]) + int(core.state.sys["music_total"])
+
+
+## 新しく開いた特典があれば知らせる（extras.notify、既定 true。文言は extras.notify_text）。
+## 知らせた特典は進行の記録（seen の bonus）に残し、二度は知らせない。知らせた特典の名前を返す。
+func check_bonus_unlocks() -> Array:
+	var ex = project.get_value("extras")
+	if not ex is Dictionary or not bool(ex.get("notify", true)) or not extras_bonus_on():
+		return []
+	var has_bonus := false
+	for kind in EXTRA_LISTS:
+		for e in ex.get(EXTRA_LISTS[kind], []):
+			has_bonus = has_bonus or (e is Dictionary and bool(e.get("bonus", false)))
+	if not has_bonus:
+		return []
+	_fill_title_sys_basic()
+	fill_extras_sys()
+	var news := []
+	for kind in EXTRA_LISTS:
+		var key: String = EXTRA_LISTS[kind]
+		for e in ex.get(key, []):
+			if e is Dictionary and bool(e.get("bonus", false)) and extra_unlocked(e, kind):
+				var label := String(e.get("label", e.get("id", "")))
+				if progress.mark_seen("bonus", "%s:%s" % [key, label if label != "" else str(extra_ids(e))]):
+					news.append(label)
+	if not news.is_empty():
+		show_notice(String(ex.get("notify_text", "おまけが ふえました")), -1.0, String(ex.get("notify_icon", "")))
+	return news
+
+
+## 自動のお知らせの種類（出力イベント → プロジェクト設定 notices の項目）
+const AUTO_NOTICES := {"item.add": "item_add", "item.remove": "item_remove", "notebook.add": "notebook_add",
+	"objective.set": "objective_set", "hint.set": "hint_set"}
+
+
+## 場面ごとの自動のお知らせ（プロジェクト設定 notices の項目に文言を書いたものだけ。enabled: false で全部止める）。
+## 項目は文言か {text, icon, log}。文言の {name}（持ち物の名前）、{count}（数）、{title}（手帳の題）、{text}（目的）、
+## {topic}（ヒントの話題）を置き換える。持ち物のお知らせは、icon がなければ持ち物の icon を出す。
+func _auto_notice(type: String, args: Dictionary) -> void:
+	var key := String(AUTO_NOTICES.get(type, ""))
+	if key == "":
+		return
+	var entry := notice_entry(key)
+	var text := String(entry.get("text", ""))
+	if text == "":
+		return
+	var icon := String(entry.get("icon", ""))
+	match type:
+		"item.add", "item.remove":
+			var id := String(args.get("id", ""))
+			var info = core.query("item_info", {"id": id})
+			var name := id
+			if info is Dictionary:
+				name = String(info.get("label", id))
+				if icon == "":
+					icon = String(info.get("icon", ""))
+			text = text.replace("{name}", name).replace("{count}", str(int(args.get("count", 1))))
+		"notebook.add":
+			text = text.replace("{title}", String(args.get("title", "")))
+		"objective.set":
+			if String(args.get("text", "")) == "":
+				return   # 目的を消したときは出さない
+			text = text.replace("{text}", String(args.get("text", "")))
+		"hint.set":
+			text = text.replace("{topic}", String(args.get("topic", "")))
+	show_notice(AdvTextMarkup.to_plain(text, core.state, template), -1.0, icon, entry.get("log"), String(entry.get("position", "")))
+
+
+## 自動のお知らせの項目 {text, icon?, log?}（書いていない・止めているなら {}）。
+func notice_entry(key: String) -> Dictionary:
+	var conf = project.get_value("notices")
+	if not conf is Dictionary or not bool(conf.get("enabled", true)):
+		return {}
+	var v = conf.get(key, "")
+	if v is Dictionary:
+		return v
+	return {"text": String(v)} if String(v) != "" else {}
+
+
+## 自動のお知らせの文言（書いていない・止めているなら ""）。
+func notice_text(key: String) -> String:
+	return String(notice_entry(key).get("text", ""))
+
+
+## お知らせの見た目：テンプレートの notice に、プロジェクト設定 notice_style を重ねる。
+## position（top_right・top_left・bottom_right・bottom_left・top・bottom・center）、fg・bg・border（パレットの番号。border は -1 で枠なし）、
+## se（効果音の素材ID）、seconds（出しておく秒数。0 なら時間では消えない）、margin（画面の端からの間）、icon_size（絵の大きさ）、
+## log（メッセージログにも残すか）、log_mark・log_color（ログでの印と色）、click_close（クリックで消せるか）、
+## max（同時に出す数の上限。超えたら古いものから消す。0 なら上限なし）、overflow（上限で消すとき instant：すぐ、fade：すっと）、
+## log_labels（ログの画面の切り替えの文言 {all, text, notice}）。
+func notice_style() -> Dictionary:
+	var s := {"position": "top_right", "fg": 7, "bg": 0, "border": 7, "se": "", "seconds": 2.5, "margin": 12, "icon_size": 24, "log": false,
+		"log_mark": "◆ ", "click_close": true, "max": 5, "overflow": "instant"}
+	s.merge(template.get_section("notice"), true)
+	var p = project.get_value("notice_style")
+	if p is Dictionary:
+		s.merge(p, true)
+	s.merge(notice_style_override, true)   # コンソールの noticestyle game で試しているもの
+	return s
+
+
+## 画面に短いお知らせを出し、しばらくして消す。seconds が負なら見た目の設定の秒数。
+## icon は絵の素材ID（文の左に出す）。log はメッセージログにも残すか（null なら見た目の設定の log）。
+## at はこのお知らせだけの位置（"" なら見た目の設定の position）。
+func show_notice(text: String, seconds: float = -1.0, icon: String = "", log: Variant = null, at: String = "", style: Dictionary = {}) -> void:
+	var st := notice_style()
+	for k in style:
+		if k in ["fg", "bg", "border", "se"]:   # このお知らせだけの見た目（書いたものだけ変える）
+			st[k] = style[k]
+	if at != "":
+		st["position"] = at
+	if seconds < 0.0:
+		seconds = float(st["seconds"])
+	if bool(log if log != null else st["log"]):
+		message_log.add_notice(text)
+	var p := PanelContainer.new()
+	p.name = "Notice"
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = template.color(int(st["bg"]))
+	if int(st["border"]) >= 0:
+		sb.border_color = template.color(int(st["border"]))
+		sb.set_border_width_all(2)
+	sb.set_content_margin_all(8)
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE   # クリックは _input で受け取る（文字送りより先に）
+	p.set_meta("click_close", bool(st["click_close"]))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(row)
+	var tex: Texture2D = _layer_texture(icon) if icon != "" else null
+	if tex != null:
+		var tr := TextureRect.new()
+		tr.name = "Icon"
+		tr.texture = tex
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		tr.custom_minimum_size = Vector2.ONE * float(st["icon_size"])
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(tr)
+	var l := Label.new()
+	l.name = "Text"
+	l.text = text
+	l.add_theme_color_override("font_color", template.color(int(st["fg"])))
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(l)
+	p.z_index = 50
+	var on_window := _notice_on_window(String(style.get("layer", "")))
+	p.set_meta("window", on_window)
+	(_debug_layer if on_window else screen).add_child(p)
+	p.reset_size()
+	# 画面の幅に収まらない長い文は折り返す（段階61。左右の余白 margin を残す）
+	var area_w := minf(_window_layer_size().x, NOTICE_WINDOW_MAX_WIDTH) if on_window else template.visible_rect().size.x
+	var max_w := maxf(48.0, area_w - float(st["margin"]) * 2.0)   # GB（160 幅）でも収まるように
+	if p.size.x > max_w:
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = maxf(80.0, max_w - (p.size.x - l.size.x))
+		p.reset_size()
+	p.set_meta("position", String(st["position"]))
+	p.set_meta("margin", float(st["margin"]))
+	p.resized.connect(_relayout_notices)   # 折り返した文の高さが後から決まっても重ならないように（段階62）
+	_notices.append(p)
+	# 出せる数（max。0 なら上限なし）を超えたら、古いものから消す
+	var limit := int(st["max"])
+	if limit > 0:
+		var live := _notices.filter(func(n): return is_instance_valid(n) and not n.has_meta("closing"))
+		for i in maxi(0, live.size() - limit):
+			if String(st["overflow"]) == "fade":
+				dismiss_notice(live[i], 0.3)
+			else:
+				_dismiss_now(live[i])
+	_relayout_notices()
+	var se := String(st["se"])
+	if se != "" and not skipping:
+		var path := core.assets.resolve("se", se)
+		if path != "":
+			audio.play_se(path, float(core.assets.entry("se", se).get("volume", 1.0)))
+	if seconds > 0.0:
+		var tw := p.create_tween()
+		tw.tween_interval(seconds)
+		tw.tween_callback(func(): dismiss_notice(p, 0.4))
+
+
+## デバッグのお知らせ（シーンから実行・先に設定・読み直し・エディタで開く・ひな形にしました など）。
+## 見た目はプロジェクト設定 debug.notice_style（fg・bg・border・se・icon・position・seconds・layer。書いたものだけ）、
+## その上に kind_style（「先に設定」なら debug.pre_set_style）。seconds・at を渡せばそれが先。
+## kind（run_from・pre_set・reload・editor・preset・auto_reload）を debug.notices で false にした種類は出さない。
+func show_debug_notice(text: String, kind_style: Dictionary = {}, seconds: float = -1.0, at: String = "", log: Variant = null, kind: String = "") -> void:
+	if not debug_notice_on(kind):
+		return
+	var ds = _debug_conf().get("notice_style", {})
+	var st: Dictionary = ds.duplicate() if ds is Dictionary else {}
+	for k in debug_notice_style_override:   # コンソールの noticestyle で試しているもの
+		st[k] = debug_notice_style_override[k]
+	for k in kind_style:
+		st[k] = kind_style[k]
+	if seconds < 0.0 and st.has("seconds"):
+		seconds = float(st["seconds"])
+	if at == "":
+		at = String(st.get("position", ""))
+	st["layer"] = String(st.get("layer", "auto"))   # デバッグのお知らせだけ：ゲームの画面の外（ウィンドウの層）にも出せる（段階64）
+	show_notice(text, seconds, String(st.get("icon", "")), log, at, st)
+
+
+const NOTICE_LAYERS := ["auto", "screen", "window"]
+const NOTICE_WINDOW_AUTO_WIDTH := 320.0   ## auto のとき、見える範囲の幅がこれより狭ければウィンドウの層に出す
+const NOTICE_WINDOW_TOP := 36.0           ## ウィンドウの層の上の位置は、デバッグのボタンの下から
+const NOTICE_WINDOW_MAX_WIDTH := 480.0    ## ウィンドウの層のお知らせの幅の上限（広い窓で横いっぱいにしない）
+
+
+## お知らせをウィンドウの層（デバッグの層。ゲームの画面の外）に出すか。layer：auto・screen・window（デバッグのお知らせだけが渡す）。
+func _notice_on_window(layer: String) -> bool:
+	if _debug_layer == null or layer == "" or layer == "screen":
+		return false
+	if layer == "window":
+		return true
+	return template.visible_rect().size.x < NOTICE_WINDOW_AUTO_WIDTH
+
+
+## ウィンドウの層の大きさ（テストなどで大きさが 0 ならビューポートの大きさ）。
+func _window_layer_size() -> Vector2:
+	if _debug_layer != null and _debug_layer.size.x > 0.0 and _debug_layer.size.y > 0.0:
+		return _debug_layer.size
+	return get_viewport_rect().size
+
+
+const DEBUG_NOTICE_KINDS := ["run_from", "pre_set", "reload", "editor", "preset", "auto_reload"]
+var debug_notice_override: Dictionary = {}   ## コンソールの notice で切り替えたもの（種類 → bool。動かしている間だけ。設定より先）
+
+
+## デバッグのお知らせの種類を出すか（コンソールで切り替えたもの、なければプロジェクト設定 debug.notices。書かなければ出す）。
+func debug_notice_on(kind: String) -> bool:
+	if kind == "":
+		return true
+	if debug_notice_override.has(kind):
+		return bool(debug_notice_override[kind])
+	var ns = _debug_conf().get("notices", {})
+	return not (ns is Dictionary and ns.get(kind) is bool and ns[kind] == false)
+
+
+## コンソールの notice：kind（"all" で全部）を on・off、"reset" で設定に戻す（kind を省くと全部）。変えた種類を返す（知らない種類なら []）。
+func set_debug_notice(kind: String, on: Variant) -> Array:
+	var kinds: Array = DEBUG_NOTICE_KINDS.duplicate() if kind == "all" or kind == "" else ([kind] if DEBUG_NOTICE_KINDS.has(kind) else [])
+	for k in kinds:
+		if on == null:
+			debug_notice_override.erase(k)
+		else:
+			debug_notice_override[k] = bool(on)
+	return kinds
+
+
+const DEBUG_NOTICE_STYLE_KEYS := ["fg", "bg", "border", "se", "icon", "position", "seconds", "layer"]
+const NOTICE_POSITIONS := ["top_right", "top_left", "bottom_right", "bottom_left", "top", "bottom", "center"]
+var debug_notice_style_override: Dictionary = {}   ## コンソールの noticestyle で試している見た目（動かしている間だけ）
+
+
+## コンソールの noticestyle キー 値：デバッグのお知らせの見た目を試す。値は fg・bg・border が整数、seconds が数、
+## position が位置の名前、se・icon が素材ID（"" で無し）。value が null ならそのキーを試すのをやめる。できたら ""、だめなら理由。
+func set_debug_notice_style(key: String, value: Variant) -> String:
+	return _try_style(debug_notice_style_override, DEBUG_NOTICE_STYLE_KEYS, key, value)
+
+
+## ふつうのお知らせ（遊ぶ人が見るもの）の見た目で試せるキー。
+const GAME_NOTICE_STYLE_KEYS := ["position", "fg", "bg", "border", "se", "seconds", "margin", "icon_size", "max", "overflow", "click_close", "log"]
+var notice_style_override: Dictionary = {}   ## コンソールの noticestyle game で試している、ふつうのお知らせの見た目（動かしている間だけ）
+
+
+## コンソールの noticestyle game キー 値：ふつうのお知らせの見た目を試す（プロジェクト設定 notice_style の上に重なる）。
+## margin・icon_size・max は整数、overflow は instant・fade、click_close・log は true・false。できたら ""、だめなら理由。
+func set_game_notice_style(key: String, value: Variant) -> String:
+	return _try_style(notice_style_override, GAME_NOTICE_STYLE_KEYS, key, value)
+
+
+## コンソールの noticestyle game save：試している見た目をプロジェクト設定 notice_style に書くようエディタへ渡す。
+func save_game_notice_style_to_editor() -> int:
+	if notice_style_override.is_empty():
+		return 0
+	return 1 if _write_game_settings("game_notice_style", notice_style_override) else -1
+
+
+## 名前を付けて取っておいた見た目（user:// のファイル。{debug: {名前: {…}}, game: {名前: {…}}}。パソコンごと）。
+const NOTICE_STYLE_SETS_FILE := "user://adv80s_notice_styles.json"
+var _style_set_current := {"debug": "", "game": ""}   ## いま use・next で使っている名前
+
+
+static func _style_sets_all() -> Dictionary:
+	var d = AdvJson.load_file(NOTICE_STYLE_SETS_FILE, []) if FileAccess.file_exists(NOTICE_STYLE_SETS_FILE) else {}
+	return d if d is Dictionary else {}
+
+
+## 取っておいた見た目（名前 → {キー: 値}）。game なら ふつうのお知らせ、そうでなければデバッグのお知らせ。
+static func notice_style_sets(game: bool) -> Dictionary:
+	var s = _style_sets_all().get("game" if game else "debug", {})
+	return s if s is Dictionary else {}
+
+
+static func _save_style_sets(game: bool, sets: Dictionary) -> bool:
+	var all := _style_sets_all()
+	all["game" if game else "debug"] = sets
+	var f := FileAccess.open(NOTICE_STYLE_SETS_FILE, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string(JSON.stringify(all))
+	f.close()
+	return true
+
+
+## いま試している見た目に名前を付けて取っておく（同じ名前は上書き）。試しているものがなければ false。
+func keep_notice_style(game: bool, name: String) -> bool:
+	var over: Dictionary = notice_style_override if game else debug_notice_style_override
+	name = name.strip_edges()
+	if name == "" or over.is_empty():
+		return false
+	var sets := notice_style_sets(game)
+	sets[name] = over.duplicate()
+	_style_set_current["game" if game else "debug"] = name
+	return _save_style_sets(game, sets)
+
+
+## 取っておいた見た目を試す（いま試しているものと入れかえる）。なければ false。
+func use_notice_style(game: bool, name: String) -> bool:
+	var sets := notice_style_sets(game)
+	if not sets.get(name) is Dictionary:
+		return false
+	var over: Dictionary = notice_style_override if game else debug_notice_style_override
+	over.clear()
+	for k in sets[name]:
+		var v = sets[name][k]
+		over[k] = int(v) if String(k) in ["fg", "bg", "border", "margin", "icon_size", "max"] else v
+	_style_set_current["game" if game else "debug"] = name
+	return true
+
+
+## 取っておいた見た目を名前の順に一つずつ試す（いまのものの次。終わりまで行くと頭へ）。試した名前（なければ ""）。
+func next_notice_style(game: bool) -> String:
+	var names: Array = notice_style_sets(game).keys()
+	if names.is_empty():
+		return ""
+	names.sort()
+	var cur := String(_style_set_current["game" if game else "debug"])
+	var i := names.find(cur)
+	var n := String(names[(i + 1) % names.size()])
+	use_notice_style(game, n)
+	return n
+
+
+func drop_notice_style(game: bool, name: String) -> bool:
+	if not erase_notice_style_set(game, name):
+		return false
+	if String(_style_set_current["game" if game else "debug"]) == name:
+		_style_set_current["game" if game else "debug"] = ""
+	return true
+
+
+## 取っておいた見た目を消す（エディタの「見た目…」からも使う）。なければ false。
+static func erase_notice_style_set(game: bool, name: String) -> bool:
+	var sets := notice_style_sets(game)
+	if not sets.has(name):
+		return false
+	sets.erase(name)
+	return _save_style_sets(game, sets)
+
+
+## 取っておいた見た目を名前ごと書く（同じ名前は上書き）。消したものを戻すときにも使う。
+static func put_notice_style_set(game: bool, name: String, values: Dictionary) -> bool:
+	name = name.strip_edges()
+	if name == "" or values.is_empty():
+		return false
+	var sets := notice_style_sets(game)
+	sets[name] = values.duplicate(true)
+	return _save_style_sets(game, sets)
+
+
+## 取っておいた見た目の名前を変える。できれば ""、できなければ理由。
+static func rename_notice_style_set(game: bool, old: String, new_name: String) -> String:
+	new_name = new_name.strip_edges()
+	var sets := notice_style_sets(game)
+	if not sets.get(old) is Dictionary:
+		return "見た目がありません：%s" % old
+	if new_name == "":
+		return "新しい名前を書いてください"
+	if new_name == old:
+		return "同じ名前です"
+	if sets.has(new_name):
+		return "その名前はもうあります：%s" % new_name
+	var out := {}
+	for k in sets:   # 並びを保つ
+		out[new_name if k == old else k] = sets[k]
+	return "" if _save_style_sets(game, out) else "書けません：%s" % NOTICE_STYLE_SETS_FILE
+
+
+func _try_style(target: Dictionary, keys: Array, key: String, value: Variant) -> String:
+	if not keys.has(key):
+		return "知らないキー：%s（%s）" % [key, "・".join(keys)]
+	if value == null:
+		target.erase(key)
+		return ""
+	var s := str(value).strip_edges()
+	match key:
+		"fg", "bg", "border", "margin", "icon_size", "max":
+			if not s.is_valid_int():
+				return "%s は整数で" % key
+			if key in ["margin", "icon_size", "max"] and int(s) < (1 if key == "max" else 0):
+				return "%s は %d 以上で" % [key, 1 if key == "max" else 0]
+			target[key] = int(s)
+		"seconds":
+			if not s.is_valid_float() or float(s) < 0.0:
+				return "seconds は 0 以上の数で（0 でクリックするまで）"
+			target[key] = float(s)
+		"position":
+			if not NOTICE_POSITIONS.has(s):
+				return "position は %s のどれか" % "・".join(NOTICE_POSITIONS)
+			target[key] = s
+		"layer":
+			if not NOTICE_LAYERS.has(s):
+				return "layer は %s のどれか（auto は画面が狭ければゲームの画面の外に）" % "・".join(NOTICE_LAYERS)
+			target[key] = s
+		"overflow":
+			if not s in ["instant", "fade"]:
+				return "overflow は instant・fade のどれか"
+			target[key] = s
+		"click_close", "log":
+			if not s.to_lower() in ["true", "false"]:
+				return "%s は true・false で" % key
+			target[key] = s.to_lower() == "true"
+		_:
+			target[key] = "" if s == "\"\"" else s
+	return ""
+
+
+## いま効いているデバッグのお知らせの見た目（プロジェクト設定 debug.notice_style に、試しているものを重ねたもの）。
+func debug_notice_style_now() -> Dictionary:
+	var ds = _debug_conf().get("notice_style", {})
+	var st: Dictionary = ds.duplicate() if ds is Dictionary else {}
+	for k in debug_notice_style_override:
+		st[k] = debug_notice_style_override[k]
+	return st
+
+
+## コンソールの noticestyle save：試している見た目を debug.notice_style に書くようエディタへ渡す。渡したキーの数（なければ 0、書けなければ -1）。
+func save_debug_notice_style_to_editor() -> int:
+	if debug_notice_style_override.is_empty():
+		return 0
+	return 1 if _write_game_settings("notice_style", debug_notice_style_override) else -1
+
+
+func _write_game_settings(section: String, values: Dictionary) -> bool:
+	var cur = AdvJson.load_file(GAME_SETTINGS_FILE, []) if FileAccess.file_exists(GAME_SETTINGS_FILE) else {}
+	if not cur is Dictionary:
+		cur = {}
+	var sec = cur.get(section, {})
+	if not sec is Dictionary:
+		sec = {}
+	for k in values:
+		sec[k] = values[k]
+	cur[section] = sec
+	var f := FileAccess.open(GAME_SETTINGS_FILE, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string(JSON.stringify(cur))
+	f.close()
+	if EngineDebugger.is_active():
+		EngineDebugger.send_message("adv80s:settings_saved", [])
+	return true
+
+
+## ゲームからエディタへ渡す設定の書きかえ（user:// のファイル。{notices: {種類: bool}, notice_style: {キー: 値}}）。エディタが取り込んで消す。
+const GAME_SETTINGS_FILE := "user://adv80s_game_settings.json"
+
+
+## コンソールの notice save：コンソールで切り替えた種類を、プロジェクト設定 debug.notices に書くようエディタへ渡す。
+## 渡した種類の数（切り替えたものがなければ 0、書けなければ -1）。
+func save_debug_notices_to_editor() -> int:
+	if debug_notice_override.is_empty():
+		return 0
+	var ns := {}
+	for k in debug_notice_override:
+		ns[k] = bool(debug_notice_override[k])
+	return debug_notice_override.size() if _write_game_settings("notices", ns) else -1
+
+
+## 種類ごとに「出す／出さない（どこで決めたか）」の一覧の文。
+func debug_notice_report() -> String:
+	var parts: Array = []
+	for k in DEBUG_NOTICE_KINDS:
+		parts.append("%s：%s%s" % [k, "出す" if debug_notice_on(k) else "出さない", "（コンソール）" if debug_notice_override.has(k) else ""])
+	return "、".join(parts)
+
+
+## お知らせを消す（少しずつ薄くしてから）。クリックで消すときにも使う。
+func dismiss_notice(p: Control, fade: float = 0.15) -> void:
+	if not is_instance_valid(p) or p.has_meta("closing"):
+		return
+	p.set_meta("closing", true)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tw := p.create_tween()
+	tw.tween_property(p, "modulate:a", 0.0, fade)
+	tw.tween_callback(func():
+		_notices.erase(p)
+		p.queue_free()
+		_relayout_notices())
+
+
+## 上限を超えたお知らせを、すぐに消す。
+func _dismiss_now(p: Control) -> void:
+	p.set_meta("closing", true)
+	_notices.erase(p)
+	p.queue_free()
+
+
+## お知らせを並べ直す。位置ごとに、出した順に上の位置なら下へ、下の位置なら上へ並べる（消えたものの隙間を詰める）。
+## 見える範囲（FC などは上下を隠す）の中に置く（段階64）。
+## ウィンドウの層のお知らせは、ウィンドウ（上はデバッグのボタンの下から）に並べる（段階64）。
+func _relayout_notices() -> void:
+	var vr := template.visible_rect()
+	var ws := _window_layer_size()
+	var wr := Rect2(Vector2(0, NOTICE_WINDOW_TOP), ws - Vector2(0, NOTICE_WINDOW_TOP))
+	var next_y := {}   # 位置（と層）→ 次に置く y
+	for n in _notices:
+		if not is_instance_valid(n) or n.has_meta("closing"):
+			continue
+		var win := bool(n.get_meta("window", false))
+		var org := wr.position if win else vr.position
+		var scr := wr.size if win else vr.size
+		var pos := String(n.get_meta("position", "top_right"))
+		var key := pos + ("@window" if win else "")
+		var margin := float(n.get_meta("margin", 12.0))
+		var size: Vector2 = (n as Control).size
+		var x := scr.x - size.x - margin
+		if pos.ends_with("left"):
+			x = margin
+		elif pos in ["top", "bottom", "center"]:
+			x = (scr.x - size.x) / 2.0
+		var from_bottom := pos.begins_with("bottom")
+		var y: float
+		if next_y.has(key):
+			y = float(next_y[key]) - (size.y if from_bottom else 0.0)
+		elif pos == "center":
+			y = (scr.y - size.y) / 2.0
+		else:
+			y = margin if not from_bottom else scr.y - size.y - margin
+		(n as Control).position = org + Vector2(x, y)
+		next_y[key] = y - 6 if from_bottom else y + size.y + 6
+
+
+## その位置にある、クリックで消せるお知らせ（なければ null）。
+func notice_at(pos: Vector2) -> Control:
+	for n in _notices:
+		if is_instance_valid(n) and bool(n.get_meta("click_close", false)) and not n.has_meta("closing") and (n as Control).get_global_rect().has_point(pos):
+			return n
+	return null
+
+
+## いま出ているお知らせの文言。
+func notices() -> Array:
+	return _notices.filter(func(n): return is_instance_valid(n)).map(func(n): return (n.find_child("Text", true, false) as Label).text)
+
+
+## おまけの一覧に出すか：特典は、特典を使わないなら出さず、hidden（既定 true）なら開くまで出さない。
+func extra_listed(entry: Dictionary, kind: String) -> bool:
+	if not bool(entry.get("bonus", false)):
+		return true
+	if not extras_bonus_on():
+		return false
+	return not bool(entry.get("hidden", true)) or extra_unlocked(entry, kind)
+
+
+## おまけの項目が開いているか：when があればそれ、なければ一度でも見た・聞いたか（kind は image か bgm）。
+## ギャラリーの項目に images（画像の並び）があれば、そのどれかを見ていれば開く。
+## 特典（bonus: true）は when（既定 sys.gallery_all か sys.music_all）。先に fill_extras_sys で数えておく。
+func extra_unlocked(entry: Dictionary, kind: String) -> bool:
+	if bool(entry.get("bonus", false)):
+		if not extras_bonus_on():
+			return false
+		return core.ctx.eval(entry.get("when", "sys.%s_all" % EXTRA_LISTS.get(kind, "gallery")), core.state)
+	if entry.has("when"):
+		return core.ctx.eval(entry["when"], core.state)
+	for id in extra_ids(entry):
+		if progress.seen.get(kind, {}).has(id):
+			return true
+	return false
+
+
+## おまけの項目の素材 ID（images があればその並び、なければ id）。
+func extra_ids(entry: Dictionary) -> Array:
+	var list = entry.get("images", [])
+	if list is Array and not list.is_empty():
+		return list.map(func(x): return String(x))
+	return [String(entry.get("id", ""))]
+
+
+## ギャラリーでめくる画像：when で開いた項目（特典を含む）は全部、そうでなければ見たものだけ。
+func extra_pages(entry: Dictionary) -> Array:
+	var ids := extra_ids(entry)
+	if entry.has("when") or bool(entry.get("bonus", false)):
+		return ids
+	return ids.filter(func(id): return progress.seen.get("image", {}).has(id))
+
+
+## タイトルで使う値（sys.opening_replay：オープニングを見返せるか、sys.endings_seen：見たエンディングの数）。
+func _fill_title_sys() -> void:
+	if not _sys.is_empty():
+		return
+	_fill_title_sys_basic()
+	core.state.sys["opening_replay"] = can_replay_opening()
+	core.state.sys["extras"] = can_open_extras()
+
+
+func _fill_title_sys_basic() -> void:
+	if not _sys.is_empty():
+		return
+	core.state.sys["endings_seen"] = progress.endings.size()
+	var list = project.get_value("endings", [])
+	var total := 0
+	var all := true
+	if list is Array:
+		for e in list:
+			if e is Dictionary:
+				total += 1
+				var seen := progress.endings.has(String(e.get("id", "")))
+				core.state.sys["ending_" + String(e.get("id", ""))] = seen
+				all = all and seen
+	for id in progress.endings:
+		core.state.sys["ending_" + String(id)] = true
+	core.state.sys["endings_total"] = total
+	core.state.sys["all_endings"] = total > 0 and all
+
+
+## テンプレートのタイトル画面の差し替え（プロジェクト設定 title_variants）。when に合うものを順に重ねる（後ろほど優先）。
+## [{when: "sys.endings_seen >= 2", image: ID, bgm: ID か {id, …}, transition: 演出}]
+func title_variant() -> Dictionary:
+	_fill_title_sys()
+	var out := {}
+	var vs = project.get_value("title_variants", [])
+	if vs is Array:
+		for v in vs:
+			if v is Dictionary and core.ctx.eval(v.get("when", true), core.state):
+				for k in v:
+					if k != "when":
+						out[k] = v[k]
+	return out
+
+
+## オープニングを飛ばせるか（2回目から、replay が skippable）。
+func can_skip_opening() -> bool:
+	return not _opening.is_empty() and bool(_opening.get("skippable", false))
+
+
+## シーンに入ったとき、オープニングなら記録の準備をする（入れ替わったら、前のオープニングは見たことにする）。
+func _track_opening(scene_id: String) -> void:
+	if scene_id != _fin_scene:
+		_fin_scene = ""
+	if not _opening.is_empty() and String(_opening["id"]) != scene_id:
+		var was_replay := bool(_opening.get("replay", false))
+		_end_opening()
+		if was_replay:
+			_pending_action = go_title   # 見返していたオープニングが次のシーンへ進んだ：タイトルへ戻る
+			return
+	if not _opening.is_empty() or not _sys.is_empty():
+		return
+	var sc = core.query("scene_info", {"id": scene_id})
+	if not sc is Dictionary or String(sc.get("kind", "")) != "opening":
+		return
+	var mode := String(sc.get("replay", "always"))
+	var seen := progress.openings.has(scene_id)
+	_opening = {"id": scene_id, "next": String(sc.get("next", "")), "mode": mode, "seen": seen,
+		"skippable": _opening_replay or (seen and mode == "skippable"), "boot": _opening_boot, "replay": _opening_replay}
+	if _opening_replay:
+		_opening_replay = false
+		_show_opening_hint()
+	elif seen and mode == "once":
+		_pending_action = skip_opening
+	elif can_skip_opening():
+		_show_opening_hint()
+
+
+func _show_opening_hint() -> void:
+	var l := Label.new()
+	l.text = String(project.get_value("opening_hint", "Esc：とばす　Ctrl：はやおくり"))
+	l.add_theme_color_override("font_color", template.color(int(template.get_section("text").get("name_color", 6))))
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	l.size = Vector2(template.screen_size.x - 8, 20)
+	l.position = Vector2(0, 4)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	screen.add_child(l)
+	_opening_hint = l
+
+
+func _entry_scene() -> String:
+	return entry if entry != "" else String(project.get_value("entry", ""))
+
+
+## はじめから（状態を始める前に戻して、開始位置から）。scene を渡すと、そのシーンから。
+func new_game(scene: String = "") -> void:
+	await _reset_state()
+	_run(core.start(scene if scene != "" else _entry_scene()))
+
+
+## タイトルへ戻る（状態を始める前に戻して、タイトルから）。タイトルがなければ、はじめから。
+func go_title() -> void:
+	await _reset_state()
+	_fill_title_sys()
+	var ts := String(project.get_value("title_screen", ""))
+	if ts == "":
+		_run(core.start(_entry_scene()))
+	elif ts == "template":
+		open_title_screen()
+	else:
+		_run(core.start(ts))
+
+
+func _reset_state() -> void:
+	_end_opening()
+	_opening_boot = false
+	_opening_replay = false
+	_fin_scene = ""
+	_history.clear()
+	var had_sys := not _sys.is_empty()
+	_sys = {}
+	core.state.sys = {}
+	if had_sys:
+		system_scene_closed.emit()
+	_request = {}
+	skip_mode = false
+	auto_mode = false
+	ended = false
+	await _apply_save_data(_initial_data)
+
+
+## テンプレートで作るタイトル画面（title_screen: "template"）。メニューで選んだ操作を行う。
+func open_title_screen() -> void:
+	var tv := title_variant()
+	var tb = tv.get("bgm", project.get_value("title_bgm", template.get_section("title").get("bgm")))
+	while true:
+		if tb != null and String(tb.get("id", "") if tb is Dictionary else tb) != "":
+			await _play(AdvEvents.make("bgm.play", tb.duplicate(true) if tb is Dictionary else {"id": str(tb)}))
+		var t := AdvTitleScreen.new().setup(self)
+		t.reveal.call_deferred()
+		await show_overlay(t)
+		match t.action:
+			"new":
+				if tb != null:
+					audio.stop_bgm(float(project.get_value("title_bgm_fade", 0.5)))
+				_run(core.start(_entry_scene()))
+				return
+			"continue":
+				await open_save_menu("load")
+			"chapters":
+				await modern.open_chapters()
+			"endings":
+				await modern.open_endings()
+			"opening":
+				await replay_opening()
+				return
+			"extras":
+				await modern.open_extras()
+			"settings":
+				await modern.open_settings()
+			"quit":
+				get_tree().quit()
+				return
+		if core.state.scene != "":
+			return   # ロードやチャプターで始まった
 
 
 func _resolve_features(diags: Array = []) -> void:
@@ -406,7 +1484,7 @@ func submit_intent(intent: Dictionary) -> void:
 	_run(core.submit(intent))
 
 
-## コマンド入力の文字列を読む（テンプレートの inputs.parser_profile："ja"、"en"、またはスクリプトのパス）。
+## コマンド入力の文字列を読む（テンプレートの inputs.parser_profile："ja"、"en"、"free"、またはスクリプトのパス）。
 func parse_text(text: String) -> Dictionary:
 	return AdvParsers.parse(String(template.get_section("inputs").get("parser_profile", "ja")), text, core)
 
@@ -446,24 +1524,54 @@ func _run(events: Array) -> void:
 	_set_inputs_enabled(false)
 	for ev in events:
 		await _play(ev)
-		if ended:
+		if ended or _pending_action.is_valid():
 			break
 	skipping = false
 	busy = false
+	if _pending_action.is_valid():
+		var act := _pending_action
+		_pending_action = Callable()
+		_autosave_pending = false
+		_flow_pending.clear()
+		if progress_path != "":
+			progress.save()
+		await act.call()
+		return
 	if ended:
 		game_ended.emit()
 		return
-	if _autosave_pending:
-		_autosave_pending = false
-		autosave()
-	if not _flow_pending.is_empty():
-		var snap := _make_save_data()
-		for node in _flow_pending:
-			progress.mark_reached(node, snap)
-		_flow_pending.clear()
-	progress.merge_read(core.state.read)
+	if _sys.is_empty():
+		# システム画面の中では、オートセーブ・到達点・既読を記録しない
+		if _autosave_pending:
+			autosave()
+		if not _flow_pending.is_empty():
+			var snap := _make_save_data()
+			for node in _flow_pending:
+				progress.mark_reached(node, snap)
+		progress.merge_read(core.state.read)
+	_autosave_pending = false
+	_flow_pending.clear()
 	if progress_path != "":
 		progress.save()
+	if not _opening.is_empty() and core.state.scene == String(_opening["id"]) and core.query("pending_choice") == null:
+		# オープニングの手順が終わった：次へ進む（next、なければタイトルか開始シーン）
+		var next := String(_opening.get("next", ""))
+		var was_replay := bool(_opening.get("replay", false))
+		_end_opening()
+		if was_replay:
+			go_title()
+		else:
+			_after_opening(next)
+		return
+	if _sys.is_empty() and _fin_scene != core.state.scene and core.query("scene_kind") == "ending" \
+			and core.query("pending_choice") == null:
+		# エンディングを最後まで進めた：「おわり」の画面（シーンの fin、プロジェクト設定の fin）
+		var info = core.query("scene_info")
+		var fs := fin_settings([info.get("fin") if info is Dictionary else null])
+		if bool(fs.get("show", true)):
+			_fin_scene = core.state.scene
+			await show_fin(fs)
+			return
 	_enter_idle()
 
 
@@ -475,7 +1583,13 @@ func _enter_idle() -> void:
 	var intents: bool = choice is Dictionary and choice.get("accepts_intents", false)
 	if choice is Dictionary and not (intents and choice.get("choices", []).is_empty()):
 		if screen.command_select != null:
-			screen.command_select.show_choices(choice.get("choices", []))
+			# 選択肢の文にも、変数・エイリアス・条件を使える（表示する文字だけにする）
+			var shown: Array = []
+			for c in choice.get("choices", []):
+				var cc: Dictionary = c.duplicate()
+				cc["label"] = AdvTextMarkup.to_plain(String(c.get("label", "")), core.state, template)
+				shown.append(cc)
+			screen.command_select.show_choices(shown)
 		if screen.command_line != null:
 			# Ink の intent タグつきの選択肢は、コマンド入力でも選べる
 			screen.command_line.set_enabled(intents)
@@ -494,9 +1608,7 @@ func _enter_idle() -> void:
 
 ## 入力UIの切り替え（テンプレートの inputs.enabled、出力イベント input.mode）。
 func _apply_input_modes() -> void:
-	var modes = core.state.ui.get("input_modes")
-	if not modes is Array:
-		modes = template.get_section("inputs").get("enabled", ["select", "parser"])
+	var modes := _input_modes()
 	if screen.command_line != null:
 		screen.command_line.visible = "parser" in modes and template.region_rect("input").size != Vector2i.ZERO
 	var pointer := _pointer_mode()
@@ -517,6 +1629,10 @@ func _apply_input_modes() -> void:
 
 ## いまの入力UIの一覧（input.mode で変えていればそれ、なければテンプレートとプロジェクト設定の inputs.enabled）。
 func _input_modes() -> Array:
+	# タイトル・オープニング・エンディング・システムのシーンでは、選択肢を出しているときだけ選べる（ほかの入力UIは出さない）
+	var kind = core.query("scene_kind")
+	if kind is String and kind in ["title", "opening", "ending", "system"]:
+		return ["select"] if core.query("pending_choice") != null else []
 	var modes = core.state.ui.get("input_modes")
 	if not modes is Array:
 		modes = template.get_section("inputs").get("enabled", ["select", "parser"])
@@ -617,6 +1733,19 @@ func _play(ev: Dictionary) -> void:
 	var type := String(ev.get("type", ""))
 	var wait = AdvEvents.wait_of(ev)
 	skipping = _skip_held()
+	if _sys.is_empty():
+		# おまけのギャラリーと音楽のために、出した画像と鳴らした曲を全プレイ共通で記録する
+		if type == "image.show":
+			var iv = args.get("id", "")
+			var fresh := false
+			for one in (iv if iv is Array else [iv]):
+				fresh = progress.mark_seen("image", String(one.get("id", "")) if one is Dictionary else str(one)) or fresh
+			if fresh:
+				check_bonus_unlocks()
+		elif type == "bgm.play":
+			if progress.mark_seen("bgm", String(args.get("id", ""))):
+				check_bonus_unlocks()
+		_auto_notice(type, args)
 	match type:
 		"text.show", "text.append":
 			var appending := type == "text.append"
@@ -703,15 +1832,80 @@ func _play(ev: Dictionary) -> void:
 				wait = "none"
 			else:
 				screen.play_effect(name, args)
-		"scene.goto":
+		"scene.goto", "scene.call", "scene.return":
 			_scene_transition = args.get("transition")
+			if type != "scene.return":
+				_track_opening(String(args.get("scene", "")))
+				if _pending_action.is_valid():
+					return
+			_apply_input_modes()   # タイトルやオープニングでは、入ったときからコマンドを出さない
 			# "keep": false のスプライトはシーンを移ると消える（6.4）
 			for id in _sprites.keys():
 				if _sprites[id].get("keep", true) == false and not _sprites[id].has("scene"):
 					_sprites.erase(id)
 					screen.remove_sprite(String(id))
-			if features.is_on("autosave") and "scene" in _autosave_on():
+			if type == "scene.goto" and features.is_on("autosave") and "scene" in _autosave_on():
 				_autosave_pending = true
+			wait = "none"
+		"ending.reach":
+			if _sys.is_empty():
+				progress.mark_ending(String(args.get("id", "")))
+				check_bonus_unlocks()
+			wait = "none"
+		"credits.roll":
+			await _roll_credits(args)
+			wait = "none"
+		"game.new":
+			var at := String(args.get("scene", ""))
+			_pending_action = func(): await new_game(at)
+			return
+		"game.title":
+			_pending_action = go_title
+			return
+		"game.continue":
+			_pending_action = func(): _enter_idle(); await open_save_menu("load")
+			return
+		"game.quit":
+			_pending_action = func(): get_tree().quit()
+			return
+		"fin.show":
+			var fs := fin_settings([args])
+			_pending_action = func(): await show_fin(fs)
+			return
+		"opening.play":
+			_pending_action = func(): await replay_opening(String(args.get("scene", "")))
+			return
+		"extras.open":
+			_pending_action = func(): _enter_idle(); await modern.open_extras()
+			return
+		"endings.open":
+			_pending_action = func(): _enter_idle(); await modern.open_endings()
+			return
+		"chapters.open":
+			_pending_action = func(): _enter_idle(); await modern.open_chapters()
+			return
+		"settings.open":
+			_pending_action = func(): _enter_idle(); await modern.open_settings()
+			return
+		"system.save":
+			if not _sys.is_empty():
+				save_game(String(args.get("slot", "")))
+				_fill_sys_vars()
+			wait = "none"
+		"system.load":
+			var slot := String(args.get("slot", ""))
+			_pending_action = func():
+				await close_system_scene(false)
+				await load_game(slot)
+				system_scene_closed.emit()
+			return
+		"system.close":
+			_pending_action = close_system_scene
+			return
+		"settings.set":
+			apply_setting(String(args.get("key", "")), args.get("value"))
+			if not _sys.is_empty():
+				_fill_sys_vars()
 			wait = "none"
 		"flow.mark":
 			_flow_pending.append(String(args.get("node", "")))
@@ -745,6 +1939,9 @@ func _play(ev: Dictionary) -> void:
 		"checkpoint":
 			if features.is_on("autosave") and bool(args.get("autosave", true)) and "checkpoint" in _autosave_on():
 				_autosave_pending = true
+		"notice.show":
+			show_notice(AdvTextMarkup.to_plain(String(args.get("text", "")), core.state, template), float(args.get("seconds", -1.0)),
+				String(args.get("icon", "")), args.get("log"), String(args.get("position", "")))
 		"notebook.add", "objective.set", "hint.set", "verbs.update", "hotspots.update", "input.mode":
 			pass  # 状態は Core が記録する。表示は入力待ちになったときに更新する
 		"choice.show":
@@ -841,6 +2038,8 @@ func _play(ev: Dictionary) -> void:
 		"group":
 			for sub in args.get("events", []):
 				await _play(sub)
+				if ended or _pending_action.is_valid():
+					return
 		"game.end":
 			ended = true
 			return
@@ -1378,6 +2577,8 @@ func _wait_input(kind: String, seconds: float) -> void:
 
 
 func _skip_held() -> bool:
+	if _pending_action.is_valid():
+		return true   # 流れを切る操作を待っている：いまのイベントの待ちは飛ばす
 	if features == null or not features.is_on("skip"):
 		return false
 	return skip_mode or Input.is_key_pressed(KEY_CTRL)
@@ -1458,7 +2659,7 @@ func is_blocked_input(event: InputEvent) -> bool:
 	if features == null:
 		return false
 	if _devices is Array:
-		if event is InputEventKey and not "keyboard" in _devices and not (OS.is_debug_build() and event.keycode in [KEY_F11, KEY_F12]):
+		if event is InputEventKey and not "keyboard" in _devices and not (OS.is_debug_build() and event.keycode in [KEY_F8, KEY_F11, KEY_F12]):
 			return true
 		if event is InputEventMouse and event.device != InputEvent.DEVICE_ID_EMULATION and not "mouse" in _devices:
 			return true
@@ -1473,6 +2674,18 @@ func is_blocked_input(event: InputEvent) -> bool:
 
 
 func _input(event: InputEvent) -> void:
+	# お知らせの上のクリックは、お知らせを消すだけ（文字送りなどには使わない）
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var n := notice_at(event.position)
+		if n != null:
+			dismiss_notice(n)
+			get_viewport().set_input_as_handled()
+			return
+	# ひな形にするものを選ぶ窓（デバッグ）は Esc で閉じる
+	if preset_picker != null and event.is_action_pressed("ui_cancel"):
+		close_preset_picker()
+		get_viewport().set_input_as_handled()
+		return
 	# ゲームパッドやキーボードで操作している間はカーソルを隠し、マウスを動かすとまた出す（6.5）
 	if (event is InputEventJoypadButton or (event is InputEventKey and event.pressed)) and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE \
 			and not _cursor_defs().is_empty():
@@ -1501,6 +2714,31 @@ func _input(event: InputEvent) -> void:
 			_overlay.call("close")
 			get_viewport().set_input_as_handled()
 		return
+	if can_skip_opening() and _overlay == null:
+		var sk: bool = (event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE) \
+			or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT) \
+			or (event is InputEventJoypadButton and event.pressed and event.button_index in [JOY_BUTTON_B, JOY_BUTTON_START])
+		if sk:
+			get_viewport().set_input_as_handled()
+			if busy:
+				_pending_action = skip_opening
+				_click_pending = true
+			else:
+				skip_opening()
+			return
+	if not _sys.is_empty():
+		# JSON のシステムシーンの中：Esc・右クリックで閉じる。ほかのショートカットは使わない
+		var cancel: bool = (event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_ESCAPE, KEY_F1, KEY_F4]) \
+			or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT) \
+			or (event is InputEventJoypadButton and event.pressed and event.button_index in [JOY_BUTTON_B, JOY_BUTTON_START])
+		if cancel:
+			get_viewport().set_input_as_handled()
+			if not busy:
+				close_system_scene()
+			return
+		if event is InputEventKey and event.pressed and event.keycode in [KEY_F2, KEY_F3, KEY_F5, KEY_F6, KEY_F9]:
+			get_viewport().set_input_as_handled()
+			return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_F2:
@@ -1529,9 +2767,11 @@ func _input(event: InputEvent) -> void:
 				_refresh_hotspots()
 			_:
 				pass
-		if OS.is_debug_build() and event.keycode in [KEY_F11, KEY_F12]:
+		if OS.is_debug_build() and event.keycode in [KEY_F8, KEY_F11, KEY_F12]:
 			if event.keycode == KEY_F12:
 				open_debug_console()
+			elif event.keycode == KEY_F8:
+				debug_reload(true if event.shift_pressed else null)   # Shift+F8 はシーンに入り直す
 			else:
 				open_scene_graph()
 			get_viewport().set_input_as_handled()
@@ -1575,10 +2815,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## メッセージログの画面を開く。閉じるまで待つ（await できる）。
 func open_log() -> void:
-	if _overlay != null or not features.is_on("message_log"):
+	if _overlay != null or not features.is_on("message_log") or not _sys.is_empty():
+		return
+	var custom: bool = await _open_custom_system("log")
+	if custom:
 		return
 	var v := AdvLogView.new()
-	v.open(message_log, template, Vector2(template.screen_size), features.is_on("rewind") and not busy)
+	v.open(message_log, template, template.visible_rect().size, features.is_on("rewind") and not busy, notice_style())
 	v.rewind_requested.connect(func(i: int): v.close(); rewind_to(i))
 	v.voice_requested.connect(_play_voice)
 	await show_overlay(v)
@@ -1590,6 +2833,10 @@ func show_overlay(c: Control) -> void:
 		_overlay.call("close")
 	_overlay = c
 	screen.add_child(c)
+	# 見える範囲の大きさで作った画面（メニュー・ログ・セーブ）は、見える範囲に置く（FC などは上下が隠れるので。段階63）
+	var vr := template.visible_rect()
+	if c.position == Vector2.ZERO and c.size.is_equal_approx(vr.size):
+		c.position = vr.position
 	await c.closed
 	_overlay = null
 
@@ -1598,10 +2845,13 @@ func show_overlay(c: Control) -> void:
 
 ## セーブ・ロードの画面を開く。閉じるまで待つ（await できる）。
 func open_save_menu(mode: String = "save") -> void:
-	if _overlay != null:
+	if _overlay != null or not _sys.is_empty():
+		return
+	var custom: bool = await _open_custom_system(mode)
+	if custom:
 		return
 	var m := AdvSaveMenu.new()
-	m.open(mode, list_saves(), template, Vector2(template.screen_size))
+	m.open(mode, list_saves(), template, template.visible_rect().size)
 	m.slot_chosen.connect(func(md: String, slot: String):
 		if md == "save":
 			save_game(slot)
@@ -1609,6 +2859,106 @@ func open_save_menu(mode: String = "save") -> void:
 			load_game(slot)
 		m.close())
 	await show_overlay(m)
+
+
+# ---------------------------------------------------------------- システム画面の差し替え（6.9）
+
+## プロジェクト設定 system_scenes で差し替えた画面を開く。差し替えていなければ false（標準の画面を出す）。
+## .tscn なら重ねて出し、それ以外はシーンIDとして JSON のシステムシーンを開く。
+func _open_custom_system(mode: String) -> bool:
+	var defs = project.get_value("system_scenes", {})
+	var spec := String(defs.get(mode, "")) if defs is Dictionary else ""
+	if spec == "":
+		return false
+	if spec.ends_with(".tscn") or spec.ends_with(".scn"):
+		var ps = load(spec) if ResourceLoader.exists(spec) else null
+		if not ps is PackedScene:
+			push_warning("[adv80s] システム画面のシーンが読めません: %s" % spec)
+			return false
+		var node: Node = ps.instantiate()
+		if not node is Control or not node.has_signal("closed"):
+			push_warning("[adv80s] システム画面は closed シグナルを持つ Control にしてください（AdvSystemScreen を継ぐ）: %s" % spec)
+			node.queue_free()
+			return false
+		if node.has_method("open"):
+			node.call("open", self, mode)
+		await show_overlay(node)
+		return true
+	if busy:
+		return false   # 実行中は JSON のシステムシーンを開けない（標準の画面を出す）
+	await open_system_scene(spec, mode)
+	if is_system_scene_open():
+		await system_scene_closed   # 閉じるまで待つ（標準の画面と同じ）
+	return true
+
+
+## JSON のシステムシーンを開く。いまの状態を取っておき、閉じたら戻す（システムシーンの中で変えた変数などは捨てる）。
+## シーンの中では sys.mode、sys.slot_count、sys.slot_<枠>（説明）、sys.slot_<枠>_exists、sys.slot_<枠>_label、
+## sys.<設定のキー>（text_speed、bgm_volume など）が読める。
+func open_system_scene(id: String, mode: String) -> void:
+	if not _sys.is_empty() or busy:
+		return
+	_sys = {"id": id, "mode": mode, "snapshot": _make_save_data()}
+	_fill_sys_vars()
+	await _run(core.start(id))
+
+
+## システムシーンを閉じて、開く前の状態に戻す。
+func close_system_scene(notify: bool = true) -> void:
+	if _sys.is_empty():
+		return
+	var snap: Dictionary = _sys["snapshot"]
+	_sys = {}
+	core.state.sys = {}
+	_fill_title_sys()
+	await _apply_save_data(snap)
+	if notify:
+		system_scene_closed.emit()
+
+
+func is_system_scene_open() -> bool:
+	return not _sys.is_empty()
+
+
+func _fill_sys_vars() -> void:
+	var v := {"mode": String(_sys.get("mode", ""))}
+	var saves := list_saves()
+	v["slot_count"] = saves.size()
+	for s in saves:
+		var k := "slot_" + String(s["slot"])
+		v[k] = String(s["info"])
+		v[k + "_exists"] = bool(s["exists"])
+		v[k + "_label"] = String(s["label"])
+	for key in settings.data:
+		if not settings.data[key] is Dictionary:
+			v[String(key)] = settings.data[key]
+	for key in features.allowed:
+		v["feature_" + String(key)] = features.is_on(String(key))
+	core.state.sys = v
+
+
+## 設定の値を変える（設定画面、システムシーンの settings.set、自作のシステム画面から）。
+## features.<キー> はモダン機能の切り替え。
+func apply_setting(key: String, value: Variant) -> void:
+	match key:
+		"":
+			return
+		"text_speed":
+			set_text_speed(float(value))
+		"text_size", "text_color", "window_opacity":
+			set_text_option(key, value)
+		"filters":
+			set_filters_enabled(bool(value))
+		"bgm_volume", "se_volume", "voice_volume":
+			settings.set_value(key, clampf(float(value), 0.0, 1.0))
+			save_settings()
+			apply_volumes()
+		_:
+			if key.begins_with("features.") or key.begins_with("feature_"):
+				set_feature(key.substr(9 if key.begins_with("features.") else 8), bool(value))
+			else:
+				settings.set_value(key, value)
+				save_settings()
 
 
 func _save_cfg() -> Dictionary:
@@ -1644,7 +2994,8 @@ func list_saves() -> Array:
 			exists = true
 			var meta: Dictionary = res["data"].get("meta", {})
 			var local := int(meta.get("time", 0)) + int(Time.get_time_zone_from_system().get("bias", 0)) * 60
-			info = "%s  %s" % [Time.get_datetime_string_from_unix_time(local, true), meta.get("scene_name", "")]
+			info = "%s%s  %s" % ["クリア  " if bool(meta.get("clear", false)) else "",
+				Time.get_datetime_string_from_unix_time(local, true), meta.get("scene_name", "")]
 		r.append({"slot": s, "label": label, "exists": exists, "info": info})
 	return r
 
@@ -1660,6 +3011,11 @@ func _read_slot(slot: String) -> Dictionary:
 
 ## セーブするデータ（巻き戻しとフローチャートの記録にも同じ形を使う）。
 func _make_save_data() -> Dictionary:
+	if not _sys.is_empty():
+		# システムシーンの中でセーブするのは、開く前の状態
+		var d: Dictionary = _sys["snapshot"].duplicate(true)
+		d["meta"]["time"] = int(Time.get_unix_time_from_system())
+		return d
 	var sc = core.query("scene")
 	return {
 		"save_version": 1,
@@ -1668,7 +3024,7 @@ func _make_save_data() -> Dictionary:
 			"time": int(Time.get_unix_time_from_system()),
 			"scene": core.state.scene,
 			"scene_name": String(sc.get("name", "")) if sc is Dictionary else "",
-		},
+		}.merged(_clear_meta),
 		"core": core.save_state(),
 		"log": message_log.to_array(),
 		"view": {"template": template.id, "layout": template._layout_name, "images": _images.duplicate(true),
@@ -1715,7 +3071,9 @@ func autosave() -> void:
 		if t < oldest_time:
 			oldest_time = t
 			oldest = i + 1
-	save_game("auto%d" % oldest)
+	if save_game("auto%d" % oldest) == OK and notice_text("autosave") != "":
+		var ne := notice_entry("autosave")
+		show_notice(AdvTextMarkup.to_plain(notice_text("autosave"), core.state, template), -1.0, String(ne.get("icon", "")), ne.get("log"), String(ne.get("position", "")))
 
 
 ## ロードする。成功したら空文字、失敗したら理由のコード（AdvSave.ERR_*）。
@@ -1736,6 +3094,14 @@ func load_game(slot: String) -> String:
 		return "GAME_MISMATCH"
 	_history.clear()
 	await _apply_save_data(res["data"])
+	var lmeta: Dictionary = res["data"].get("meta", {})
+	if bool(lmeta.get("clear", false)):
+		# クリアデータ：save_carry で選んだものだけ引き継いで、save_resume のシーン（なければ開始シーン）から始める
+		_fin_scene = ""
+		await _carry_over(lmeta.get("carry", "all"))
+		message_log.clear()
+		var resume := String(lmeta.get("resume", ""))
+		_run(core.start(resume if resume != "" else _entry_scene()))
 	loaded.emit(slot)
 	return ""
 
@@ -1773,7 +3139,7 @@ func _apply_save_data(data: Dictionary) -> void:
 
 ## 入力を送る直前の状態を残す（モダン機能 rewind）。
 func _push_history() -> void:
-	if not features.is_on("rewind"):
+	if not features.is_on("rewind") or not _sys.is_empty():
 		return
 	_history.append({"data": _make_save_data(), "log_size": message_log.entries.size()})
 	var max_steps := int(features.options.get("rewind", {}).get("max_steps", 100))
@@ -1810,6 +3176,27 @@ func jump_to_node(node: String) -> void:
 		return
 	_history.clear()
 	await _apply_save_data(progress.snapshots[node])
+
+
+# ---------------------------------------------------------------- スタッフロール（6.9）
+
+func _roll_credits(args: Dictionary) -> void:
+	var b = args.get("bgm")
+	if b != null:
+		await _play(AdvEvents.make("bgm.play", b.duplicate(true) if b is Dictionary else {"id": str(b)}))
+	var c := AdvCredits.new().setup(args, template, core.state, func(id: String) -> Texture2D: return _layer_texture(id))
+	screen.add_child(c)
+	var done := [false]
+	c.finished.connect(func(): done[0] = true)
+	c.roll(args)
+	var skippable := bool(args.get("skippable", true))
+	_click_pending = false
+	while not done[0]:
+		await get_tree().process_frame
+		if skippable and (_click_pending or _skip_held()):
+			_click_pending = false
+			c.skip()
+	c.queue_free()
 
 
 func _play_voice(id: String) -> void:
@@ -1895,6 +3282,32 @@ func _setup_debug_ui() -> void:
 	graph_btn.pressed.connect(open_scene_graph)
 	btn_bar.add_child(graph_btn)
 
+	var edit_btn := Button.new()
+	edit_btn.text = "エディタで開く"
+	edit_btn.tooltip_text = "いまのシーンを、エディタのシナリオエディタで開きます（エディタから実行したときだけ）"
+	edit_btn.focus_mode = Control.FOCUS_NONE
+	edit_btn.add_theme_font_size_override("font_size", 11)
+	edit_btn.pressed.connect(func():
+		if not request_open_in_editor():
+			show_debug_notice("エディタにつながっていません", {}, -1.0, "", null, "editor"))
+	btn_bar.add_child(edit_btn)
+
+	var preset_btn := Button.new()
+	preset_btn.text = "ひな形に"
+	preset_btn.tooltip_text = "いまのフラグ・変数・持ち物から入れるものを選んで、シナリオエディタの実行のひな形にします（全部をすぐ送るならコンソールの preset 名前）"
+	preset_btn.focus_mode = Control.FOCUS_NONE
+	preset_btn.add_theme_font_size_override("font_size", 11)
+	preset_btn.pressed.connect(func(): open_preset_picker())
+	btn_bar.add_child(preset_btn)
+
+	var reload_btn := Button.new()
+	reload_btn.text = "読み直す (F8)"
+	reload_btn.tooltip_text = "シナリオ・プロジェクト設定・素材の一覧を読み直します（遊んでいる状態はそのまま）"
+	reload_btn.focus_mode = Control.FOCUS_NONE
+	reload_btn.add_theme_font_size_override("font_size", 11)
+	reload_btn.pressed.connect(debug_reload)
+	btn_bar.add_child(reload_btn)
+
 	var console_btn := Button.new()
 	console_btn.text = "デバッグコンソール (F12)"
 	console_btn.tooltip_text = "デバッグコンソールを表示します (ショートカット: F12)"
@@ -1902,6 +3315,768 @@ func _setup_debug_ui() -> void:
 	console_btn.add_theme_font_size_override("font_size", 11)
 	console_btn.pressed.connect(open_debug_console)
 	btn_bar.add_child(console_btn)
+
+
+## デバッグ実行中に、プロジェクト設定・シナリオ・素材の一覧を読み直す（遊んでいる状態と画面はそのまま。デバッグビルド専用）。
+## 素材はフォルダを読み直す（manifest.auto.json が古くても新しいファイルを見つける）。成功なら ""、だめなら理由。
+## reenter が true なら（null ならプロジェクト設定 debug.reload_reenter）、読み直したあと、いまのシーンに入り直す（入ったときの手順を動かす）。
+func debug_reload(reenter: Variant = null) -> String:
+	if not OS.is_debug_build() and not _allow_reload_in_release:
+		return "NOT_DEBUG"
+	if busy and core.query("pending_choice") == null:
+		return "BUSY"
+	if not _sys.is_empty():
+		return "SYSTEM_SCENE"   # システム画面の中では読み直さない（開く前の状態に戻れなくなるため）
+	var data := _make_save_data()
+	var diags: Array = []
+	var p := AdvProject.load_project(project_path, diags)
+	if p == null:
+		_report(diags)
+		return "PROJECT"
+	project = p
+	_apply_project_overrides(template)
+	# 素材：いまの素材フォルダを読み直す
+	var old := core.assets
+	var a := AdvAssets.new()
+	a.folders = project.asset_folders()
+	a.missing_asset = old.missing_asset
+	a.set_preset(core.preset, core.group)
+	for r in old.roots:
+		a.roots.append(r)
+		a.add_manifest(AdvManifestGenerator.scan(r, a.folders)["manifest"], r)
+		var manual := String(r) + "/" + AdvManifestGenerator.MANUAL_NAME
+		if FileAccess.file_exists(manual):
+			var m = AdvJson.load_file(manual, diags)
+			if m is Dictionary:
+				a.add_manifest(m, r)
+	core.assets = a
+	# シナリオ
+	core.diagnostics.clear()
+	core.use_adapter(AdvJsonAdapter.new())
+	var paths := scenario_paths if not scenario_paths.is_empty() else PackedStringArray(project.get_value("scenarios", []))
+	core.load_scenario(paths)
+	diags.append_array(core.validate())
+	diags.append_array(AdvIdCheck.check_project(project.data, func(k: String, id: String) -> bool: return core.assets.has(k, id), project_path))
+	missing_ids = diags.filter(func(d): return String(d.get("code", "")) in MISSING_CODES)
+	_report(diags)
+	AdvTextMarkup.set_aliases(core.aliases())
+	await _apply_save_data(data)
+	var now := watch_snapshot()
+	last_reload_changes = watch_changes(now) if not _watch_snap.is_empty() else []
+	_watch_snap = now
+	# プロジェクト設定の debug.auto_reload が書き換わっていたら合わせる（コンソールで入・切したものは、変わらなければそのまま）
+	var auto_now := bool(_debug_conf().get("auto_reload", false))
+	if _poll_auto != null and auto_now != bool(_poll_auto) and auto_now != is_auto_reload():
+		set_auto_reload(auto_now)
+	_poll_auto = auto_now
+	_poll_mtime = FileAccess.get_modified_time(project_path) if FileAccess.file_exists(project_path) else -1
+	for c in last_reload_changes:
+		print("[adv80s] 読み直し：%s" % c)
+	var re := bool(reenter if reenter != null else _debug_conf().get("reload_reenter", false))
+	var sc := core.state.scene
+	if re and sc != "" and core.query("scene_info", {"id": sc}) != null:
+		_run(core.start(sc))
+	reloaded.emit()
+	var ct := changes_text(last_reload_changes, int(_debug_conf().get("notice_files", 2)))
+	show_debug_notice("読み直しました" + ("：" + ct if ct != "" else "") + ("（入り直しました）" if re else "") + ("（見つからない ID：%d 件）" % missing_ids.size() if not missing_ids.is_empty() else ""), {}, -1.0, "", null, "reload")
+	return ""
+
+
+# ---------------------------------------------------------------- デバッグ：ファイルの見張り（自動で読み直す）
+
+var _watch_timer: Timer = null
+var _watch_snap: Dictionary = {}     ## 見張っているファイル → 更新時刻
+var _watch_pending := false
+var last_reload_changes: Array = []  ## 前に読み直したときに変わっていたファイル（足した・消したも）
+var _poll_timer: Timer = null
+var _poll_mtime := -1
+var _poll_auto: Variant = null
+
+
+## プロジェクト設定の debug（auto_reload、reload_reenter、watch_interval）。
+func _debug_conf() -> Dictionary:
+	var d = project.get_value("debug", {})
+	return d if d is Dictionary else {}
+
+
+## ファイルの変更を見張って、保存したら自動で読み直すか（デバッグビルド専用）。
+func set_auto_reload(on: bool) -> void:
+	if not OS.is_debug_build() and not _allow_reload_in_release:
+		return
+	if on and _watch_timer == null:
+		_watch_timer = Timer.new()
+		_watch_timer.name = "ReloadWatch"
+		_watch_timer.wait_time = maxf(0.25, float(_debug_conf().get("watch_interval", 1.0)))
+		_watch_timer.timeout.connect(check_watch)
+		add_child(_watch_timer)
+		_watch_snap = watch_snapshot()
+		_watch_timer.start()
+	elif not on and _watch_timer != null:
+		_watch_timer.queue_free()
+		_watch_timer = null
+
+
+func is_auto_reload() -> bool:
+	return _watch_timer != null
+
+
+## 見張っているファイルが変わっていれば読み直す（忙しいときは、次に空いたときに）。読み直したら true。
+func check_watch() -> bool:
+	if not _watch_pending and watch_changes(watch_snapshot()).is_empty():
+		return false
+	_watch_pending = true
+	if (busy and core.query("pending_choice") == null) or not _sys.is_empty():
+		return false
+	_watch_pending = false
+	await debug_reload()
+	return true
+
+
+## 見張るファイル（プロジェクト設定、シナリオ、素材フォルダの中）→ 更新時刻。
+func watch_snapshot() -> Dictionary:
+	var snap := {}
+	var files: Array = [project_path]
+	var paths := scenario_paths if not scenario_paths.is_empty() else PackedStringArray(project.get_value("scenarios", []))
+	files.append_array(Array(paths))
+	for f in files:
+		if FileAccess.file_exists(String(f)):
+			snap[String(f)] = file_stamp(String(f))
+	for r in core.assets.roots:
+		if String(r).begins_with(AdvAssets.BUILTIN_ROOT):
+			continue
+		_watch_dir(String(r), snap, 0)
+	return snap
+
+
+## ファイルの印（更新時刻と大きさ）。更新時刻は秒の単位なので、同じ秒の中の書き換えも大きさで気づけるようにする。
+static func file_stamp(path: String) -> String:
+	var f := FileAccess.open(path, FileAccess.READ)
+	var size := f.get_length() if f != null else -1
+	return "%d:%d" % [FileAccess.get_modified_time(path), size]
+
+
+## 前の見張りから変わったファイル（足した・消した・書き換えた）。
+func watch_changes(now: Dictionary) -> Array:
+	var out := []
+	for p in now:
+		if not _watch_snap.has(p) or _watch_snap[p] != now[p]:
+			out.append(p)
+	for p in _watch_snap:
+		if not now.has(p):
+			out.append(p)
+	out.sort()
+	return out
+
+
+func _watch_dir(dir: String, snap: Dictionary, depth: int) -> void:
+	var d := DirAccess.open(dir)
+	if d == null or depth > 6:
+		return
+	for f in d.get_files():
+		if f.ends_with(".import") or f.ends_with(".uid"):
+			continue
+		var p := dir.path_join(f)
+		snap[p] = FileAccess.get_modified_time(p)
+	for sub in d.get_directories():
+		if not sub.begins_with("."):
+			_watch_dir(dir.path_join(sub), snap, depth + 1)
+
+
+## エディタ（デバッグ実行のもと）のシナリオエディタで、いまのシーン（scene_id を渡せばそのシーン）を開いてもらう。
+## デバッガにつながっていなければ false。
+## いまの会話（dialogue）や Ink のノットも知らせ、エディタはそこを開く。
+func request_open_in_editor(scene_id: String = "") -> bool:
+	var loc := current_location()
+	var id := scene_id if scene_id != "" else String(loc.get("scene", ""))
+	if scene_id != "":
+		loc = {"scene": scene_id}
+	if id == "" or not EngineDebugger.is_active():
+		return false
+	EngineDebugger.send_message("adv80s:open_scene", [id, loc])
+	var at := String(loc.get("dialogue", "")) if String(loc.get("dialogue", "")) != "" else String(loc.get("knot", ""))
+	show_debug_notice("エディタで開きます：%s" % (id + ("・" + at if at != "" else "")), {}, -1.0, "", null, "editor")
+	return true
+
+
+## ゲームからエディタへ渡すひな形（user:// のファイル。[{name, vars, items, time}]）。エディタは窓に戻ったときか、デバッガの知らせで取り込んで消す。
+const GAME_PRESETS_FILE := "user://adv80s_game_presets.json"
+
+
+## いまのフラグ・変数・持ち物を、名前を付けて実行のひな形としてエディタへ送る（名前を省くと「シーン 時:分:秒」）。
+## ファイルに書き足し、デバッガにつながっていれば知らせる。書けたら名前、書けなければ ""。
+func send_preset_to_editor(pname: String = "", only: Variant = null) -> String:
+	return send_preset_data(pname, preset_from_state(core.state, only))
+
+
+## 中身 {vars, items} をそのまま、名前を付けてエディタへ送る（選ぶ窓で値を書きかえたとき）。
+func send_preset_data(pname: String, data: Dictionary) -> String:
+	if pname.strip_edges() == "":
+		pname = default_preset_name()
+	pname = pname.strip_edges()
+	var e := data.duplicate(true)
+	e["name"] = pname
+	e["time"] = Time.get_unix_time_from_system()
+	var list = AdvJson.load_file(GAME_PRESETS_FILE, []) if FileAccess.file_exists(GAME_PRESETS_FILE) else []
+	if not list is Array:
+		list = []
+	list.append(e)
+	var f := FileAccess.open(GAME_PRESETS_FILE, FileAccess.WRITE)
+	if f == null:
+		show_debug_notice("ひな形を書けません", {}, -1.0, "", null, "preset")
+		return ""
+	f.store_string(JSON.stringify(list))
+	f.close()
+	if EngineDebugger.is_active():
+		EngineDebugger.send_message("adv80s:preset_saved", [pname])
+	show_debug_notice("ひな形にしました：%s" % pname, {}, -1.0, "", null, "preset")
+	return pname
+
+
+func default_preset_name() -> String:
+	return "%s %s" % [core.state.scene, Time.get_time_string_from_system()]
+
+
+## 状態からひな形の中身 {vars, items}（変数は書かれたものだけ。定数・sys は入れない）。
+## only に {vars: [名前], items: [ID]} を渡すと、そこに挙げたものだけ（null なら全部）。
+static func preset_from_state(st: AdvState, only: Variant = null) -> Dictionary:
+	var out := {}
+	var vs := {}
+	var pick_v: Array = only.get("vars", []) if only is Dictionary else []
+	var pick_i: Array = only.get("items", []) if only is Dictionary else []
+	for k in st.vars:
+		if not st.constants.has(k) and (only == null or pick_v.has(k)):
+			vs[k] = st.vars[k]
+	if not vs.is_empty():
+		out["vars"] = vs
+	var its := {}
+	for k in st.items:
+		if only == null or pick_i.has(k):
+			its[k] = st.items[k]
+	if not its.is_empty():
+		out["items"] = its
+	return out
+
+
+# ---------------------------------------------------------------- ひな形にするものを選ぶ窓（デバッグ）
+
+var preset_picker: PanelContainer        ## 開いている間だけある
+var _picker_name: LineEdit
+var _picker_checks: Dictionary = {}      ## "v:名前" / "i:ID" → CheckBox
+var _picker_filter: LineEdit
+var _picker_list: VBoxContainer
+var _picker_none: Label
+var _picker_new_kind: OptionButton
+var _picker_new_name: LineEdit
+var _picker_new_value: LineEdit
+var _picker_removed: Dictionary = {}     ## 外した行：key → {text, value, on}（「外したものを戻す」用。外したときの値）
+var _picker_restore_btn: Button
+var picker_keep_open := false            ## 送ったあとも窓を閉じない（続けて送る。名前は次の番号にする）
+var _picker_keep_check: CheckBox
+var _picker_group: LineEdit              ## 組（エディタの「実行：」でまとめて並ぶ。"" は組なし）
+var _picker_values: Dictionary = {}      ## "v:名前" → LineEdit（値。JSON として読めればその値）、"i:ID" → SpinBox（個数）
+
+
+## いまの変数・持ち物の一覧を出し、印を付けたものだけをひな形にする窓を開く（初めは全部に印）。
+func open_preset_picker() -> void:
+	close_preset_picker()
+	if _debug_layer == null:
+		return
+	var full := preset_from_state(core.state)
+	preset_picker = PanelContainer.new()
+	preset_picker.name = "PresetPicker"
+	preset_picker.custom_minimum_size = Vector2(460, 0)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.09, 0.14, 0.96)
+	sb.border_color = Color(0.5, 0.6, 0.9)
+	sb.set_border_width_all(1)
+	sb.set_content_margin_all(10)
+	preset_picker.add_theme_stylebox_override("panel", sb)
+	var box := VBoxContainer.new()
+	preset_picker.add_child(box)
+	var title := Label.new()
+	title.text = "ひな形にするものを選ぶ"
+	box.add_child(title)
+	_picker_name = LineEdit.new()
+	_picker_name.placeholder_text = "名前（空なら「シーン 時:分:秒」）"
+	_picker_name.text = default_preset_name()
+	box.add_child(_picker_name)
+	_picker_filter = LineEdit.new()
+	_picker_filter.placeholder_text = "絞り込み（名前の一部。空なら全部）"
+	_picker_filter.clear_button_enabled = true
+	_picker_filter.text_changed.connect(func(t): filter_picker(t))
+	box.add_child(_picker_filter)
+	var sc := ScrollContainer.new()
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sc.custom_minimum_size = Vector2(0, 150)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED   # 横には広げない（段階61）
+	box.add_child(sc)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(list)
+	_picker_list = list
+	_picker_checks.clear()
+	var vs: Dictionary = full.get("vars", {})
+	var keys: Array = vs.keys()
+	keys.sort()
+	for k in keys:
+		_add_picker_row(list, "v:" + String(k), "変数 %s" % k, vs[k])
+	var its: Dictionary = full.get("items", {})
+	keys = its.keys()
+	keys.sort()
+	for k in keys:
+		_add_picker_row(list, "i:" + String(k), "持ち物 %s ×" % k, int(its[k]))
+	if _picker_checks.is_empty():
+		_picker_none = Label.new()
+		_picker_none.text = "（まだ書かれた変数も持ち物もありません。下で足せます）"
+		list.add_child(_picker_none)
+	# 新しく足す：まだゲームで書かれていない変数・持ち物も入れられる
+	var add_row := HBoxContainer.new()
+	box.add_child(add_row)
+	_picker_new_kind = OptionButton.new()
+	_picker_new_kind.add_item("変数")
+	_picker_new_kind.add_item("持ち物")
+	_picker_new_kind.focus_mode = Control.FOCUS_NONE
+	add_row.add_child(_picker_new_kind)
+	_picker_new_name = LineEdit.new()
+	_picker_new_name.placeholder_text = "名前・ID"
+	_picker_new_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_row.add_child(_picker_new_name)
+	_picker_new_value = LineEdit.new()
+	_picker_new_value.placeholder_text = "値・個数"
+	_picker_new_value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_row.add_child(_picker_new_value)
+	var add_b := Button.new()
+	add_b.text = "足す"
+	add_b.focus_mode = Control.FOCUS_NONE
+	add_b.pressed.connect(func():
+		if picker_add("i" if _picker_new_kind.selected == 1 else "v", _picker_new_name.text, _picker_new_value.text):
+			_picker_new_name.text = ""
+			_picker_new_value.text = "")
+	add_row.add_child(add_b)
+	_picker_keep_check = CheckBox.new()
+	_picker_keep_check.text = "送っても閉じない（続けて送る）"
+	_picker_keep_check.focus_mode = Control.FOCUS_NONE
+	_picker_keep_check.button_pressed = picker_keep_open
+	_picker_keep_check.toggled.connect(func(on):
+		picker_keep_open = on
+		# 続けて送るなら、いまの名前を組にしておく（まとめて並ぶように）
+		if on and _picker_group.text.strip_edges() == "":
+			_picker_group.text = _picker_name.text.strip_edges())
+	var krow := HBoxContainer.new()
+	box.add_child(krow)
+	krow.add_child(_picker_keep_check)
+	_picker_group = LineEdit.new()
+	_picker_group.placeholder_text = "組（なくてよい）"
+	_picker_group.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_picker_group.tooltip_text = "同じ組のひな形は、エディタの「実行：」の一覧でまとめて並びます"
+	krow.add_child(_picker_group)
+	var row := HBoxContainer.new()
+	box.add_child(row)
+	for spec in [["全部", func(): set_picker_all(true)], ["なし", func(): set_picker_all(false)], ["外したものを戻す", func(): picker_restore_removed()], ["送る", func(): confirm_preset_picker()], ["やめる", func(): close_preset_picker()]]:
+		var b := Button.new()
+		b.text = spec[0]
+		b.focus_mode = Control.FOCUS_NONE
+		b.pressed.connect(spec[1])
+		row.add_child(b)
+		if spec[0] == "外したものを戻す":
+			_picker_restore_btn = b
+			b.disabled = true
+	_debug_layer.add_child(preset_picker)
+	# デバッグの層は大きさを持たないので、画面の大きさから真ん中に置く
+	preset_picker.reset_size()
+	preset_picker.position = ((get_viewport().get_visible_rect().size - preset_picker.size) / 2).floor()
+
+
+## 一行：印・名前・値（変数は書きかえられる欄、持ち物は個数）。
+func _add_picker_row(list: Control, key: String, text: String, value: Variant) -> void:
+	var row := HBoxContainer.new()
+	list.add_child(row)
+	var rm := Button.new()
+	rm.text = "×"
+	rm.flat = true
+	rm.focus_mode = Control.FOCUS_NONE
+	rm.tooltip_text = "この行を一覧から外します（送りません）"
+	rm.pressed.connect(func(): picker_remove(key))
+	row.add_child(rm)
+	var cb := CheckBox.new()
+	cb.text = text
+	cb.button_pressed = true
+	cb.focus_mode = Control.FOCUS_NONE
+	# 長い名前は「…」で切り、全文は説明に（段階61）。値の欄と幅を分け合う
+	cb.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	cb.clip_text = true
+	cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cb.size_flags_stretch_ratio = 1.0 if key.begins_with("v:") else 3.0
+	cb.tooltip_text = text
+	row.add_child(cb)
+	_picker_checks[key] = cb
+	if key.begins_with("i:"):
+		var sp := SpinBox.new()
+		sp.min_value = 0
+		sp.max_value = 9999
+		sp.value = int(value)
+		sp.custom_minimum_size = Vector2(90, 0)
+		row.add_child(sp)
+		_picker_values[key] = sp
+	else:
+		var le := LineEdit.new()
+		le.text = value_text(value)
+		le.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		le.tooltip_text = "値を書きかえて送れます（true、3、\"文字\" など。JSON として読めなければ文字）"
+		row.add_child(le)
+		_picker_values[key] = le
+
+
+## 一覧から行を外す（送らない。ゲームの値は変えない。足した行も、もとからの行も）。外せたら true。
+func picker_remove(key: String) -> bool:
+	if not _picker_checks.has(key):
+		return false
+	var cb := _picker_checks[key] as CheckBox
+	var row := cb.get_parent()
+	var c = _picker_values.get(key)
+	var val: Variant = null
+	if c is LineEdit:
+		val = parse_value_text(c.text)
+	elif c is SpinBox:
+		val = int(c.value)
+	_picker_removed[key] = {"text": cb.text, "value": val, "on": cb.button_pressed}
+	if _picker_restore_btn != null:
+		_picker_restore_btn.disabled = false
+	_picker_checks.erase(key)
+	_picker_values.erase(key)
+	if row != null:
+		row.get_parent().remove_child(row)
+		row.queue_free()
+	return true
+
+
+## 外した行をまとめて一覧に戻す（外したときの値と印で。その間に同じ名前を足していれば、それはそのまま）。戻した数。
+func picker_restore_removed() -> int:
+	var n := 0
+	for key in _picker_removed:
+		if _picker_checks.has(key) or _picker_list == null:
+			continue
+		var e: Dictionary = _picker_removed[key]
+		if _picker_none != null:
+			_picker_none.queue_free()
+			_picker_none = null
+		_add_picker_row(_picker_list, key, String(e["text"]), e["value"])
+		set_picker_check(key, bool(e["on"]))
+		n += 1
+	_picker_removed.clear()
+	if _picker_restore_btn != null:
+		_picker_restore_btn.disabled = true
+	if _picker_filter != null and _picker_filter.text != "":
+		filter_picker(_picker_filter.text)
+	return n
+
+
+## 一覧に足す（kind は "v" 変数・"i" 持ち物。value は欄の文字か値。持ち物の個数は空なら 1）。印を付けて足し、
+## すでにあれば値を書きかえて印を付ける。名前が空なら足さない。足せたら true。
+func picker_add(kind: String, name: String, value: Variant = "") -> bool:
+	name = name.strip_edges()
+	if name == "" or _picker_list == null:
+		return false
+	var key := ("i:" if kind == "i" else "v:") + name
+	var v: Variant = parse_value_text(value) if value is String else value
+	if kind == "i":
+		v = 1 if (value is String and String(value).strip_edges() == "") else int(v) if (v is int or v is float or String(v).is_valid_int()) else 1
+	if not _picker_checks.has(key):
+		if _picker_none != null:
+			_picker_none.queue_free()
+			_picker_none = null
+		_add_picker_row(_picker_list, key, ("持ち物 %s ×" if kind == "i" else "変数 %s") % name, v)
+	else:
+		set_picker_value(key, v)
+	set_picker_check(key, true)
+	if _picker_filter != null and _picker_filter.text != "":
+		filter_picker(_picker_filter.text)
+	return true
+
+
+## 値を欄に書く形に（整数の小数は整数で）。
+static func value_text(v: Variant) -> String:
+	if v is float and v == floorf(v) and absf(v) < 1e15:
+		return str(int(v))
+	return JSON.stringify(v)
+
+
+## 欄の文字を値に（JSON として読めればその値、読めなければ文字）。
+static func parse_value_text(s: String) -> Variant:
+	var t := s.strip_edges()
+	var j := JSON.new()
+	return j.data if t != "" and j.parse(t) == OK else t
+
+
+## 窓の値の欄を書きかえる（テスト・道具用）。
+func set_picker_value(key: String, value: Variant) -> void:
+	var c = _picker_values.get(key)
+	if c is LineEdit:
+		c.text = value if value is String else value_text(value)
+	elif c is SpinBox:
+		c.value = int(value)
+
+
+## 印の付いたものを、欄の値で {vars, items} に（持ち物は 0 なら持たないとして入れる）。
+func picker_preset() -> Dictionary:
+	var out := {}
+	var vs := {}
+	var its := {}
+	for k in _picker_checks:
+		if not (_picker_checks[k] as CheckBox).button_pressed:
+			continue
+		var c = _picker_values.get(k)
+		if String(k).begins_with("v:"):
+			vs[String(k).substr(2)] = parse_value_text(c.text) if c is LineEdit else null
+		else:
+			its[String(k).substr(2)] = int(c.value) if c is SpinBox else 1
+	if not vs.is_empty():
+		out["vars"] = vs
+	if not its.is_empty():
+		out["items"] = its
+	return out
+
+
+func _picker_row_visible(key: String) -> bool:
+	var cb = _picker_checks.get(key)
+	return cb != null and (cb as CheckBox).get_parent().visible
+
+
+## 窓の印：key は "v:名前" か "i:ID"。
+func set_picker_check(key: String, on: bool) -> void:
+	if _picker_checks.has(key):
+		(_picker_checks[key] as CheckBox).button_pressed = on
+
+
+## 「全部」「なし」：絞り込みで見えているものだけに付け外しする（隠れているものの印はそのまま）。
+func set_picker_all(on: bool) -> void:
+	for k in _picker_checks:
+		if _picker_row_visible(k):
+			(_picker_checks[k] as CheckBox).button_pressed = on
+
+
+## 名前の一部（大文字・小文字は区別しない）で一覧を絞る。印は隠れても残り、送るときに入る。見えている数を返す。
+func filter_picker(text: String) -> int:
+	if _picker_filter != null and _picker_filter.text != text:
+		_picker_filter.text = text
+	var t := text.strip_edges().to_lower()
+	var n := 0
+	for k in _picker_checks:
+		var row := (_picker_checks[k] as CheckBox).get_parent() as Control
+		row.visible = t == "" or String(k).substr(2).to_lower().contains(t)
+		if row.visible:
+			n += 1
+	return n
+
+
+## 印の付いたもの {vars: [名前], items: [ID]}。
+func picker_selection() -> Dictionary:
+	var out := {"vars": [], "items": []}
+	for k in _picker_checks:
+		if (_picker_checks[k] as CheckBox).button_pressed:
+			out["vars" if String(k).begins_with("v:") else "items"].append(String(k).substr(2))
+	return out
+
+
+## 印の付いたものだけでひな形にして送り、窓を閉じる。何も選んでいなければ送らない。送った名前（送らなければ ""）。
+func confirm_preset_picker() -> String:
+	if preset_picker == null:
+		return ""
+	var data := picker_preset()
+	if data.is_empty():
+		show_debug_notice("ひな形に入れるものを選んでください", {}, -1.0, "", null, "preset")
+		return ""
+	if _picker_group != null and _picker_group.text.strip_edges() != "":
+		data["group"] = _picker_group.text.strip_edges()
+	var pn := send_preset_data(_picker_name.text, data)
+	if picker_keep_open and pn != "":
+		_picker_name.text = next_preset_name(pn)   # 同じ名前で上書きしないよう、次の名前にしておく
+	else:
+		close_preset_picker()
+	return pn
+
+
+## 続けて送るときの次の名前：「名前 2」「名前 3」…（末尾が「 数」ならその次）。
+static func next_preset_name(pn: String) -> String:
+	var re := RegEx.create_from_string("^(.*) (\\d+)$")
+	var m := re.search(pn)
+	if m != null:
+		return "%s %d" % [m.get_string(1), int(m.get_string(2)) + 1]
+	return pn + " 2"
+
+
+func close_preset_picker() -> void:
+	if preset_picker != null:
+		preset_picker.queue_free()
+		preset_picker = null
+	_picker_checks.clear()
+	_picker_values.clear()
+	_picker_list = null
+	_picker_none = null
+	_picker_removed.clear()
+	_picker_restore_btn = null
+
+
+## いまの場所 {scene, dialogue?（JSON の会話）, knot?（Ink のノット）}。
+func current_location() -> Dictionary:
+	var loc := {"scene": core.state.scene}
+	for n in core.adapters_by_name:
+		var q = core.adapters_by_name[n].query("location")
+		if q is Dictionary:
+			for k in q:
+				if String(q[k]) != "":
+					loc[k] = q[k]
+	return loc
+
+
+## エディタの「このシーンから実行」の頼み（user:// のファイル）。あれば読んで消し、始めるシーンを返す（30 秒より古いものは使わない）。
+const RUN_FROM_FILE := "user://adv80s_run_from.json"
+
+
+static func take_run_from_request() -> String:
+	return String(take_run_from().get("scene", ""))
+
+
+## 頼みをまるごと読む（読んで消す。30 秒より古いもの・形の違うものは {}）。
+## {scene, time, dialogue?, line?, knot?, preset?, vars?: {名前: 値}, items?: {ID: 個数}}
+static func take_run_from() -> Dictionary:
+	if not FileAccess.file_exists(RUN_FROM_FILE):
+		return {}
+	var d = AdvJson.load_file(RUN_FROM_FILE, [])
+	DirAccess.remove_absolute(RUN_FROM_FILE)
+	if not d is Dictionary:
+		return {}
+	if absf(Time.get_unix_time_from_system() - float(d.get("time", 0))) > 30.0:
+		return {}
+	# JSON の数は小数で返るので、行と道筋の番目は整数に（選択肢の項目の番目は文字のまま）
+	if d.has("line"):
+		d["line"] = int(d["line"])
+	if d.get("path") is Array:
+		d["path"] = d["path"].map(func(e): return int(e) if (e is int or e is float) else e)
+	return d
+
+
+## 「先に設定：a = 1、b = true …ほか 3」（limit が 0 以下なら全部）。
+static func pre_set_text(log: Dictionary, limit: int = 4) -> String:
+	var parts: Array = []
+	for k in log:
+		if limit > 0 and parts.size() >= limit:
+			break
+		var v = log[k]
+		parts.append("%s = %s" % [k, str(int(v)) if v is float and v == floorf(v) and absf(v) < 1e15 else JSON.stringify(v)])
+	var rest := log.size() - parts.size()
+	return "先に設定：%s%s" % ["、".join(parts), " …ほか %d" % rest if rest > 0 else ""]
+
+
+## どこから始めるか：「会話 talk から」「会話 talk の 3 番目から」「会話 talk の 3 › そうなら › 1 番目から」「ノット k から」。なければ ""。
+static func run_place_text(req: Dictionary) -> String:
+	var dl := String(req.get("dialogue", ""))
+	if dl != "":
+		var path: Array = req["path"] if req.get("path") is Array and not req["path"].is_empty() else [int(req.get("line", 0))]
+		var ps = req.get("pre_sets", false)
+		var tail := "（設定を先に・条件も）" if str(ps) == "cond" else ("（設定を先に）" if ps is bool and ps else "")
+		if path.size() == 1 and int(path[0]) <= 0:
+			return "会話 %s から%s" % [dl, tail]
+		return "会話 %s の %s 番目から%s" % [dl, path_text(path), tail]
+	if String(req.get("knot", "")) != "":
+		return "ノット %s から" % String(req["knot"])
+	return ""
+
+
+## 道筋を人の読む形に：[2, "then", 0] → 「3 › そうなら › 1」、[1, "choice", "options", "0", "do", 2] → 「2 › 選択肢 1 › 3」。
+static func path_text(path: Array) -> String:
+	var out: Array = []
+	var i := 0
+	while i < path.size():
+		var e = path[i]
+		if e is int or e is float:
+			out.append(str(int(e) + 1))
+		elif String(e) == "then":
+			out.append("そうなら")
+		elif String(e) == "else":
+			out.append("そうでないなら")
+		elif String(e) == "choice" and i + 3 < path.size() and String(path[i + 1]) == "options":
+			out.append("選択肢 %d" % (int(String(path[i + 2])) + 1))
+			i += 3   # "options", 番目, "do" を飛ばす
+		else:
+			out.append(String(e))
+		i += 1
+	return " › ".join(out)
+
+
+## 頼みの vars・items を、始める前の状態に入れる（変数は set_var、持ち物は個数。0 以下なら持たない）。
+func apply_run_values(req: Dictionary) -> void:
+	var vs = req.get("vars", {})
+	if vs is Dictionary:
+		for k in vs:
+			core.state.set_var(String(k), vs[k])
+	var its = req.get("items", {})
+	if its is Dictionary:
+		for k in its:
+			var n := int(its[k])
+			if n > 0:
+				core.state.items[String(k)] = n
+			else:
+				core.state.items.erase(String(k))
+
+
+## 「シーンから実行：hall（会話 talk の 3 番目から、ひな形 終盤）」
+static func run_from_text(req: Dictionary) -> String:
+	var s := "シーンから実行：%s" % String(req.get("scene", ""))
+	var parts: Array = []
+	var place := run_place_text(req)
+	if place != "":
+		parts.append(place)
+	if String(req.get("preset", "")) != "":
+		parts.append("ひな形 %s" % String(req["preset"]))
+	return s + ("（%s）" % "、".join(parts) if not parts.is_empty() else "")
+
+
+## 変わったファイルを短く（「a.json、b.png ほか 2 件」）。limit は名前を出す数（プロジェクト設定 debug.notice_files、既定 2）。
+static func changes_text(changes: Array, limit: int = 2) -> String:
+	if changes.is_empty() or limit <= 0:
+		return ""
+	var names := changes.slice(0, limit).map(func(p): return String(p).get_file())
+	var t := "、".join(names)
+	if changes.size() > limit:
+		t += " ほか %d 件" % (changes.size() - limit)
+	return t
+
+
+## デバッグ実行中、プロジェクト設定の debug.auto_reload が書き換わったら（シナリオエディタの「保存で読み直す」など）、
+## 自動の読み直しを入・切する（2秒ごとにプロジェクト設定のファイルだけを見る）。
+func _start_debug_poll() -> void:
+	if _poll_timer != null:
+		return
+	_poll_timer = Timer.new()
+	_poll_timer.name = "DebugPoll"
+	_poll_timer.wait_time = 2.0
+	_poll_timer.timeout.connect(poll_debug_settings)
+	add_child(_poll_timer)
+	_poll_mtime = FileAccess.get_modified_time(project_path) if FileAccess.file_exists(project_path) else -1
+	_poll_auto = bool(_debug_conf().get("auto_reload", false))
+	_poll_timer.start()
+
+
+## プロジェクト設定のファイルが変わっていて、debug.auto_reload が前と違えば、それに合わせる。合わせたら true。
+func poll_debug_settings() -> bool:
+	var mt := FileAccess.get_modified_time(project_path) if FileAccess.file_exists(project_path) else -1
+	if mt == _poll_mtime:
+		return false
+	_poll_mtime = mt
+	var data = AdvJson.load_file(project_path, [])
+	if not data is Dictionary:
+		return false
+	var dbg = data.get("debug", {})
+	var on := dbg is Dictionary and bool(dbg.get("auto_reload", false))
+	if _poll_auto != null and on == bool(_poll_auto):
+		return false
+	_poll_auto = on
+	if on != is_auto_reload():
+		set_auto_reload(on)
+		show_debug_notice("保存したら読み直す：%s" % ("入" if on else "切"), {}, -1.0, "", null, "auto_reload")
+		return true
+	return false
 
 
 ## デバッグコンソールを開く（デバッグビルド専用）。
@@ -1917,6 +4092,7 @@ func open_debug_console() -> void:
 	if script == null:
 		return
 	var console: Control = script.new()
+	console.set("player", self)
 	console.call("setup", core)
 	console.connect("data_modified", apply_debug_changes)
 	console.connect("open_scene_graph_requested", func() -> void:

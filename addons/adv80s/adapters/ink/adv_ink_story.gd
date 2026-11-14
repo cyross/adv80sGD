@@ -6,7 +6,7 @@ extends RefCounted
 ##
 ## 対応：文章、グルー、タグ、選択肢（条件、一度だけ、見えない既定の選択肢）、分岐、変数（グローバル、一時、参照渡し）、
 ## 計算、関数、トンネル、スレッド、訪問回数、ターン数、シーケンス（シャッフルを含む）、乱数、外部関数。
-## 未対応：LIST 型（使うとエラーになる）。
+## LIST（AdvInkList）にも対応する。
 ##
 ## 使い方：
 ##   var s := AdvInkStory.new()
@@ -142,7 +142,9 @@ const O_TAG := 3
 
 var root: InkContainer
 var ink_version: int = 0
-var has_lists: bool = false         ## LIST を定義している（未対応）
+var has_lists: bool = false         ## LIST を定義している
+var list_defs: Dictionary = {}       ## LIST の定義：リスト名 → {項目名: 値}
+var _list_items: Dictionary = {}     ## 項目名・「リスト名.項目名」→ 「リスト名.項目名」（変数の名前として読むとき）
 var errors: PackedStringArray = []
 var warnings: PackedStringArray = []
 
@@ -182,6 +184,16 @@ func load_json(text: String) -> Error:
 	ink_version = int(d.get("inkVersion", 0))
 	var ld = d.get("listDefs", {})
 	has_lists = ld is Dictionary and not ld.is_empty()
+	list_defs = {}
+	_list_items = {}
+	if ld is Dictionary:
+		for n in ld:
+			var items := {}
+			for it in ld[n]:
+				items[String(it)] = int(ld[n][it])
+				_list_items[String(it)] = "%s.%s" % [n, it]
+				_list_items["%s.%s" % [n, it]] = "%s.%s" % [n, it]
+			list_defs[String(n)] = items
 	if ink_version < 19 or ink_version > 21:
 		warnings.append("inkVersion %d is not tested (expected 19-21)" % ink_version)
 	root = _to_container(d["root"], null)
@@ -276,7 +288,7 @@ func _to_obj(t: Variant, parent: InkContainer) -> Variant:
 		elif d.has("#"):
 			o = InkObj.new(K_TAG, String(d["#"]))
 		elif d.has("list"):
-			o = InkObj.new(K_LIST, d)
+			o = InkObj.new(K_LIST, AdvInkList.from_json(d))
 		else:
 			errors.append("unknown object: %s" % JSON.stringify(d))
 			return null
@@ -526,6 +538,10 @@ func _set_chosen(p: Variant, inc_turn: bool) -> void:
 	_visit_changed_due_to_divert()
 
 
+## 外部関数が立てると、いまの命令のあとで進めるのをやめる（サブシーンの呼び出しなど。続きは次の continue_maximally で）。
+var stop_requested: bool = false
+
+
 ## 選択肢か終わりまで進め、その間に出た行を返す。[{text, tags}]
 func continue_maximally() -> Array:
 	_run_until_stop()
@@ -534,8 +550,9 @@ func continue_maximally() -> Array:
 
 func _run_until_stop() -> void:
 	_did_safe_exit = false
+	stop_requested = false
 	var guard := 0
-	while can_continue():
+	while can_continue() and not stop_requested:
 		_step()
 		if not can_continue() and _el()["type"] != T_GAME:
 			_try_follow_default_invisible_choice()
@@ -543,7 +560,7 @@ func _run_until_stop() -> void:
 		if guard > 2000000:
 			errors.append("too many steps (infinite loop?)")
 			break
-	if _ptr == null and _choices.is_empty() and not _did_safe_exit and errors.is_empty():
+	if _ptr == null and _choices.is_empty() and not _did_safe_exit and errors.is_empty() and not stop_requested:
 		if _can_pop(T_TUNNEL):
 			errors.append("unexpectedly reached end of content. Do you need a '->->' to return from a tunnel?")
 		elif _can_pop(T_FUNCTION):
@@ -622,8 +639,19 @@ func variable(name: String) -> Variant:
 
 ## グローバル変数を書き換える（Core の状態から同期するときに使う）。宣言されていない名前は無視する。
 func set_global(name: String, value: Variant) -> void:
-	if globals.has(name):
-		globals[name] = _coerce_in(value)
+	if not globals.has(name):
+		return
+	var cur = globals[name]
+	if cur is AdvInkList and not value is AdvInkList:
+		# Core には「項目名, 項目名」の文字列で渡している
+		if str(cur) == str(value):
+			return
+		var nl := list_from_string(str(value))
+		if nl.count() == 0:
+			nl.set_initial_origin_names(cur.origin_names())
+		globals[name] = nl
+		return
+	globals[name] = _coerce_in(value)
 
 
 func global_names() -> Array:
@@ -631,7 +659,7 @@ func global_names() -> Array:
 
 
 static func _coerce_in(v: Variant) -> Variant:
-	if v is int or v is float or v is bool or v is String:
+	if v is int or v is float or v is bool or v is String or v is AdvInkList:
 		return v
 	return str(v)
 
@@ -669,7 +697,7 @@ func _step() -> void:
 		if v is VarPointer and v.ci == -1:
 			v = VarPointer.new(v.name, _context_for(v.name))
 		if _in_expr:
-			_eval.append(v)
+			_push_eval(v)
 		else:
 			_push_output_value(v, obj)
 	_next_content()
@@ -690,6 +718,7 @@ func _obj_value(o: InkObj) -> Variant:
 		K_VOID: return VoidValue.new()
 		K_GLUE: return "<>"
 		K_TAG: return TagValue.new(o.a)
+		K_LIST: return o.a
 	return null
 
 
@@ -763,7 +792,7 @@ func _next_content() -> void:
 		if _can_pop(T_FUNCTION):
 			_pop_callstack()
 			if _in_expr:
-				_eval.append(VoidValue.new())
+				_push_eval(VoidValue.new())
 			did_pop = true
 		elif _can_pop_thread():
 			_threads.pop_back()
@@ -1066,21 +1095,18 @@ func _perform(obj: Variant) -> bool:
 			if v == null:
 				warnings.append("variable not found: %s" % o.a)
 				v = 0
-			_eval.append(v)
+			_push_eval(v)
 			return true
 		K_CNT:
 			var c = content_at_path(o.a, o)
-			_eval.append(int(_visit_counts.get(c.path(), 0)) if c is InkContainer else 0)
+			_push_eval(int(_visit_counts.get(c.path(), 0)) if c is InkContainer else 0)
 			return true
 		K_NATIVE:
 			var n: int = NATIVES[o.a]
 			var args := []
 			for i in n:
 				args.push_front(_eval.pop_back())
-			_eval.append(_native(o.a, args))
-			return true
-		K_LIST:
-			errors.append("LIST is not supported by the adv80s ink runtime")
+			_push_eval(_native(o.a, args))
 			return true
 	return false
 
@@ -1099,7 +1125,7 @@ func _command(o: InkObj) -> void:
 		"nop", "thread":
 			pass
 		"du":
-			_eval.append(_eval.back())
+			_push_eval(_eval.back())
 		"pop":
 			_eval.pop_back()
 		"~ret", "->->":
@@ -1135,7 +1161,7 @@ func _command(o: InkObj) -> void:
 					if x[0] == O_TEXT:
 						parts.push_front(x[1])
 				_output.resize(_output.size() - consumed)
-				_eval.append(TagValue.new(_clean("".join(parts))))
+				_push_eval(TagValue.new(_clean("".join(parts))))
 			else:
 				_push_output([O_CMD, "/#"])
 		"/str":
@@ -1155,11 +1181,11 @@ func _command(o: InkObj) -> void:
 			for k in keep:
 				_push_output(k)
 			_in_expr = true
-			_eval.append("".join(parts))
+			_push_eval("".join(parts))
 		"choiceCnt":
-			_eval.append(_choices.size())
+			_push_eval(_choices.size())
 		"turn":
-			_eval.append(_turn_index + 1)
+			_push_eval(_turn_index + 1)
 		"turns", "readc":
 			var t = _eval.pop_back()
 			if not t is DivertTarget:
@@ -1174,7 +1200,7 @@ func _command(o: InkObj) -> void:
 					n = int(_visit_counts.get(c.path(), 0))
 			else:
 				n = -1 if o.a == "turns" else 0
-			_eval.append(n)
+			_push_eval(n)
 		"rnd":
 			var mx := int(_eval.pop_back())
 			var mn := int(_eval.pop_back())
@@ -1184,16 +1210,16 @@ func _command(o: InkObj) -> void:
 			if span <= 0 or span > 2147483647:
 				errors.append("RANDOM was called with minimum as %d and maximum as %d. The maximum must be larger" % [mn, mx])
 				span = maxi(1, mini(span, 2147483647))
-			_eval.append(next % span + mn)
+			_push_eval(next % span + mn)
 			_prev_random = next
 		"srnd":
 			_seed = int(_eval.pop_back())
 			_prev_random = 0
-			_eval.append(VoidValue.new())
+			_push_eval(VoidValue.new())
 		"visit":
-			_eval.append(int(_visit_counts.get(_ptr[0].path(), 0)) - 1)
+			_push_eval(int(_visit_counts.get(_ptr[0].path(), 0)) - 1)
 		"seq":
-			_eval.append(_shuffle_index())
+			_push_eval(_shuffle_index())
 		"done":
 			if _can_pop_thread():
 				_threads.pop_back()
@@ -1206,8 +1232,85 @@ func _command(o: InkObj) -> void:
 			_ptr = null
 			_thread()["prev"] = null
 			_did_safe_exit = true
-		"listInt", "range", "lrnd":
-			errors.append("LIST is not supported by the adv80s ink runtime")
+		"listInt":
+			var iv = _eval.pop_back()
+			var lname = _eval.pop_back()
+			var gen := AdvInkList.new()
+			if not iv is int:
+				errors.append("Passed non-integer when creating a list element from a numerical value.")
+			elif not list_defs.has(String(lname)):
+				errors.append("Failed to find LIST called %s" % lname)
+			else:
+				var item := _item_with_value(String(lname), iv)
+				if item != "":
+					gen.add("%s.%s" % [lname, item], iv)
+			_push_eval(gen)
+		"range":
+			var mx = _eval.pop_back()
+			var mn = _eval.pop_back()
+			var target = _eval.pop_back()
+			if not target is AdvInkList:
+				errors.append("Expected list, minimum and maximum for LIST_RANGE")
+				_push_eval(AdvInkList.new())
+			else:
+				_push_eval(target.sub_range(1 if mn is bool and mn else mn, 1 if mx is bool and mx else mx))
+		"lrnd":
+			var lv = _eval.pop_back()
+			if not lv is AdvInkList:
+				errors.append("Expected list for LIST_RANDOM")
+				_push_eval(AdvInkList.new())
+			elif lv.count() == 0:
+				_push_eval(AdvInkList.new())
+			else:
+				var next := AdvDotNetRandom.new(AdvDotNetRandom.wrap32(_seed + _prev_random)).next()
+				var key: String = lv.keys()[next % lv.count()]
+				var nl := AdvInkList.new()
+				nl.set_initial_origin_names([AdvInkList.origin_of(key)])
+				nl.origins = [AdvInkList.origin_of(key)]
+				nl.add(key, lv.value_of(key))
+				_prev_random = next
+				_push_eval(nl)
+
+
+## 評価用の値を積む（C# 版の PushEvaluationStack：LIST なら元のリストを決める）。
+func _push_eval(v: Variant) -> void:
+	if v is AdvInkList:
+		var names = v.origin_names()
+		if names != null:
+			v.origins.clear()
+			for n in names:
+				if list_defs.has(n) and not n in v.origins:
+					v.origins.append(n)
+	_eval.append(v)
+
+
+## リストの中で、値が value の最初の項目の名前（なければ ""）。
+func _item_with_value(list_name: String, value: int) -> String:
+	var def: Dictionary = list_defs.get(list_name, {})
+	for item in def:
+		if int(def[item]) == value:
+			return item
+	return ""
+
+
+## 「項目名, 項目名」や「リスト名.項目名」の文字列からリストを作る（Core の状態から戻すとき）。
+func list_from_string(s: String) -> AdvInkList:
+	var l := AdvInkList.new()
+	for part in s.split(","):
+		var name := part.strip_edges()
+		if name == "":
+			continue
+		if name.contains("."):
+			var ln := name.get_slice(".", 0)
+			var it := name.substr(name.find(".") + 1)
+			if list_defs.has(ln) and list_defs[ln].has(it):
+				l.add(name, int(list_defs[ln][it]))
+			continue
+		for ln in list_defs:
+			if list_defs[ln].has(name):
+				l.add("%s.%s" % [ln, name], int(list_defs[ln][name]))
+				break
+	return l
 
 
 func _shuffle_index() -> int:
@@ -1253,6 +1356,12 @@ func _get_raw(name: String, ci: int) -> Variant:
 
 func _get_var(name: String, ci: int = -1) -> Variant:
 	var v = _get_raw(name, ci)
+	if v == null and _list_items.has(name):
+		# 変数がなければ、LIST の項目の名前として読む（1つだけ入ったリスト）
+		var key: String = _list_items[name]
+		var l := AdvInkList.new()
+		l.add(key, int(list_defs[AdvInkList.origin_of(key)][AdvInkList.item_of(key)]))
+		return l
 	var guard := 0
 	while v is VarPointer and guard < 32:
 		v = _get_raw(v.name, v.ci)
@@ -1284,12 +1393,21 @@ func _assign(name: String, value: Variant, is_global: bool, is_new: bool) -> voi
 				break
 	if to_global:
 		var old = globals.get(name)
+		_retain_list_origins(old, value)
 		globals[name] = value
-		if on_variable_changed.is_valid() and old != value and _global_names.has(name):
+		var same: bool = (old.equals(value) and str(old) == str(value)) if old is AdvInkList and value is AdvInkList else old == value
+		if on_variable_changed.is_valid() and not same and _global_names.has(name):
 			on_variable_changed.call(name, value)
 	else:
 		var idx := _cs().size() if ci == -1 else ci
+		_retain_list_origins(_cs()[idx - 1]["temps"].get(name), value)
 		_cs()[idx - 1]["temps"][name] = value
+
+
+## 空のリストを入れるときは、元のリストの名前を引き継ぐ（C# 版の RetainListOriginsForAssignment）。
+static func _retain_list_origins(old: Variant, value: Variant) -> void:
+	if old is AdvInkList and value is AdvInkList and value.count() == 0:
+		value.set_initial_origin_names(old.origin_names())
 
 
 # ---------------------------------------------------------------- 外部関数
@@ -1304,14 +1422,14 @@ func _call_external(name: String, n: int) -> void:
 	elif root.named.has(name):
 		# 外部関数がなければ、同じ名前の ink の関数を代わりに呼ぶ（C# 版の allowExternalFunctionFallbacks と同じ）
 		for a in args:
-			_eval.append(a)
+			_push_eval(a)
 		_diverted = [root.named[name], 0]
 		_push(T_FUNCTION)
 		return
 	else:
 		errors.append("external function not bound: %s" % name)
 		return
-	_eval.append(VoidValue.new() if result == null else _coerce_in(result))
+	_push_eval(VoidValue.new() if result == null else _coerce_in(result))
 
 
 # ---------------------------------------------------------------- 計算
@@ -1323,6 +1441,8 @@ func _truthy(v: Variant) -> bool:
 		return v != 0
 	if v is String:
 		return v != ""
+	if v is AdvInkList:
+		return v.count() > 0
 	if v is DivertTarget:
 		errors.append("divert target used as a condition")
 		return false
@@ -1341,10 +1461,18 @@ static func _to_str(v: Variant) -> String:
 		return v.path
 	if v is VarPointer:
 		return v.name
+	if v is AdvInkList:
+		return str(v)
 	return str(v)
 
 
 func _native(op: String, args: Array) -> Variant:
+	for x in args:
+		if x is VoidValue:
+			errors.append("Attempting to perform %s on a void value. Did you forget to 'return' a value from a function you called here?" % op)
+			return 0
+	if args.any(func(x): return x is AdvInkList):
+		return _native_list(op, args)
 	# 真偽値は計算の前に整数にする
 	for i in args.size():
 		if args[i] is bool:
@@ -1409,6 +1537,57 @@ func _native(op: String, args: Array) -> Variant:
 		"MAX": return max(a, b)
 		"POW": return pow(float(a), float(b))
 	errors.append("unsupported function: %s" % op)
+	return 0
+
+
+## LIST の計算（C# 版の CallBinaryListOperation と、LIST の演算）。
+func _native_list(op: String, args: Array) -> Variant:
+	if args.size() == 1:
+		var x: AdvInkList = args[0]
+		match op:
+			"!": return 1 if x.count() == 0 else 0
+			"LIST_INVERT": return x.all_items(list_defs, true)
+			"LIST_ALL": return x.all_items(list_defs, false)
+			"LIST_MIN": return x.min_as_list()
+			"LIST_MAX": return x.max_as_list()
+			"LIST_COUNT": return x.count()
+			"LIST_VALUE": return x.max_value()
+		errors.append("Cannot perform operation '%s' on List" % op)
+		return 0
+	var a = args[0]
+	var b = args[1]
+	if (op == "+" or op == "-") and a is AdvInkList and b is int:
+		var r := AdvInkList.new()
+		for k in a.keys():
+			var t: int = a.value_of(k) + b if op == "+" else a.value_of(k) - b
+			var origin := AdvInkList.origin_of(k)
+			if origin in a.origins:
+				var item := _item_with_value(origin, t)
+				if item != "":
+					r.add("%s.%s" % [origin, item], t)
+		return r
+	if (op == "&&" or op == "||") and not (a is AdvInkList and b is AdvInkList):
+		var ta := _truthy(a)
+		var tb := _truthy(b)
+		return (ta and tb) if op == "&&" else (ta or tb)
+	if a is AdvInkList and b is AdvInkList:
+		match op:
+			"+": return a.union(b)
+			"-": return a.without(b)
+			"?": return a.contains(b)
+			"!?": return not a.contains(b)
+			"L^": return a.intersect(b)
+			"==": return a.equals(b)
+			"!=": return not a.equals(b)
+			">": return a.greater_than(b)
+			"<": return a.less_than(b)
+			">=": return a.greater_or_equal(b)
+			"<=": return a.less_or_equal(b)
+			"&&": return a.count() > 0 and b.count() > 0
+			"||": return a.count() > 0 or b.count() > 0
+		errors.append("Cannot perform operation '%s' on List" % op)
+		return 0
+	errors.append("Can not call use '%s' operation on List and another type" % op)
 	return 0
 
 
@@ -1484,7 +1663,9 @@ static func _values_to_json(d: Dictionary) -> Dictionary:
 	var r := {}
 	for k in d:
 		var v = d[k]
-		if v is DivertTarget:
+		if v is AdvInkList:
+			r[k] = v.to_json()
+		elif v is DivertTarget:
 			r[k] = {"^->": v.path}
 		elif v is VarPointer:
 			r[k] = {"^var": v.name, "ci": v.ci}
@@ -1500,7 +1681,9 @@ static func _values_from_json(d: Dictionary) -> Dictionary:
 	for k in d:
 		var v = d[k]
 		if v is Dictionary:
-			if v.has("^->"):
+			if v.has("list"):
+				r[k] = AdvInkList.from_json(v)
+			elif v.has("^->"):
 				r[k] = DivertTarget.new(String(v["^->"]))
 			elif v.has("^var"):
 				r[k] = VarPointer.new(String(v["^var"]), int(v.get("ci", 0)))

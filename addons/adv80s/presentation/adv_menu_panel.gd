@@ -17,7 +17,7 @@ func setup(title: String, template: AdvTemplate, screen_size: Vector2) -> AdvMen
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var skin: Dictionary = tpl.get_section("ui").get("window_skin", {})
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = tpl.color(int(skin.get("fill", 0)))
+	sb.bg_color = tpl.window_fill_color()   # 画像の窓でも文字が見える地の色（段階63）
 	sb.set_border_width_all(int(skin.get("border", 1)))
 	sb.border_color = tpl.color(int(skin.get("pal", 7)))
 	sb.anti_aliasing = false
@@ -33,6 +33,7 @@ func setup(title: String, template: AdvTemplate, screen_size: Vector2) -> AdvMen
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.follow_focus = true   # キーで選んだ項目に付いて流れる（段階67）
 	box.add_child(scroll)
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -55,6 +56,10 @@ func add_button(text: String, cb: Callable, enabled: bool = true) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	# 窓より長い項目は「…」で切り、全文は説明に（小さい画面で一覧が窓からはみ出さないように。段階67）
+	b.clip_text = true
+	b.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	b.tooltip_text = text
 	b.disabled = not enabled
 	b.pressed.connect(cb)
 	_list.add_child(b)

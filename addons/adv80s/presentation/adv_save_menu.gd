@@ -16,7 +16,7 @@ func open(menu_mode: String, slots: Array, tpl: AdvTemplate, screen_size: Vector
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var skin: Dictionary = tpl.get_section("ui").get("window_skin", {})
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = tpl.color(int(skin.get("fill", 0)))
+	sb.bg_color = tpl.window_fill_color()   # 画像の窓でも文字が見える地の色（段階63）
 	sb.set_border_width_all(int(skin.get("border", 1)))
 	sb.border_color = tpl.color(int(skin.get("pal", 7)))
 	sb.anti_aliasing = false

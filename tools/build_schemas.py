@@ -62,7 +62,10 @@ EVENT_TYPES = ["text.show", "text.append", "text.clear", "image.show", "image.hi
                "hotspots.update", "input.mode", "notebook.add", "objective.set", "hint.set", "flow.mark",
                "checkpoint", "template.switch", "layout.set", "save.request",
                "sprite.show", "sprite.set", "sprite.hide", "sprite.anim", "sprite.effect", "sprite.clear",
-               "cursor.set", "video.play", "video.stop"]
+               "cursor.set", "video.play", "video.stop",
+               "scene.call", "scene.return", "ending.reach", "credits.roll",
+               "game.new", "game.title", "game.continue", "game.quit", "endings.open", "chapters.open", "settings.open",
+               "system.save", "system.load", "system.close", "settings.set", "fin.show", "opening.play", "extras.open", "notice.show"]
 WAIT = {"anyOf": [{"type": "string", "enum": ["none", "click", "end", "input"]}, {"type": "number", "minimum": 0}],
         "description": t("次に進む条件。none、click、end、input、または秒数", "When to continue: none, click, end, input, or seconds")}
 
@@ -132,6 +135,14 @@ STEP_DEFS = {
                 None, ["call"], extra=False),
             obj({"dialogue": {"type": "string", "description": t("呼ぶ会話ID", "Dialogue to run")}}, None, ["dialogue"], extra=False),
             obj({"ink": {"type": "string", "description": t("Inkのノット名", "Ink knot name")}}, None, ["ink"], extra=False),
+            obj({"call_scene": {"type": "string", "description": t("呼ぶサブシーンのID（kind: sub）。return で戻る", "Subscene to call (kind: sub). Comes back on return")},
+                 "args": {"type": "object", "description": t("引数（名前 → 値。\"=\" で始まる文字列は呼び出し元で計算する式）。サブシーンの中では arg.名前 で読む",
+                                                             "Arguments (name -> value; a string starting with \"=\" is evaluated by the caller). Read as arg.name inside the subscene")},
+                 "into": {"type": "string", "description": t("戻り値を入れる変数", "Variable that receives the return value")}},
+                t("サブシーンの呼び出し（6.9）", "Subscene call (6.9)"), ["call_scene"], extra=False),
+            obj({"return": {"description": t("サブシーンから戻る。値（\"=\" で始まる文字列は式）は呼び出しの into に入る。値がなければ null",
+                                             "Return from the subscene. The value (a string starting with \"=\" is an expression) goes into the caller's into; null for none")}},
+                t("サブシーンから戻る（6.9）", "Return from a subscene (6.9)"), ["return"], extra=False),
             obj({"choice": obj({
                 "id": STR, "prompt": STR,
                 "options": {"type": "array", "items": obj({
@@ -154,6 +165,93 @@ STEP_DEFS = {
     }, t("出力イベント（5.4）", "Output event (5.4)"), ["type"], extra=True),
 }
 
+# ---------------------------------------------------------------- 出力イベントの引数（エディタのフォームで使う）
+
+def _p(desc_ja, desc_en, base=None):
+    s = dict(base) if base else {}
+    s["description"] = t(desc_ja, desc_en)
+    return s
+
+ANY = {}
+TRANS = _p("切り替え演出（名前か {type, duration, …}）", "Transition (name or {type, duration, ...})")
+DUR = _p("秒", "Seconds", NUM)
+ID_OR_LIST = {"anyOf": [STR, {"type": "array"}]}
+
+
+def EA(props, required=None):
+    s = {"type": "object", "properties": props}
+    if required:
+        s["required"] = required
+    return s
+
+
+EVENT_ARGS = {
+    "text.show": EA({"body": _p("本文", "Body", STR), "speaker": _p("話者のID", "Speaker ID", STR), "name": _p("出す名前", "Shown name", STR), "voice": _p("ボイスの素材ID", "Voice asset ID", STR)}, ["body"]),
+    "text.append": EA({"body": _p("足す本文", "Text to append", STR)}, ["body"]),
+    "text.clear": EA({}),
+    "image.show": EA({"layer": _p("層（既定 bg）", "Layer (default bg)", STR), "id": _p("素材ID（配列で重ねる）", "Asset ID (array to layer)", ID_OR_LIST), "variant": STR, "transition": TRANS, "duration": DUR}, ["id"]),
+    "image.hide": EA({"layer": STR, "transition": TRANS, "duration": DUR}),
+    "effect.play": EA({"name": _p("効果（flash、shake、invert、tint、palette_cycle、scroll、zoom、raster など）", "Effect name", STR), "duration": DUR}, ["name"]),
+    "sprite.show": EA({"id": STR, "image": STR, "variant": STR, "layer": _p("層（既定 char）", "Layer (default char)", STR), "x": NUM, "y": NUM, "anchor": ANY, "z": INT,
+                       "scale": ANY, "rotation": NUM, "opacity": NUM, "flip": ANY, "blend": STR, "tint": ANY, "smooth": BOOL, "color_key": ANY, "anim": STR,
+                       "transition": TRANS, "duration": DUR, "keep": BOOL, "mute": BOOL, "volume": NUM}, ["id", "image"]),
+    "sprite.set": EA({"id": STR, "x": NUM, "y": NUM, "scale": ANY, "rotation": NUM, "opacity": NUM, "duration": DUR, "ease": STR,
+                      "loop": _p("くりかえし（-1 で終わりなし）", "Repeat (-1 = forever)", INT), "yoyo": BOOL, "path": ANY}, ["id"]),
+    "sprite.hide": EA({"id": _p("ID（配列も可）", "ID (array allowed)", ID_OR_LIST), "transition": TRANS, "duration": DUR}, ["id"]),
+    "sprite.anim": EA({"id": STR, "anim": _p("アニメーション（null で止める）", "Animation (null stops)", ANY), "loop": BOOL}, ["id"]),
+    "sprite.effect": EA({"id": STR, "name": _p("flash、shake、blink、mono、sepia、silhouette、mosaic、none、シェーダーのパス", "Effect name or shader path", STR), "duration": DUR, "params": ANY}, ["id", "name"]),
+    "sprite.clear": EA({"layer": _p("層（省くとすべて）", "Layer (all if omitted)", STR)}),
+    "cursor.set": EA({"kind": STR, "image": STR, "hotspot": ANY}),
+    "video.play": EA({"id": STR, "area": {"enum": ["picture", "screen"]}, "fit": {"enum": ["contain", "cover", "stretch"]}, "loop": BOOL, "skippable": BOOL,
+                      "volume": NUM, "bgm": {"enum": ["pause", "keep", "stop"]}, "filters": BOOL, "transition": TRANS}, ["id"]),
+    "video.stop": EA({"transition": TRANS}),
+    "bgm.play": EA({"id": _p("曲の素材ID", "BGM asset ID", STR), "loop": _p("くりかえす（既定 true）", "Loop (default true)", BOOL), "fade": DUR, "volume": NUM}, ["id"]),
+    "bgm.stop": EA({"fade": DUR}),
+    "se.play": EA({"id": STR, "volume": NUM}, ["id"]),
+    "voice.play": EA({"id": STR, "speaker": STR}, ["id"]),
+    "state.set": EA({"name": STR, "value": ANY, "op": STR}, ["name"]),
+    "item.add": EA({"id": STR, "count": INT}, ["id"]),
+    "item.remove": EA({"id": STR, "count": INT}, ["id"]),
+    "scene.goto": EA({"scene": STR, "transition": TRANS}, ["scene"]),
+    "scene.call": EA({"scene": _p("呼ぶサブシーン", "Subscene to call", STR), "args": {"type": "object"}, "into": _p("戻り値を入れる変数", "Variable for the return value", STR)}, ["scene"]),
+    "scene.return": EA({"value": _p("戻り値", "Return value", ANY)}),
+    "wait": EA({"seconds": DUR}, ["seconds"]),
+    "group": EA({"events": _p("同時に実行するイベント", "Events run together", {"type": "array"})}, ["events"]),
+    "choice.show": EA({"choices": {"type": "array"}, "prompt": STR}, ["choices"]),
+    "input.request": EA({"slot": STR, "prompt": STR}, ["slot"]),
+    "game.end": EA({"ending": STR}),
+    "verbs.update": EA({"verbs": ANY, "mode": {"enum": ["replace", "add", "remove"]}}, ["verbs"]),
+    "hotspots.update": EA({"objects": ANY, "mode": {"enum": ["replace", "add", "remove"]}}, ["objects"]),
+    "input.mode": EA({"enable": {"type": "array", "items": {"enum": ["parser", "select", "click"]}}}, ["enable"]),
+    "notebook.add": EA({"id": STR, "category": STR, "title": STR, "body": STR}, ["id", "title", "body"]),
+    "objective.set": EA({"id": STR, "text": _p("目的（空で消す）", "Objective (empty clears)", STR)}, ["text"]),
+    "hint.set": EA({"topic": STR, "hints": STRS}, ["topic", "hints"]),
+    "flow.mark": EA({"node": STR}, ["node"]),
+    "checkpoint": EA({"id": STR, "autosave": BOOL}),
+    "layout.set": EA({"layout": STR, "transition": TRANS}, ["layout"]),
+    "template.switch": EA({"template": STR, "transition": TRANS}, ["template"]),
+    "save.request": EA({}),
+    "credits.roll": EA({"items": {"type": "array"}, "lines": STRS, "text": STR, "speed": _p("1秒あたりの画素（既定 30）", "Pixels per second (default 30)", NUM),
+                        "duration": DUR, "align": STR, "pal": INT, "size": NUM, "margin": NUM, "fill": ANY, "background": ANY, "skippable": BOOL, "bgm": ANY}),
+    "ending.reach": EA({"id": STR}, ["id"]),
+    "game.new": EA({"scene": STR}),
+    "game.title": EA({}), "game.continue": EA({}), "game.quit": EA({}),
+    "endings.open": EA({}), "chapters.open": EA({}), "settings.open": EA({}),
+    "fin.show": {"$ref": "#/definitions/fin"},
+    "opening.play": EA({"scene": STR}),
+    "extras.open": EA({}),
+    "system.save": EA({"slot": STR}, ["slot"]),
+    "system.load": EA({"slot": STR}, ["slot"]),
+    "system.close": EA({}),
+    "settings.set": EA({"key": _p("text_speed、bgm_volume、features.<キー> など", "text_speed, bgm_volume, features.<key>, ...", STR), "value": ANY}, ["key"]),
+    "notice.show": EA({"text": _p("お知らせの文（文字の書き方が使える）", "Notice text (markup allowed)", STR), "seconds": _p("出しておく秒数（既定は見た目の設定）", "Seconds shown (default: notice style)", NUM),
+                         "icon": _p("絵の素材ID", "Icon image asset ID", STR), "log": _p("メッセージログにも残すか（既定は見た目の設定）", "Also add to the message log (default: notice style)", BOOL),
+                         "position": _p("このお知らせだけの位置（既定は見た目の設定）", "Position of this notice only", {"enum": ["top_right", "top_left", "bottom_right", "bottom_left", "top", "bottom", "center"]})}, ["text"]),
+}
+EVENT_ARGS_DEFS = {"event_args": {"type": "object", "description": t("出力イベントごとの引数（エディタのフォームで使う）", "Arguments per output event (used by the editor form)"),
+                                  "properties": EVENT_ARGS}}
+
+
 ON_MAP = {"type": "object", "description": t("動詞ごとの反応。\"USE+door\" のように with の対象を指定できる",
                                              "Reaction per verb. \"USE+door\" narrows by the with target"),
           "patternProperties": {"^[A-Z][A-Z0-9_]*(\\+[^+]+)?$": {"$ref": "#/definitions/step"}},
@@ -164,11 +262,63 @@ EVENT_DEFAULTS = {"type": "object", "description": t("出力イベントの既�
 
 # ---------------------------------------------------------------- scenario
 
+NOTICE_ENTRY = {"type": "object", "additionalProperties": False, "required": ["text"], "properties": {
+    "text": {"type": "string", "description": t("文言", "Text")},
+    "icon": {"type": "string", "description": t("絵の素材ID", "Icon image asset ID")},
+    "log": {"type": "boolean", "description": t("メッセージログにも残すか", "Also add to the message log")},
+    "position": {"enum": ["top_right", "top_left", "bottom_right", "bottom_left", "top", "bottom", "center"], "description": t("このお知らせだけの位置", "Position of this notice only")}}}
+
+NOTICE_STYLE_DEFS = {"notice_style": obj({
+    "position": {"enum": ["top_right", "top_left", "bottom_right", "bottom_left", "top", "bottom", "center"], "description": t("位置（既定 top_right）", "Position (default top_right)")},
+    "fg": {"type": "integer", "description": t("文字の色（パレットの番号。既定 7）", "Text color (palette index, default 7)")},
+    "bg": {"type": "integer", "description": t("地の色（既定 0）", "Background color (default 0)")},
+    "border": {"type": "integer", "description": t("枠の色（既定 7。-1 で枠なし）", "Border color (default 7; -1 = none)")},
+    "se": {"type": "string", "description": t("出すときの効果音（素材ID）", "Sound effect when shown (asset ID)")},
+    "seconds": {"type": "number", "description": t("出しておく秒数（既定 2.5。0 なら時間では消えない）", "Seconds shown (default 2.5; 0 = until clicked)")},
+    "click_close": {"type": "boolean", "description": t("クリックで消せるか（既定 true）", "Click to dismiss (default true)")},
+    "max": {"type": "integer", "minimum": 0, "description": t("同時に出す数の上限（既定 5。超えたら古いものから消す。0 で上限なし）", "Max notices at once (default 5; oldest removed; 0 = no limit)")},
+    "overflow": {"enum": ["instant", "fade"], "description": t("上限で消すときの消え方（instant：すぐ（既定）、fade：すっと）", "How notices over the limit disappear (instant (default) or fade)")},
+    "log_labels": obj({"all": STR, "text": STR, "notice": STR}, t("ログの画面の切り替えの文言（既定「ひょうじ：すべて」など）", "Labels of the log screen filter"), extra=False),
+    "log_filter": {"enum": ["all", "text", "notice"], "description": t("ログの画面を開いたときに出すもの（all：すべて、text：お知らせ以外、notice：お知らせだけ）", "What the log screen shows first")},
+    "log_mark": {"type": "string", "description": t("メッセージログでお知らせの前に付ける印（既定「◆ 」）", "Mark before notices in the message log (default ◆)")},
+    "log_color": {"type": "integer", "description": t("メッセージログでのお知らせの色（パレットの番号）", "Notice color in the message log (palette index)")},
+    "margin": {"type": "number", "description": t("画面の端からの間（既定 12）", "Margin from the screen edge (default 12)")},
+    "icon_size": {"type": "number", "description": t("絵の大きさ（既定 24）", "Icon size (default 24)")},
+    "log": {"type": "boolean", "description": t("メッセージログにも残すか（既定 false）", "Also add notices to the message log (default false)")},
+}, t("お知らせの見た目", "Notice appearance"), extra=False)}
+
+FIN_DEFS = {"fin": obj({
+    "show": BOOL, "text": STR, "pal": INT, "size": INT, "fill": INT, "image": STR, "text_y": NUM,
+    "transition": {"description": t("出るとき・消えるときの切り替え演出", "Transition in and out")},
+    "advance": {"type": "array", "items": {"anyOf": [{"type": "string", "pattern": "^(click|key|key:.+|trigger:.+)$"}, {"type": "number", "minimum": 0}]},
+                "description": t("閉じる条件：click、key、key:キー名、秒数、trigger:名前（既定 [\"click\", \"key\"]）",
+                                 "Close on: click, key, key:name, seconds, trigger:name (default [\"click\", \"key\"])")},
+    "min_time": {"type": "number", "minimum": 0, "description": t("閉じられるようになるまでの秒数（既定 1）", "Seconds before it can be closed (default 1)")},
+    "then": {"type": "string", "description": t("閉じたあと：title（既定）、new、quit、stay、またはシーンID", "After closing: title (default), new, quit, stay, or a scene ID")},
+    "reset": {"type": "boolean", "description": t("then がシーンIDのとき、始める前の状態に戻してから移る", "Reset to the initial state before going to the then scene")},
+    "items": {"type": "array", "description": t("複数の行と画像（スタッフロールの items と同じ）。書けば text の代わりに縦の真ん中に並べる", "Rows and images (same as credits items), centered instead of text")},
+    "lines": {"type": "array", "description": t("複数の行（文字列の配列）", "Lines (array of strings)")},
+    "margin": NUM, "align": STR, "line_gap": INT,
+    "save_prompt": {"type": "boolean", "description": t("閉じたあと、クリアデータをセーブするか聞く（既定 false）", "Ask to save clear data after closing (default false)")},
+    "save_prompt_title": STR, "save_prompt_text": STR,
+    "save_resume": {"type": "string", "description": t("クリアデータをロードしたときに始めるシーン（既定は開始シーン）", "Scene to start when clear data is loaded (default: entry)")},
+    "save_carry": {"anyOf": [{"enum": ["all", "none"]}, obj({
+        "vars": {"anyOf": [{"enum": ["all", "none"]}, STRS]}, "items": {"anyOf": [{"enum": ["all", "none"]}, STRS]},
+        "visited": BOOL, "talked": BOOL, "notebook": BOOL, "chosen": BOOL}, extra=False)],
+        "description": t("クリアデータで引き継ぐもの：all（全部、既定）、none（何も引き継がない）、{vars, items, visited, talked, notebook, chosen}（書かなかったものは引き継がない）",
+                         "What clear data carries over: all (default), none, or {vars, items, visited, talked, notebook, chosen} (unlisted parts are not carried)")},
+}, t("「おわり」の画面（6.9）", "FIN screen (6.9)"), extra=False)}
+
+ALIASES = mapof({"anyOf": [STR, obj({"params": STRS, "text": STR}, None, ["text"], extra=False)]},
+                t("エイリアス（5.4）。文中の [alias=名前 引数…] を置き換える。値は文か {params, text}（text の中で {arg.引数名} を使う）",
+                  "Aliases (5.4). [alias=name args...] in text is replaced. Value is text or {params, text} ({arg.param} inside text)"))
+
 INPUTS = obj({
     "enabled": {"type": "array", "items": {"enum": ["select", "parser", "icon", "click", "verb_click", "verb_cursor", "context"]},
                 "description": t("使うコマンド方式。select=コマンド選択、parser=コマンド入力、icon=アイコン、click=絵のクリック、verb_click=動詞を選んで対象をクリック、verb_cursor=カーソルの動詞を切り替えてクリック、context=対象に合わせて自動で決める",
                                  "Command methods. select, parser, icon, click, verb_click (pick a verb, then click a target), verb_cursor (cycle the cursor verb, then click), context (verb chosen from the target)")},
-    "parser_profile": STR,
+    "parser_profile": {"type": "string", "description": t("コマンド入力の読み方。ja=日本式（標準）、en=英語式、free=自由文、またはパーサーのスクリプトのパス",
+                                                        "How typed commands are read. ja (Japanese, default), en (English), free (free sentences), or a parser script path")},
     "command_columns": {"type": "integer", "minimum": 1, "description": t("コマンド選択の列の数（既定 2）", "Columns of the command list (default 2)")},
     "click_verb": {"type": "string", "description": t("絵をクリックしたときの動詞（既定 EXAMINE）", "Verb used when the picture is clicked (default EXAMINE)")},
     "item_verb": {"type": "string", "description": t("持ち物をクリックして持ったときに使う動詞（既定 USE）", "Verb used when an inventory item is picked up by clicking (default USE)")},
@@ -179,6 +329,32 @@ INPUTS = obj({
 
 scene_props = {
     "name": {"type": "string", "description": t("表示名", "Display name")},
+    "kind": {"enum": ["normal", "title", "opening", "ending", "sub", "system"],
+             "description": t("シーンの種類（6.9）。normal（標準）、title（タイトル）、opening（オープニング）、ending（エンディング）、sub（サブシーン）、system（システムシーン）",
+                              "Scene kind (6.9): normal (default), title, opening, ending, sub (subscene), system (system scene)")},
+    "params": mapof({"anyOf": [{"type": ["boolean", "integer", "number", "string", "null"]},
+                               obj({"default": {}, "required": BOOL, "description": STR}, extra=False)]},
+                    t("サブシーンの引数（名前 → 既定値か {default, required, description}）", "Subscene parameters (name -> default or {default, required, description})")),
+    "menu": {"type": "array", "description": t("メニュー（title・system のシーン）。選択肢として出し、選んだ項目の手順が終わるとまた出す",
+                                               "Menu (title / system scenes). Shown as a choice; shown again after the chosen item's steps"),
+             "items": obj({"id": STR, "label": STR, "do": {"$ref": "#/definitions/step"},
+                           "when": {"$ref": "#/definitions/condition"}, "once": BOOL}, None, ["label"])},
+    "ending": {"type": "string", "description": t("エンディングID（kind: ending）。入ると見た記録を付ける", "Ending ID (kind: ending). Recorded as seen on entry")},
+    "replay": {"enum": ["always", "once", "skippable"],
+               "description": t("オープニング（kind: opening）の2回目から：always（毎回流す、既定）、once（1回目だけ流し、2回目からは飛ばす）、skippable（2回目からは Esc で飛ばせ、Ctrl で早送りできる）",
+                                "Opening (kind: opening) from the second time: always (default), once (play only the first time), skippable (Esc skips, Ctrl fast-forwards)")},
+    "next": {"type": "string", "description": t("オープニングを飛ばしたとき・終わったときに移るシーン（なければタイトルか開始シーン）", "Scene to go to when the opening is skipped or ends (title or entry when omitted)")},
+    "bgm": {"anyOf": [{"type": ["string", "null"]}, obj({"id": STR, "fade": NUM, "loop": BOOL, "volume": NUM}, None, ["id"], extra=False)],
+            "description": t("入ったときに鳴らす BGM（ID か {id, fade, loop, volume}。同じ曲ならそのまま。null で止める）", "BGM on entering (ID or {id, fade, loop, volume}; kept if the same; null stops)")},
+    "bgm_fade": {"type": "number", "description": t("bgm: null で止めるときのフェードの秒数", "Fade seconds when bgm is null")},
+    "transition": {"description": t("このシーンに入るときの切り替え演出", "Transition when entering this scene")},
+    "variants": {"type": "array", "items": obj({"when": {"$ref": "#/definitions/condition"}, "image": {}, "bgm": {}, "bgm_fade": NUM,
+                                                "menu": {"type": "array", "description": t("メニューの差し替え（menu と同じ形）", "Menu override (same as menu)")}}, extra=False),
+                 "description": t("入ったときの背景と BGM の差し替え。when に合うものを順に重ねる（後ろほど優先）。タイトルを見たエンディングの数（sys.endings_seen など）で変えるのに使う",
+                                  "Background / BGM overrides on entry; matching entries are applied in order (later wins). E.g. change the title by endings seen (sys.endings_seen)")},
+    "fin": {"anyOf": [BOOL, {"$ref": "#/definitions/fin"}],
+            "description": t("エンディング（kind: ending）を最後まで進めたときの「おわり」の画面（false で出さない）。プロジェクト設定の fin に重ねる",
+                             "The FIN screen after an ending (kind: ending) finishes (false hides it). Merged over the project fin")},
     "image": {"anyOf": [STR, {"type": "array", "items": {"anyOf": [STR, {"type": "object", "required": ["id"], "additionalProperties": False,
                   "properties": {"id": STR, "variant": STR, "x": INT, "y": INT, "when": {"$ref": "#/definitions/condition"}}}]}}],
               "description": t("背景の画像ID（またはパス）。配列なら when に合う画像を順に重ねる", "Background image ID (or path). An array overlays the entries whose when holds")},
@@ -226,9 +402,11 @@ SCENARIO = {
         **scene_props,
         "variables": mapof(obj({"type": {"enum": ["bool", "int", "float", "string"]}, "default": {}}, extra=False),
                            t("変数の宣言（任意）", "Variable declarations (optional)")),
+        "aliases": ALIASES,
         "constants": mapof({"type": ["boolean", "integer", "number", "string"]}, t("定数（名前 → 値。書き換えられない）", "Constants (name -> value; read-only)")),
         "characters": mapof(obj({"name": STR, "names": STRS, "pal": INT, "voice": STR}), t("話者", "Speakers")),
-        "items": mapof(obj({"name": STR, "names": STRS, "on": ON_MAP}), t("アイテム", "Items")),
+        "items": mapof(obj({"name": STR, "names": STRS, "on": ON_MAP,
+                            "icon": {"type": "string", "description": t("絵の素材ID（お知らせなどに出す）", "Image asset ID (shown in notices, etc.)")}}), t("アイテム", "Items")),
         "scenes": mapof(obj(scene_props), t("シーン", "Scenes")),
         "dialogues": mapof({"$ref": "#/definitions/step"}, t("会話（手順の配列）", "Dialogues (arrays of steps)")),
         "topics": mapof({"type": "array", "items": obj({"id": STR, "label": STR, "names": STRS, "dialogue": STR,
@@ -248,7 +426,7 @@ SCENARIO = {
         "chapters": {"type": "array", "description": t("チャプター（node はフローチャートの点。到達すると選べるようになる）", "Chapters (node is a flowchart node; unlocked when reached)"),
                      "items": obj({"id": STR, "label": STR, "node": STR, "unlocked": BOOL}, None, ["id", "label"])},
     }),
-    "definitions": {**COND_DEFS, **STEP_DEFS},
+    "definitions": {**COND_DEFS, **STEP_DEFS, **FIN_DEFS, **EVENT_ARGS_DEFS},
 }
 
 # ---------------------------------------------------------------- template
@@ -318,8 +496,10 @@ TEMPLATE = {
                                  "description": t("ページ送り待ちの印（書き方は wait_mark と同じ。省略すると wait_mark）", "Page-turn marker (same format as wait_mark; defaults to wait_mark)")},
                    "window_padding": {"type": "array", "items": INT, "minItems": 2, "maxItems": 2,
                                       "description": t("窓の内側の余白 [横, 縦]（既定 [8, 4]）", "Inner padding of windows [x, y] (default [8, 4])")}}),
+        "notice": {"$ref": "#/definitions/notice_style"},
     }, required=["template_version", "id"]),
     "definitions": {
+        **NOTICE_STYLE_DEFS,
         "font_entry": {"type": "object", "additionalProperties": False, "properties": {
             "asset": {"type": "string", "description": t("フォントの素材ID（font フォルダのファイル名）", "Font asset ID (file name in the font folder)")},
             "size": INT,
@@ -418,6 +598,113 @@ PROJECT = {
         "scenarios": {**STRS, "description": t("シナリオファイル（.ink.json は Ink のアダプタが読む）", "Scenario files (.ink.json files go to the Ink adapter)")},
         "ink": obj({"sync_variables": {"type": "boolean", "description": t("Ink の中で変わったグローバル変数を Core の状態に返す（既定 true）", "Write ink global variable changes back to Core state (default true)")}}, extra=False),
         "entry": {"type": "string", "description": t("開始シーン（空ならシナリオの start）", "Entry scene (empty = scenario start)")},
+        "title_screen": {"type": "string", "description": t("タイトル画面（6.9）。空ならタイトルなしで始める、\"template\" ならテンプレートのタイトル画面、それ以外はタイトルのシーンID",
+                                                              "Title screen (6.9): empty = start without a title, \"template\" = template title screen, otherwise a title scene ID")},
+        "title_image": {"type": "string", "description": t("テンプレートのタイトル画面の背景の画像ID", "Background image ID of the template title screen")},
+        "title_bgm": {"anyOf": [STR, obj({"id": STR, "fade": NUM, "loop": BOOL, "volume": NUM}, None, ["id"], extra=False)],
+                      "description": t("テンプレートのタイトル画面の BGM", "BGM of the template title screen")},
+        "title_bgm_fade": {"type": "number", "description": t("はじめからでタイトルの BGM を止めるフェードの秒数（既定 0.5）", "Fade seconds when the title BGM stops on new game (default 0.5)")},
+        "title_transition": {"description": t("テンプレートのタイトル画面が出るとき・消えるときの切り替え演出", "Transition when the template title screen appears and leaves")},
+        "opening": {"type": "string", "description": t("起動したときに最初に流すオープニングのシーンID（kind: opening）", "Opening scene played first at startup (kind: opening)")},
+        "opening_replay": {"anyOf": [{"enum": ["seen", "always", "never", "any_ending", "all_endings"]},
+                                     obj({"endings": STRS, "seen": BOOL, "when": {"$ref": "#/definitions/condition"}}, extra=False)],
+                           "description": t("オープニングを見返せる条件：seen（見たことがあれば、既定）、always、never、any_ending、all_endings、{endings, seen, when}",
+                                            "When the opening can be replayed: seen (default), always, never, any_ending, all_endings, {endings, seen, when}")},
+        "notices": obj({
+            "enabled": {"type": "boolean", "description": t("自動のお知らせを使うか（既定 true。false で全部止める）", "Use automatic notices (default true; false stops all)")},
+            "item_add": {"anyOf": [STR, NOTICE_ENTRY], "description": t("持ち物を手に入れたとき（{name}、{count}）", "On item.add ({name}, {count})")},
+            "item_remove": {"anyOf": [STR, NOTICE_ENTRY], "description": t("持ち物を手放したとき（{name}、{count}）", "On item.remove ({name}, {count})")},
+            "notebook_add": {"anyOf": [STR, NOTICE_ENTRY], "description": t("手帳に書いたとき（{title}）", "On notebook.add ({title})")},
+            "objective_set": {"anyOf": [STR, NOTICE_ENTRY], "description": t("目的が変わったとき（{text}。目的を消したときは出さない）", "On objective.set ({text}; not when cleared)")},
+            "hint_set": {"anyOf": [STR, NOTICE_ENTRY], "description": t("ヒントが増えたとき（{topic}）", "On hint.set ({topic})")},
+            "autosave": {"anyOf": [STR, NOTICE_ENTRY], "description": t("オートセーブしたとき", "On autosave")},
+        }, t("自動のお知らせ。項目に文言を書いた場面だけ出す（書かなければ出さない）。シナリオからは notice.show でも出せる",
+             "Automatic notices; shown only for entries with text. Scenarios can also use notice.show"), extra=False),
+        "notice_style": {"$ref": "#/definitions/notice_style"},
+        "debug": obj({
+            "auto_reload": {"type": "boolean", "description": t("デバッグ実行中、ファイルを保存したら自動で読み直すか（既定 false）", "Reload automatically when files are saved during a debug run (default false)")},
+            "reload_reenter": {"type": "boolean", "description": t("読み直したあと、いまのシーンに入り直すか（既定 false。Shift+F8 はいつも入り直す）", "Re-enter the current scene after reloading (default false; Shift+F8 always does)")},
+            "notice_files": {"type": "integer", "minimum": 0, "description": t("読み直したときのお知らせに名前を出すファイルの数（既定 2。0 で名前を出さない）", "Files named in the reload notice (default 2; 0 = none)")},
+            "watch_interval": {"type": "number", "minimum": 0.25, "description": t("ファイルを確かめる間隔（秒。既定 1）", "Seconds between file checks (default 1)")},
+            "pre_set_notice": {"type": "boolean", "description": t("「設定を先に」で入った値をお知らせに出すか（既定 true）", "Show the values set first by \"set first\" in a notice (default true)")},
+            "pre_set_seconds": {"type": "number", "minimum": 0, "description": t("「設定を先に」のお知らせを出しておく秒数（0 でクリックするまで。書かなければほかのお知らせと同じ）", "Seconds the \"set first\" notice stays (0 = until clicked; default = like other notices)")},
+            "pre_set_position": {"enum": ["top_right", "top_left", "bottom_right", "bottom_left", "top", "bottom", "center"], "description": t("「設定を先に」のお知らせを出す位置（書かなければほかのお知らせと同じ）", "Position of the \"set first\" notice (default = like other notices)")},
+            "run_group_order": {"type": "array", "items": STR, "description": t("「実行：」の一覧での組の並び（書いていない組はそのあとに名前の順）。シナリオエディタの「組…」の ↑↓ で書ける", "Order of preset groups in the run list (unlisted groups follow by name)")},
+            "notices": obj({
+                "run_from": {"type": "boolean", "description": t("「シーンから実行」（既定 true）", "\"Run from scene\" (default true)")},
+                "pre_set": {"type": "boolean", "description": t("「先に設定」（既定 true。pre_set_notice も見る）", "\"Set first\" (default true; pre_set_notice also applies)")},
+                "reload": {"type": "boolean", "description": t("「読み直しました」（既定 true）", "\"Reloaded\" (default true)")},
+                "editor": {"type": "boolean", "description": t("「エディタで開きます」「エディタにつながっていません」（既定 true）", "Open-in-editor notices (default true)")},
+                "preset": {"type": "boolean", "description": t("「ひな形にしました」など（既定 true）", "Preset notices (default true)")},
+                "auto_reload": {"type": "boolean", "description": t("「保存したら読み直す：入／切」（既定 true）", "Auto-reload on/off notice (default true)")},
+            }, t("デバッグのお知らせを種類ごとに出すか（false にした種類は出さない）", "Show each kind of debug notice (false = hide)"), extra=False),
+            "notice_style": obj({
+                "fg": {"type": "integer", "description": t("文字の色（パレットの番号）", "Text color (palette index)")},
+                "bg": {"type": "integer", "description": t("地の色", "Background color")},
+                "border": {"type": "integer", "description": t("枠の色（-1 で枠なし）", "Border color (-1 = none)")},
+                "se": {"type": "string", "description": t("出すときの効果音（素材ID。\"\" で鳴らさない）", "Sound effect (asset ID; \"\" = none)")},
+                "icon": {"type": "string", "description": t("頭に付ける絵（素材ID）", "Icon (asset ID)")},
+                "position": {"enum": ["top_right", "top_left", "bottom_right", "bottom_left", "top", "bottom", "center"], "description": t("出す位置", "Position")},
+                "seconds": {"type": "number", "minimum": 0, "description": t("出しておく秒数（0 でクリックするまで）", "Seconds shown (0 = until clicked)")},
+            }, t("デバッグのお知らせ（シーンから実行・先に設定・読み直し・エディタで開く・ひな形にしました など）の見た目。書いたものだけ、ほかのお知らせの見た目から変える。「先に設定」は pre_set_style・pre_set_position・pre_set_seconds が先", "Look of debug notices (only the keys written override the notice style; pre_set_* win for the \"set first\" notice)"), extra=False),
+            "pre_set_style": obj({
+                "fg": {"type": "integer", "description": t("文字の色（パレットの番号）", "Text color (palette index)")},
+                "bg": {"type": "integer", "description": t("地の色", "Background color")},
+                "border": {"type": "integer", "description": t("枠の色（-1 で枠なし）", "Border color (-1 = none)")},
+                "se": {"type": "string", "description": t("出すときの効果音（素材ID。\"\" で鳴らさない）", "Sound effect (asset ID; \"\" = none)")},
+                "icon": {"type": "string", "description": t("頭に付ける絵（素材ID）", "Icon (asset ID)")},
+            }, t("「設定を先に」のお知らせの見た目（書いたものだけ、ほかのお知らせの見た目から変える）", "Look of the \"set first\" notice (only the keys written override the notice style)"), extra=False),
+            "pre_set_log": {"type": "boolean", "description": t("「設定を先に」で入った値をメッセージログに出すか（既定 true）", "Write the values set first by \"set first\" to the message log (default true)")},
+            "run_presets": mapof(obj({
+                "vars": mapof({}, t("フラグと変数（名前 → 値）", "Flags and variables (name -> value)")),
+                "items": mapof({"type": "integer"}, t("持ち物（ID → 個数。0 なら持たない）", "Items (ID -> count; 0 = not held)")),
+            }, None, extra=False), t("「このシーンから実行」のひな形（名前 → {vars, items}）。シナリオエディタの「ひな形…」で書ける", "Presets for \"run from this scene\" (name -> {vars, items}); editable with the scenario editor's Presets... button")),
+        }, t("デバッグ実行の設定（配布するゲームでは使わない）", "Debug run settings (unused in release builds)"), extra=False),
+        "title_labels": mapof(STR, t("テンプレートのタイトル画面のメニューの文言（項目 → 文）", "Labels of the template title menu (item -> text)")),
+        "extras": obj({
+            "show": {"type": "boolean", "description": t("出すか（既定 true）", "Show it (default true)")},
+            "when": {"$ref": "#/definitions/condition"},
+            "title": STR, "gallery_label": STR, "music_label": STR, "endings_label": STR, "opening_label": STR,
+            "menu": {"type": "array", "items": {"enum": ["gallery", "music", "endings", "opening"]},
+                     "description": t("並べる項目と順番（既定 [\"gallery\", \"music\"]）。endings はエンディング一覧、opening はオープニングを見返す",
+                                      "Items and their order (default [\"gallery\", \"music\"]); endings = ending list, opening = replay the opening")},
+            "thumbnails": {"type": "boolean", "description": t("ギャラリーに見本の画像を出すか（既定 true）", "Show thumbnails in the gallery (default true)")},
+            "music_desc": {"type": "boolean", "description": t("音楽で曲の説明（desc）を出すか（既定 true）", "Show track descriptions (desc) in the music room (default true)")},
+            "bonus": {"type": "boolean", "description": t("特典（bonus: true の項目）を使うか（既定 true）", "Use bonus entries (default true)")},
+            "notify": {"type": "boolean", "description": t("特典が開いたとき、お知らせを出すか（既定 true）", "Show a notice when a bonus entry unlocks (default true)")},
+            "notify_text": {"type": "string", "description": t("お知らせの文言（既定「おまけが ふえました」）", "Notice text")},
+            "notify_icon": {"type": "string", "description": t("お知らせの絵（素材ID）", "Notice icon (asset ID)")},
+            "title_count": {"type": "boolean", "description": t("テンプレートのタイトル画面の「おまけ」に開いた数を出すか（既定 false）", "Show the opened count on the template title's extras item (default false)")},
+            "music_mode": {"enum": ["one", "next", "all"],
+                           "description": t("音楽の鳴らし方の初め（one：1曲くりかえし、next：つづけて、all：ぜんぶくりかえし）",
+                                            "Initial music room play mode (one: repeat one, next: play on, all: repeat all)")},
+            "gallery": {"type": "array", "items": obj({"id": STR, "label": STR, "hint": STR, "when": {"$ref": "#/definitions/condition"},
+                                                       "images": {"type": "array", "items": STR, "description": t("めくれる画像の並び（どれかを見ていれば開く）", "Images to page through (unlocks when any was seen)")},
+                                                       "thumb": {"type": "string", "description": t("見本の画像（既定は見た最初の画像）", "Thumbnail image (default: the first seen image)")},
+                                                       "bonus": {"type": "boolean", "description": t("特典の項目（数えない。when が既定 sys.gallery_all か sys.music_all、開くまで出さない）", "Bonus entry (not counted; `when` defaults to sys.gallery_all / sys.music_all; hidden until unlocked)")},
+                                                       "hidden": {"type": "boolean", "description": t("特典を開くまで出さないか（既定 true。false なら「？？？」で出す）", "Hide the bonus entry until unlocked (default true; false shows ???)")},},
+                                                      None, None, extra=False, anyOf=[{"required": ["id"]}, {"required": ["images"]}])},
+            "music": {"type": "array", "items": obj({"id": STR, "label": STR, "hint": STR, "when": {"$ref": "#/definitions/condition"},
+                                                     "desc": {"type": "string", "description": t("曲の説明（鳴らしている間に出す。文字の書き方が使える）", "Description shown while playing (text markup allowed)")},
+                                                     "bonus": {"type": "boolean", "description": t("特典の項目（数えない。when が既定 sys.gallery_all か sys.music_all、開くまで出さない）", "Bonus entry (not counted; `when` defaults to sys.gallery_all / sys.music_all; hidden until unlocked)")},
+                                                     "hidden": {"type": "boolean", "description": t("特典を開くまで出さないか（既定 true。false なら「？？？」で出す）", "Hide the bonus entry until unlocked (default true; false shows ???)")},}, None, ["id"], extra=False)},
+        }, t("おまけ（ギャラリーと音楽）。when（既定 sys.all_endings）に合えばタイトルから開ける。項目は when がなければ、一度でも出した画像・鳴らした曲なら開く",
+             "Extras (gallery and music). Opens from the title when `when` (default sys.all_endings) holds; entries unlock when seen/heard unless `when` is given"), extra=False),
+        "title_variants": {"type": "array", "items": obj({"when": {"$ref": "#/definitions/condition"}, "image": STR, "bgm": {}, "transition": {},
+                                                      "menu": {"type": "array", "items": STR}, "labels": mapof(STR)}, extra=False),
+                           "description": t("テンプレートのタイトル画面の背景・BGM・演出の差し替え（when に合うものを順に重ねる。sys.endings_seen、sys.ending_<ID>、sys.all_endings が使える）",
+                                            "Template title overrides (matching entries applied in order; sys.endings_seen, sys.ending_<ID>, sys.all_endings available)")},
+        "fin": {"anyOf": [BOOL, {"$ref": "#/definitions/fin"}], "description": t("「おわり」の画面の既定（false で出さない）", "Defaults of the FIN screen (false hides it)")},
+        "opening_hint": {"type": "string", "description": t("2回目からのオープニングに出す案内（既定「Esc：とばす　Ctrl：はやおくり」）", "Hint shown on a skippable opening")},
+        "title_menu": {"type": "array", "items": {"enum": ["new", "continue", "chapters", "endings", "opening", "extras", "settings", "quit"]},
+                       "description": t("テンプレートのタイトル画面のメニュー（並べる順）", "Menu of the template title screen (in order)")},
+        "endings": {"type": "array", "description": t("エンディングの一覧（並べる順）。label は見たあとに出す名前、hint は見る前に出すヒント",
+                                                      "Endings (in display order). label is shown once seen, hint before"),
+                    "items": obj({"id": STR, "label": STR, "hint": STR}, None, ["id"], extra=False)},
+        "system_scenes": obj({k: {"type": "string"} for k in ["save", "load", "settings", "log"]},
+                             t("システム画面の差し替え（画面 → .tscn のパスかシステムシーンのID）", "System screen replacements (screen -> .tscn path or system scene ID)"), extra=False),
+        "subscene_max_depth": {"type": "integer", "minimum": 0, "description": t("サブシーンの呼び出しの深さの上限（既定 10。0 で無制限）", "Subscene call depth limit (default 10; 0 = unlimited)")},
+        "aliases": ALIASES,
         "variables": mapof(obj({"type": {"enum": ["bool", "int", "float", "string"]}, "default": {}}, extra=False),
                            t("全シナリオで共通の変数（名前 → {type, default}）", "Variables shared by all scenarios (name -> {type, default})")),
         "constants": mapof({"type": ["boolean", "integer", "number", "string"]}, t("全シナリオで共通の定数（名前 → 値。書き換えられない）", "Constants shared by all scenarios (name -> value; read-only)")),
@@ -449,7 +736,7 @@ PROJECT = {
             "key_provider": {"type": "string", "description": t("embedded（標準）、per_user、または AdvKeyProvider を継承したスクリプトのパス", "embedded (default), per_user, or a script extending AdvKeyProvider")},
         }, t("セーブの設定（第8章）", "Save settings (chapter 8)"), extra=False),
     }),
-    "definitions": COND_DEFS,
+    "definitions": {**COND_DEFS, **FIN_DEFS, **NOTICE_STYLE_DEFS},
 }
 
 # ---------------------------------------------------------------- effect_def

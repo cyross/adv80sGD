@@ -23,6 +23,172 @@
       "type": "string",
       "description": "表示名"
     },
+    "kind": {
+      "enum": [
+        "normal",
+        "title",
+        "opening",
+        "ending",
+        "sub",
+        "system"
+      ],
+      "description": "シーンの種類（6.9）。normal（標準）、title（タイトル）、opening（オープニング）、ending（エンディング）、sub（サブシーン）、system（システムシーン）"
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": [
+              "boolean",
+              "integer",
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {},
+              "required": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "description": "サブシーンの引数（名前 → 既定値か {default, required, description}）"
+    },
+    "menu": {
+      "type": "array",
+      "description": "メニュー（title・system のシーン）。選択肢として出し、選んだ項目の手順が終わるとまた出す",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "do": {
+            "$ref": "#/definitions/step"
+          },
+          "when": {
+            "$ref": "#/definitions/condition"
+          },
+          "once": {
+            "type": "boolean"
+          },
+          "ext": {
+            "type": "object",
+            "description": "拡張領域。中身は自由"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "自作の項目（x.名前）"
+          }
+        },
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "ending": {
+      "type": "string",
+      "description": "エンディングID（kind: ending）。入ると見た記録を付ける"
+    },
+    "replay": {
+      "enum": [
+        "always",
+        "once",
+        "skippable"
+      ],
+      "description": "オープニング（kind: opening）の2回目から：always（毎回流す、既定）、once（1回目だけ流し、2回目からは飛ばす）、skippable（2回目からは Esc で飛ばせ、Ctrl で早送りできる）"
+    },
+    "next": {
+      "type": "string",
+      "description": "オープニングを飛ばしたとき・終わったときに移るシーン（なければタイトルか開始シーン）"
+    },
+    "bgm": {
+      "anyOf": [
+        {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "fade": {
+              "type": "number"
+            },
+            "loop": {
+              "type": "boolean"
+            },
+            "volume": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ]
+        }
+      ],
+      "description": "入ったときに鳴らす BGM（ID か {id, fade, loop, volume}。同じ曲ならそのまま。null で止める）"
+    },
+    "bgm_fade": {
+      "type": "number",
+      "description": "bgm: null で止めるときのフェードの秒数"
+    },
+    "transition": {
+      "description": "このシーンに入るときの切り替え演出"
+    },
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "when": {
+            "$ref": "#/definitions/condition"
+          },
+          "image": {},
+          "bgm": {},
+          "bgm_fade": {
+            "type": "number"
+          },
+          "menu": {
+            "type": "array",
+            "description": "メニューの差し替え（menu と同じ形）"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "入ったときの背景と BGM の差し替え。when に合うものを順に重ねる（後ろほど優先）。タイトルを見たエンディングの数（sys.endings_seen など）で変えるのに使う"
+    },
+    "fin": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/definitions/fin"
+        }
+      ],
+      "description": "エンディング（kind: ending）を最後まで進めたときの「おわり」の画面（false で出さない）。プロジェクト設定の fin に重ねる"
+    },
     "image": {
       "anyOf": [
         {
@@ -338,6 +504,35 @@
       },
       "description": "変数の宣言（任意）"
     },
+    "aliases": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "params": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "text"
+            ]
+          }
+        ]
+      },
+      "description": "エイリアス（5.4）。文中の [alias=名前 引数…] を置き換える。値は文か {params, text}（text の中で {arg.引数名} を使う）"
+    },
     "constants": {
       "type": "object",
       "additionalProperties": {
@@ -408,6 +603,10 @@
             },
             "additionalProperties": false
           },
+          "icon": {
+            "type": "string",
+            "description": "絵の素材ID（お知らせなどに出す）"
+          },
           "ext": {
             "type": "object",
             "description": "拡張領域。中身は自由"
@@ -430,6 +629,172 @@
           "name": {
             "type": "string",
             "description": "表示名"
+          },
+          "kind": {
+            "enum": [
+              "normal",
+              "title",
+              "opening",
+              "ending",
+              "sub",
+              "system"
+            ],
+            "description": "シーンの種類（6.9）。normal（標準）、title（タイトル）、opening（オープニング）、ending（エンディング）、sub（サブシーン）、system（システムシーン）"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": [
+                    "boolean",
+                    "integer",
+                    "number",
+                    "string",
+                    "null"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "default": {},
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "サブシーンの引数（名前 → 既定値か {default, required, description}）"
+          },
+          "menu": {
+            "type": "array",
+            "description": "メニュー（title・system のシーン）。選択肢として出し、選んだ項目の手順が終わるとまた出す",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "do": {
+                  "$ref": "#/definitions/step"
+                },
+                "when": {
+                  "$ref": "#/definitions/condition"
+                },
+                "once": {
+                  "type": "boolean"
+                },
+                "ext": {
+                  "type": "object",
+                  "description": "拡張領域。中身は自由"
+                }
+              },
+              "additionalProperties": false,
+              "patternProperties": {
+                "^x\\.": {
+                  "description": "自作の項目（x.名前）"
+                }
+              },
+              "required": [
+                "label"
+              ]
+            }
+          },
+          "ending": {
+            "type": "string",
+            "description": "エンディングID（kind: ending）。入ると見た記録を付ける"
+          },
+          "replay": {
+            "enum": [
+              "always",
+              "once",
+              "skippable"
+            ],
+            "description": "オープニング（kind: opening）の2回目から：always（毎回流す、既定）、once（1回目だけ流し、2回目からは飛ばす）、skippable（2回目からは Esc で飛ばせ、Ctrl で早送りできる）"
+          },
+          "next": {
+            "type": "string",
+            "description": "オープニングを飛ばしたとき・終わったときに移るシーン（なければタイトルか開始シーン）"
+          },
+          "bgm": {
+            "anyOf": [
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "fade": {
+                    "type": "number"
+                  },
+                  "loop": {
+                    "type": "boolean"
+                  },
+                  "volume": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            ],
+            "description": "入ったときに鳴らす BGM（ID か {id, fade, loop, volume}。同じ曲ならそのまま。null で止める）"
+          },
+          "bgm_fade": {
+            "type": "number",
+            "description": "bgm: null で止めるときのフェードの秒数"
+          },
+          "transition": {
+            "description": "このシーンに入るときの切り替え演出"
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "when": {
+                  "$ref": "#/definitions/condition"
+                },
+                "image": {},
+                "bgm": {},
+                "bgm_fade": {
+                  "type": "number"
+                },
+                "menu": {
+                  "type": "array",
+                  "description": "メニューの差し替え（menu と同じ形）"
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "入ったときの背景と BGM の差し替え。when に合うものを順に重ねる（後ろほど優先）。タイトルを見たエンディングの数（sys.endings_seen など）で変えるのに使う"
+          },
+          "fin": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "$ref": "#/definitions/fin"
+              }
+            ],
+            "description": "エンディング（kind: ending）を最後まで進めたときの「おわり」の画面（false で出さない）。プロジェクト設定の fin に重ねる"
           },
           "image": {
             "anyOf": [
@@ -1240,6 +1605,41 @@
         {
           "type": "object",
           "properties": {
+            "call_scene": {
+              "type": "string",
+              "description": "呼ぶサブシーンのID（kind: sub）。return で戻る"
+            },
+            "args": {
+              "type": "object",
+              "description": "引数（名前 → 値。\"=\" で始まる文字列は呼び出し元で計算する式）。サブシーンの中では arg.名前 で読む"
+            },
+            "into": {
+              "type": "string",
+              "description": "戻り値を入れる変数"
+            }
+          },
+          "additionalProperties": false,
+          "description": "サブシーンの呼び出し（6.9）",
+          "required": [
+            "call_scene"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "return": {
+              "description": "サブシーンから戻る。値（\"=\" で始まる文字列は式）は呼び出しの into に入る。値がなければ null"
+            }
+          },
+          "additionalProperties": false,
+          "description": "サブシーンから戻る（6.9）",
+          "required": [
+            "return"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
             "choice": {
               "type": "object",
               "properties": {
@@ -1380,7 +1780,26 @@
                 "sprite.clear",
                 "cursor.set",
                 "video.play",
-                "video.stop"
+                "video.stop",
+                "scene.call",
+                "scene.return",
+                "ending.reach",
+                "credits.roll",
+                "game.new",
+                "game.title",
+                "game.continue",
+                "game.quit",
+                "endings.open",
+                "chapters.open",
+                "settings.open",
+                "system.save",
+                "system.load",
+                "system.close",
+                "settings.set",
+                "fin.show",
+                "opening.play",
+                "extras.open",
+                "notice.show"
               ]
             },
             {
@@ -1430,6 +1849,1052 @@
       "required": [
         "type"
       ]
+    },
+    "fin": {
+      "type": "object",
+      "properties": {
+        "show": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "pal": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "fill": {
+          "type": "integer"
+        },
+        "image": {
+          "type": "string"
+        },
+        "text_y": {
+          "type": "number"
+        },
+        "transition": {
+          "description": "出るとき・消えるときの切り替え演出"
+        },
+        "advance": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(click|key|key:.+|trigger:.+)$"
+              },
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ]
+          },
+          "description": "閉じる条件：click、key、key:キー名、秒数、trigger:名前（既定 [\"click\", \"key\"]）"
+        },
+        "min_time": {
+          "type": "number",
+          "minimum": 0,
+          "description": "閉じられるようになるまでの秒数（既定 1）"
+        },
+        "then": {
+          "type": "string",
+          "description": "閉じたあと：title（既定）、new、quit、stay、またはシーンID"
+        },
+        "reset": {
+          "type": "boolean",
+          "description": "then がシーンIDのとき、始める前の状態に戻してから移る"
+        },
+        "items": {
+          "type": "array",
+          "description": "複数の行と画像（スタッフロールの items と同じ）。書けば text の代わりに縦の真ん中に並べる"
+        },
+        "lines": {
+          "type": "array",
+          "description": "複数の行（文字列の配列）"
+        },
+        "margin": {
+          "type": "number"
+        },
+        "align": {
+          "type": "string"
+        },
+        "line_gap": {
+          "type": "integer"
+        },
+        "save_prompt": {
+          "type": "boolean",
+          "description": "閉じたあと、クリアデータをセーブするか聞く（既定 false）"
+        },
+        "save_prompt_title": {
+          "type": "string"
+        },
+        "save_prompt_text": {
+          "type": "string"
+        },
+        "save_resume": {
+          "type": "string",
+          "description": "クリアデータをロードしたときに始めるシーン（既定は開始シーン）"
+        },
+        "save_carry": {
+          "anyOf": [
+            {
+              "enum": [
+                "all",
+                "none"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "vars": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "items": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "visited": {
+                  "type": "boolean"
+                },
+                "talked": {
+                  "type": "boolean"
+                },
+                "notebook": {
+                  "type": "boolean"
+                },
+                "chosen": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "description": "クリアデータで引き継ぐもの：all（全部、既定）、none（何も引き継がない）、{vars, items, visited, talked, notebook, chosen}（書かなかったものは引き継がない）"
+        }
+      },
+      "additionalProperties": false,
+      "description": "「おわり」の画面（6.9）"
+    },
+    "event_args": {
+      "type": "object",
+      "description": "出力イベントごとの引数（エディタのフォームで使う）",
+      "properties": {
+        "text.show": {
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "description": "本文"
+            },
+            "speaker": {
+              "type": "string",
+              "description": "話者のID"
+            },
+            "name": {
+              "type": "string",
+              "description": "出す名前"
+            },
+            "voice": {
+              "type": "string",
+              "description": "ボイスの素材ID"
+            }
+          },
+          "required": [
+            "body"
+          ]
+        },
+        "text.append": {
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "description": "足す本文"
+            }
+          },
+          "required": [
+            "body"
+          ]
+        },
+        "text.clear": {
+          "type": "object",
+          "properties": {}
+        },
+        "image.show": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string",
+              "description": "層（既定 bg）"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array"
+                }
+              ],
+              "description": "素材ID（配列で重ねる）"
+            },
+            "variant": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "切り替え演出（名前か {type, duration, …}）"
+            },
+            "duration": {
+              "type": "number",
+              "description": "秒"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "image.hide": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "切り替え演出（名前か {type, duration, …}）"
+            },
+            "duration": {
+              "type": "number",
+              "description": "秒"
+            }
+          }
+        },
+        "effect.play": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "効果（flash、shake、invert、tint、palette_cycle、scroll、zoom、raster など）"
+            },
+            "duration": {
+              "type": "number",
+              "description": "秒"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "sprite.show": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "image": {
+              "type": "string"
+            },
+            "variant": {
+              "type": "string"
+            },
+            "layer": {
+              "type": "string",
+              "description": "層（既定 char）"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "anchor": {},
+            "z": {
+              "type": "integer"
+            },
+            "scale": {},
+            "rotation": {
+              "type": "number"
+            },
+            "opacity": {
+              "type": "number"
+            },
+            "flip": {},
+            "blend": {
+              "type": "string"
+            },
+            "tint": {},
+            "smooth": {
+              "type": "boolean"
+            },
+            "color_key": {},
+            "anim": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "切り替え演出（名前か {type, duration, …}）"
+            },
+            "duration": {
+              "type": "number",
+              "description": "秒"
+            },
+            "keep": {
+              "type": "boolean"
+            },
+            "mute": {
+              "type": "boolean"
+            },
+            "volume": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "image"
+          ]
+        },
+        "sprite.set": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "scale": {},
+            "rotation": {
+              "type": "number"
+            },
+            "opacity": {
+              "type": "number"
+            },
+            "duration": {
+              "type": "number",
+              "description": "秒"
+            },
+            "ease": {
+              "type": "string"
+            },
+            "loop": {
+              "type": "integer",
+              "description": "くりかえし（-1 で終わりなし）"
+            },
+            "yoyo": {
+              "type": "boolean"
+            },
+            "path": {}
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "sprite.hide": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array"
+                }
+              ],
+              "description": "ID（配列も可）"
+            },
+            "transition": {
+              "description": "切り替え演出（名前か {type, duration, …}）"
+            },
+            "duration": {
+              "type": "number",
+              "description": "秒"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "sprite.anim": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "anim": {
+              "description": "アニメーション（null で止める）"
+            },
+            "loop": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "sprite.effect": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string",
+              "description": "flash、shake、blink、mono、sepia、silhouette、mosaic、none、シェーダーのパス"
+            },
+            "duration": {
+              "type": "number",
+              "description": "秒"
+            },
+            "params": {}
+          },
+          "required": [
+            "id",
+            "name"
+          ]
+        },
+        "sprite.clear": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string",
+              "description": "層（省くとすべて）"
+            }
+          }
+        },
+        "cursor.set": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "image": {
+              "type": "string"
+            },
+            "hotspot": {}
+          }
+        },
+        "video.play": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "area": {
+              "enum": [
+                "picture",
+                "screen"
+              ]
+            },
+            "fit": {
+              "enum": [
+                "contain",
+                "cover",
+                "stretch"
+              ]
+            },
+            "loop": {
+              "type": "boolean"
+            },
+            "skippable": {
+              "type": "boolean"
+            },
+            "volume": {
+              "type": "number"
+            },
+            "bgm": {
+              "enum": [
+                "pause",
+                "keep",
+                "stop"
+              ]
+            },
+            "filters": {
+              "type": "boolean"
+            },
+            "transition": {
+              "description": "切り替え演出（名前か {type, duration, …}）"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "video.stop": {
+          "type": "object",
+          "properties": {
+            "transition": {
+              "description": "切り替え演出（名前か {type, duration, …}）"
+            }
+          }
+        },
+        "bgm.play": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "曲の素材ID"
+            },
+            "loop": {
+              "type": "boolean",
+              "description": "くりかえす（既定 true）"
+            },
+            "fade": {
+              "type": "number",
+              "description": "秒"
+            },
+            "volume": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "bgm.stop": {
+          "type": "object",
+          "properties": {
+            "fade": {
+              "type": "number",
+              "description": "秒"
+            }
+          }
+        },
+        "se.play": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "volume": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "voice.play": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "speaker": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "state.set": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "value": {},
+            "op": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "item.add": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "count": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "item.remove": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "count": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "scene.goto": {
+          "type": "object",
+          "properties": {
+            "scene": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "切り替え演出（名前か {type, duration, …}）"
+            }
+          },
+          "required": [
+            "scene"
+          ]
+        },
+        "scene.call": {
+          "type": "object",
+          "properties": {
+            "scene": {
+              "type": "string",
+              "description": "呼ぶサブシーン"
+            },
+            "args": {
+              "type": "object"
+            },
+            "into": {
+              "type": "string",
+              "description": "戻り値を入れる変数"
+            }
+          },
+          "required": [
+            "scene"
+          ]
+        },
+        "scene.return": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "description": "戻り値"
+            }
+          }
+        },
+        "wait": {
+          "type": "object",
+          "properties": {
+            "seconds": {
+              "type": "number",
+              "description": "秒"
+            }
+          },
+          "required": [
+            "seconds"
+          ]
+        },
+        "group": {
+          "type": "object",
+          "properties": {
+            "events": {
+              "type": "array",
+              "description": "同時に実行するイベント"
+            }
+          },
+          "required": [
+            "events"
+          ]
+        },
+        "choice.show": {
+          "type": "object",
+          "properties": {
+            "choices": {
+              "type": "array"
+            },
+            "prompt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "choices"
+          ]
+        },
+        "input.request": {
+          "type": "object",
+          "properties": {
+            "slot": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "slot"
+          ]
+        },
+        "game.end": {
+          "type": "object",
+          "properties": {
+            "ending": {
+              "type": "string"
+            }
+          }
+        },
+        "verbs.update": {
+          "type": "object",
+          "properties": {
+            "verbs": {},
+            "mode": {
+              "enum": [
+                "replace",
+                "add",
+                "remove"
+              ]
+            }
+          },
+          "required": [
+            "verbs"
+          ]
+        },
+        "hotspots.update": {
+          "type": "object",
+          "properties": {
+            "objects": {},
+            "mode": {
+              "enum": [
+                "replace",
+                "add",
+                "remove"
+              ]
+            }
+          },
+          "required": [
+            "objects"
+          ]
+        },
+        "input.mode": {
+          "type": "object",
+          "properties": {
+            "enable": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "parser",
+                  "select",
+                  "click"
+                ]
+              }
+            }
+          },
+          "required": [
+            "enable"
+          ]
+        },
+        "notebook.add": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "body"
+          ]
+        },
+        "objective.set": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string",
+              "description": "目的（空で消す）"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        },
+        "hint.set": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string"
+            },
+            "hints": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "topic",
+            "hints"
+          ]
+        },
+        "flow.mark": {
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "node"
+          ]
+        },
+        "checkpoint": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "autosave": {
+              "type": "boolean"
+            }
+          }
+        },
+        "layout.set": {
+          "type": "object",
+          "properties": {
+            "layout": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "切り替え演出（名前か {type, duration, …}）"
+            }
+          },
+          "required": [
+            "layout"
+          ]
+        },
+        "template.switch": {
+          "type": "object",
+          "properties": {
+            "template": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "切り替え演出（名前か {type, duration, …}）"
+            }
+          },
+          "required": [
+            "template"
+          ]
+        },
+        "save.request": {
+          "type": "object",
+          "properties": {}
+        },
+        "credits.roll": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array"
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "text": {
+              "type": "string"
+            },
+            "speed": {
+              "type": "number",
+              "description": "1秒あたりの画素（既定 30）"
+            },
+            "duration": {
+              "type": "number",
+              "description": "秒"
+            },
+            "align": {
+              "type": "string"
+            },
+            "pal": {
+              "type": "integer"
+            },
+            "size": {
+              "type": "number"
+            },
+            "margin": {
+              "type": "number"
+            },
+            "fill": {},
+            "background": {},
+            "skippable": {
+              "type": "boolean"
+            },
+            "bgm": {}
+          }
+        },
+        "ending.reach": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "game.new": {
+          "type": "object",
+          "properties": {
+            "scene": {
+              "type": "string"
+            }
+          }
+        },
+        "game.title": {
+          "type": "object",
+          "properties": {}
+        },
+        "game.continue": {
+          "type": "object",
+          "properties": {}
+        },
+        "game.quit": {
+          "type": "object",
+          "properties": {}
+        },
+        "endings.open": {
+          "type": "object",
+          "properties": {}
+        },
+        "chapters.open": {
+          "type": "object",
+          "properties": {}
+        },
+        "settings.open": {
+          "type": "object",
+          "properties": {}
+        },
+        "fin.show": {
+          "$ref": "#/definitions/fin"
+        },
+        "opening.play": {
+          "type": "object",
+          "properties": {
+            "scene": {
+              "type": "string"
+            }
+          }
+        },
+        "extras.open": {
+          "type": "object",
+          "properties": {}
+        },
+        "system.save": {
+          "type": "object",
+          "properties": {
+            "slot": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "slot"
+          ]
+        },
+        "system.load": {
+          "type": "object",
+          "properties": {
+            "slot": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "slot"
+          ]
+        },
+        "system.close": {
+          "type": "object",
+          "properties": {}
+        },
+        "settings.set": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "text_speed、bgm_volume、features.<キー> など"
+            },
+            "value": {}
+          },
+          "required": [
+            "key"
+          ]
+        },
+        "notice.show": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "お知らせの文（文字の書き方が使える）"
+            },
+            "seconds": {
+              "type": "number",
+              "description": "出しておく秒数（既定は見た目の設定）"
+            },
+            "icon": {
+              "type": "string",
+              "description": "絵の素材ID"
+            },
+            "log": {
+              "type": "boolean",
+              "description": "メッセージログにも残すか（既定は見た目の設定）"
+            },
+            "position": {
+              "enum": [
+                "top_right",
+                "top_left",
+                "bottom_right",
+                "bottom_left",
+                "top",
+                "bottom",
+                "center"
+              ],
+              "description": "このお知らせだけの位置（既定は見た目の設定）"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        }
+      }
     }
   }
 }

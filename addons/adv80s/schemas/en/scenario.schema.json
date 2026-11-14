@@ -23,6 +23,172 @@
       "type": "string",
       "description": "Display name"
     },
+    "kind": {
+      "enum": [
+        "normal",
+        "title",
+        "opening",
+        "ending",
+        "sub",
+        "system"
+      ],
+      "description": "Scene kind (6.9): normal (default), title, opening, ending, sub (subscene), system (system scene)"
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": [
+              "boolean",
+              "integer",
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "default": {},
+              "required": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "description": "Subscene parameters (name -> default or {default, required, description})"
+    },
+    "menu": {
+      "type": "array",
+      "description": "Menu (title / system scenes). Shown as a choice; shown again after the chosen item's steps",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "do": {
+            "$ref": "#/definitions/step"
+          },
+          "when": {
+            "$ref": "#/definitions/condition"
+          },
+          "once": {
+            "type": "boolean"
+          },
+          "ext": {
+            "type": "object",
+            "description": "Extension area. Free-form"
+          }
+        },
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x\\.": {
+            "description": "Custom property (x.name)"
+          }
+        },
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "ending": {
+      "type": "string",
+      "description": "Ending ID (kind: ending). Recorded as seen on entry"
+    },
+    "replay": {
+      "enum": [
+        "always",
+        "once",
+        "skippable"
+      ],
+      "description": "Opening (kind: opening) from the second time: always (default), once (play only the first time), skippable (Esc skips, Ctrl fast-forwards)"
+    },
+    "next": {
+      "type": "string",
+      "description": "Scene to go to when the opening is skipped or ends (title or entry when omitted)"
+    },
+    "bgm": {
+      "anyOf": [
+        {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "fade": {
+              "type": "number"
+            },
+            "loop": {
+              "type": "boolean"
+            },
+            "volume": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ]
+        }
+      ],
+      "description": "BGM on entering (ID or {id, fade, loop, volume}; kept if the same; null stops)"
+    },
+    "bgm_fade": {
+      "type": "number",
+      "description": "Fade seconds when bgm is null"
+    },
+    "transition": {
+      "description": "Transition when entering this scene"
+    },
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "when": {
+            "$ref": "#/definitions/condition"
+          },
+          "image": {},
+          "bgm": {},
+          "bgm_fade": {
+            "type": "number"
+          },
+          "menu": {
+            "type": "array",
+            "description": "Menu override (same as menu)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Background / BGM overrides on entry; matching entries are applied in order (later wins). E.g. change the title by endings seen (sys.endings_seen)"
+    },
+    "fin": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/definitions/fin"
+        }
+      ],
+      "description": "The FIN screen after an ending (kind: ending) finishes (false hides it). Merged over the project fin"
+    },
     "image": {
       "anyOf": [
         {
@@ -338,6 +504,35 @@
       },
       "description": "Variable declarations (optional)"
     },
+    "aliases": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "params": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "text"
+            ]
+          }
+        ]
+      },
+      "description": "Aliases (5.4). [alias=name args...] in text is replaced. Value is text or {params, text} ({arg.param} inside text)"
+    },
     "constants": {
       "type": "object",
       "additionalProperties": {
@@ -408,6 +603,10 @@
             },
             "additionalProperties": false
           },
+          "icon": {
+            "type": "string",
+            "description": "Image asset ID (shown in notices, etc.)"
+          },
           "ext": {
             "type": "object",
             "description": "Extension area. Free-form"
@@ -430,6 +629,172 @@
           "name": {
             "type": "string",
             "description": "Display name"
+          },
+          "kind": {
+            "enum": [
+              "normal",
+              "title",
+              "opening",
+              "ending",
+              "sub",
+              "system"
+            ],
+            "description": "Scene kind (6.9): normal (default), title, opening, ending, sub (subscene), system (system scene)"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": [
+                    "boolean",
+                    "integer",
+                    "number",
+                    "string",
+                    "null"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "default": {},
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "Subscene parameters (name -> default or {default, required, description})"
+          },
+          "menu": {
+            "type": "array",
+            "description": "Menu (title / system scenes). Shown as a choice; shown again after the chosen item's steps",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "do": {
+                  "$ref": "#/definitions/step"
+                },
+                "when": {
+                  "$ref": "#/definitions/condition"
+                },
+                "once": {
+                  "type": "boolean"
+                },
+                "ext": {
+                  "type": "object",
+                  "description": "Extension area. Free-form"
+                }
+              },
+              "additionalProperties": false,
+              "patternProperties": {
+                "^x\\.": {
+                  "description": "Custom property (x.name)"
+                }
+              },
+              "required": [
+                "label"
+              ]
+            }
+          },
+          "ending": {
+            "type": "string",
+            "description": "Ending ID (kind: ending). Recorded as seen on entry"
+          },
+          "replay": {
+            "enum": [
+              "always",
+              "once",
+              "skippable"
+            ],
+            "description": "Opening (kind: opening) from the second time: always (default), once (play only the first time), skippable (Esc skips, Ctrl fast-forwards)"
+          },
+          "next": {
+            "type": "string",
+            "description": "Scene to go to when the opening is skipped or ends (title or entry when omitted)"
+          },
+          "bgm": {
+            "anyOf": [
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "fade": {
+                    "type": "number"
+                  },
+                  "loop": {
+                    "type": "boolean"
+                  },
+                  "volume": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            ],
+            "description": "BGM on entering (ID or {id, fade, loop, volume}; kept if the same; null stops)"
+          },
+          "bgm_fade": {
+            "type": "number",
+            "description": "Fade seconds when bgm is null"
+          },
+          "transition": {
+            "description": "Transition when entering this scene"
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "when": {
+                  "$ref": "#/definitions/condition"
+                },
+                "image": {},
+                "bgm": {},
+                "bgm_fade": {
+                  "type": "number"
+                },
+                "menu": {
+                  "type": "array",
+                  "description": "Menu override (same as menu)"
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "Background / BGM overrides on entry; matching entries are applied in order (later wins). E.g. change the title by endings seen (sys.endings_seen)"
+          },
+          "fin": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "$ref": "#/definitions/fin"
+              }
+            ],
+            "description": "The FIN screen after an ending (kind: ending) finishes (false hides it). Merged over the project fin"
           },
           "image": {
             "anyOf": [
@@ -1240,6 +1605,41 @@
         {
           "type": "object",
           "properties": {
+            "call_scene": {
+              "type": "string",
+              "description": "Subscene to call (kind: sub). Comes back on return"
+            },
+            "args": {
+              "type": "object",
+              "description": "Arguments (name -> value; a string starting with \"=\" is evaluated by the caller). Read as arg.name inside the subscene"
+            },
+            "into": {
+              "type": "string",
+              "description": "Variable that receives the return value"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Subscene call (6.9)",
+          "required": [
+            "call_scene"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "return": {
+              "description": "Return from the subscene. The value (a string starting with \"=\" is an expression) goes into the caller's into; null for none"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Return from a subscene (6.9)",
+          "required": [
+            "return"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
             "choice": {
               "type": "object",
               "properties": {
@@ -1380,7 +1780,26 @@
                 "sprite.clear",
                 "cursor.set",
                 "video.play",
-                "video.stop"
+                "video.stop",
+                "scene.call",
+                "scene.return",
+                "ending.reach",
+                "credits.roll",
+                "game.new",
+                "game.title",
+                "game.continue",
+                "game.quit",
+                "endings.open",
+                "chapters.open",
+                "settings.open",
+                "system.save",
+                "system.load",
+                "system.close",
+                "settings.set",
+                "fin.show",
+                "opening.play",
+                "extras.open",
+                "notice.show"
               ]
             },
             {
@@ -1430,6 +1849,1052 @@
       "required": [
         "type"
       ]
+    },
+    "fin": {
+      "type": "object",
+      "properties": {
+        "show": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "pal": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "fill": {
+          "type": "integer"
+        },
+        "image": {
+          "type": "string"
+        },
+        "text_y": {
+          "type": "number"
+        },
+        "transition": {
+          "description": "Transition in and out"
+        },
+        "advance": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(click|key|key:.+|trigger:.+)$"
+              },
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ]
+          },
+          "description": "Close on: click, key, key:name, seconds, trigger:name (default [\"click\", \"key\"])"
+        },
+        "min_time": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Seconds before it can be closed (default 1)"
+        },
+        "then": {
+          "type": "string",
+          "description": "After closing: title (default), new, quit, stay, or a scene ID"
+        },
+        "reset": {
+          "type": "boolean",
+          "description": "Reset to the initial state before going to the then scene"
+        },
+        "items": {
+          "type": "array",
+          "description": "Rows and images (same as credits items), centered instead of text"
+        },
+        "lines": {
+          "type": "array",
+          "description": "Lines (array of strings)"
+        },
+        "margin": {
+          "type": "number"
+        },
+        "align": {
+          "type": "string"
+        },
+        "line_gap": {
+          "type": "integer"
+        },
+        "save_prompt": {
+          "type": "boolean",
+          "description": "Ask to save clear data after closing (default false)"
+        },
+        "save_prompt_title": {
+          "type": "string"
+        },
+        "save_prompt_text": {
+          "type": "string"
+        },
+        "save_resume": {
+          "type": "string",
+          "description": "Scene to start when clear data is loaded (default: entry)"
+        },
+        "save_carry": {
+          "anyOf": [
+            {
+              "enum": [
+                "all",
+                "none"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "vars": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "items": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "visited": {
+                  "type": "boolean"
+                },
+                "talked": {
+                  "type": "boolean"
+                },
+                "notebook": {
+                  "type": "boolean"
+                },
+                "chosen": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "description": "What clear data carries over: all (default), none, or {vars, items, visited, talked, notebook, chosen} (unlisted parts are not carried)"
+        }
+      },
+      "additionalProperties": false,
+      "description": "FIN screen (6.9)"
+    },
+    "event_args": {
+      "type": "object",
+      "description": "Arguments per output event (used by the editor form)",
+      "properties": {
+        "text.show": {
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "description": "Body"
+            },
+            "speaker": {
+              "type": "string",
+              "description": "Speaker ID"
+            },
+            "name": {
+              "type": "string",
+              "description": "Shown name"
+            },
+            "voice": {
+              "type": "string",
+              "description": "Voice asset ID"
+            }
+          },
+          "required": [
+            "body"
+          ]
+        },
+        "text.append": {
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "description": "Text to append"
+            }
+          },
+          "required": [
+            "body"
+          ]
+        },
+        "text.clear": {
+          "type": "object",
+          "properties": {}
+        },
+        "image.show": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string",
+              "description": "Layer (default bg)"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array"
+                }
+              ],
+              "description": "Asset ID (array to layer)"
+            },
+            "variant": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "Transition (name or {type, duration, ...})"
+            },
+            "duration": {
+              "type": "number",
+              "description": "Seconds"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "image.hide": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "Transition (name or {type, duration, ...})"
+            },
+            "duration": {
+              "type": "number",
+              "description": "Seconds"
+            }
+          }
+        },
+        "effect.play": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Effect name"
+            },
+            "duration": {
+              "type": "number",
+              "description": "Seconds"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "sprite.show": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "image": {
+              "type": "string"
+            },
+            "variant": {
+              "type": "string"
+            },
+            "layer": {
+              "type": "string",
+              "description": "Layer (default char)"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "anchor": {},
+            "z": {
+              "type": "integer"
+            },
+            "scale": {},
+            "rotation": {
+              "type": "number"
+            },
+            "opacity": {
+              "type": "number"
+            },
+            "flip": {},
+            "blend": {
+              "type": "string"
+            },
+            "tint": {},
+            "smooth": {
+              "type": "boolean"
+            },
+            "color_key": {},
+            "anim": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "Transition (name or {type, duration, ...})"
+            },
+            "duration": {
+              "type": "number",
+              "description": "Seconds"
+            },
+            "keep": {
+              "type": "boolean"
+            },
+            "mute": {
+              "type": "boolean"
+            },
+            "volume": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "image"
+          ]
+        },
+        "sprite.set": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "scale": {},
+            "rotation": {
+              "type": "number"
+            },
+            "opacity": {
+              "type": "number"
+            },
+            "duration": {
+              "type": "number",
+              "description": "Seconds"
+            },
+            "ease": {
+              "type": "string"
+            },
+            "loop": {
+              "type": "integer",
+              "description": "Repeat (-1 = forever)"
+            },
+            "yoyo": {
+              "type": "boolean"
+            },
+            "path": {}
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "sprite.hide": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array"
+                }
+              ],
+              "description": "ID (array allowed)"
+            },
+            "transition": {
+              "description": "Transition (name or {type, duration, ...})"
+            },
+            "duration": {
+              "type": "number",
+              "description": "Seconds"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "sprite.anim": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "anim": {
+              "description": "Animation (null stops)"
+            },
+            "loop": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "sprite.effect": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string",
+              "description": "Effect name or shader path"
+            },
+            "duration": {
+              "type": "number",
+              "description": "Seconds"
+            },
+            "params": {}
+          },
+          "required": [
+            "id",
+            "name"
+          ]
+        },
+        "sprite.clear": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string",
+              "description": "Layer (all if omitted)"
+            }
+          }
+        },
+        "cursor.set": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "image": {
+              "type": "string"
+            },
+            "hotspot": {}
+          }
+        },
+        "video.play": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "area": {
+              "enum": [
+                "picture",
+                "screen"
+              ]
+            },
+            "fit": {
+              "enum": [
+                "contain",
+                "cover",
+                "stretch"
+              ]
+            },
+            "loop": {
+              "type": "boolean"
+            },
+            "skippable": {
+              "type": "boolean"
+            },
+            "volume": {
+              "type": "number"
+            },
+            "bgm": {
+              "enum": [
+                "pause",
+                "keep",
+                "stop"
+              ]
+            },
+            "filters": {
+              "type": "boolean"
+            },
+            "transition": {
+              "description": "Transition (name or {type, duration, ...})"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "video.stop": {
+          "type": "object",
+          "properties": {
+            "transition": {
+              "description": "Transition (name or {type, duration, ...})"
+            }
+          }
+        },
+        "bgm.play": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "BGM asset ID"
+            },
+            "loop": {
+              "type": "boolean",
+              "description": "Loop (default true)"
+            },
+            "fade": {
+              "type": "number",
+              "description": "Seconds"
+            },
+            "volume": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "bgm.stop": {
+          "type": "object",
+          "properties": {
+            "fade": {
+              "type": "number",
+              "description": "Seconds"
+            }
+          }
+        },
+        "se.play": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "volume": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "voice.play": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "speaker": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "state.set": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "value": {},
+            "op": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "item.add": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "count": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "item.remove": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "count": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "scene.goto": {
+          "type": "object",
+          "properties": {
+            "scene": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "Transition (name or {type, duration, ...})"
+            }
+          },
+          "required": [
+            "scene"
+          ]
+        },
+        "scene.call": {
+          "type": "object",
+          "properties": {
+            "scene": {
+              "type": "string",
+              "description": "Subscene to call"
+            },
+            "args": {
+              "type": "object"
+            },
+            "into": {
+              "type": "string",
+              "description": "Variable for the return value"
+            }
+          },
+          "required": [
+            "scene"
+          ]
+        },
+        "scene.return": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "description": "Return value"
+            }
+          }
+        },
+        "wait": {
+          "type": "object",
+          "properties": {
+            "seconds": {
+              "type": "number",
+              "description": "Seconds"
+            }
+          },
+          "required": [
+            "seconds"
+          ]
+        },
+        "group": {
+          "type": "object",
+          "properties": {
+            "events": {
+              "type": "array",
+              "description": "Events run together"
+            }
+          },
+          "required": [
+            "events"
+          ]
+        },
+        "choice.show": {
+          "type": "object",
+          "properties": {
+            "choices": {
+              "type": "array"
+            },
+            "prompt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "choices"
+          ]
+        },
+        "input.request": {
+          "type": "object",
+          "properties": {
+            "slot": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "slot"
+          ]
+        },
+        "game.end": {
+          "type": "object",
+          "properties": {
+            "ending": {
+              "type": "string"
+            }
+          }
+        },
+        "verbs.update": {
+          "type": "object",
+          "properties": {
+            "verbs": {},
+            "mode": {
+              "enum": [
+                "replace",
+                "add",
+                "remove"
+              ]
+            }
+          },
+          "required": [
+            "verbs"
+          ]
+        },
+        "hotspots.update": {
+          "type": "object",
+          "properties": {
+            "objects": {},
+            "mode": {
+              "enum": [
+                "replace",
+                "add",
+                "remove"
+              ]
+            }
+          },
+          "required": [
+            "objects"
+          ]
+        },
+        "input.mode": {
+          "type": "object",
+          "properties": {
+            "enable": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "parser",
+                  "select",
+                  "click"
+                ]
+              }
+            }
+          },
+          "required": [
+            "enable"
+          ]
+        },
+        "notebook.add": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "body"
+          ]
+        },
+        "objective.set": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string",
+              "description": "Objective (empty clears)"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        },
+        "hint.set": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string"
+            },
+            "hints": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "topic",
+            "hints"
+          ]
+        },
+        "flow.mark": {
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "node"
+          ]
+        },
+        "checkpoint": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "autosave": {
+              "type": "boolean"
+            }
+          }
+        },
+        "layout.set": {
+          "type": "object",
+          "properties": {
+            "layout": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "Transition (name or {type, duration, ...})"
+            }
+          },
+          "required": [
+            "layout"
+          ]
+        },
+        "template.switch": {
+          "type": "object",
+          "properties": {
+            "template": {
+              "type": "string"
+            },
+            "transition": {
+              "description": "Transition (name or {type, duration, ...})"
+            }
+          },
+          "required": [
+            "template"
+          ]
+        },
+        "save.request": {
+          "type": "object",
+          "properties": {}
+        },
+        "credits.roll": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array"
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "text": {
+              "type": "string"
+            },
+            "speed": {
+              "type": "number",
+              "description": "Pixels per second (default 30)"
+            },
+            "duration": {
+              "type": "number",
+              "description": "Seconds"
+            },
+            "align": {
+              "type": "string"
+            },
+            "pal": {
+              "type": "integer"
+            },
+            "size": {
+              "type": "number"
+            },
+            "margin": {
+              "type": "number"
+            },
+            "fill": {},
+            "background": {},
+            "skippable": {
+              "type": "boolean"
+            },
+            "bgm": {}
+          }
+        },
+        "ending.reach": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "game.new": {
+          "type": "object",
+          "properties": {
+            "scene": {
+              "type": "string"
+            }
+          }
+        },
+        "game.title": {
+          "type": "object",
+          "properties": {}
+        },
+        "game.continue": {
+          "type": "object",
+          "properties": {}
+        },
+        "game.quit": {
+          "type": "object",
+          "properties": {}
+        },
+        "endings.open": {
+          "type": "object",
+          "properties": {}
+        },
+        "chapters.open": {
+          "type": "object",
+          "properties": {}
+        },
+        "settings.open": {
+          "type": "object",
+          "properties": {}
+        },
+        "fin.show": {
+          "$ref": "#/definitions/fin"
+        },
+        "opening.play": {
+          "type": "object",
+          "properties": {
+            "scene": {
+              "type": "string"
+            }
+          }
+        },
+        "extras.open": {
+          "type": "object",
+          "properties": {}
+        },
+        "system.save": {
+          "type": "object",
+          "properties": {
+            "slot": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "slot"
+          ]
+        },
+        "system.load": {
+          "type": "object",
+          "properties": {
+            "slot": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "slot"
+          ]
+        },
+        "system.close": {
+          "type": "object",
+          "properties": {}
+        },
+        "settings.set": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "text_speed, bgm_volume, features.<key>, ..."
+            },
+            "value": {}
+          },
+          "required": [
+            "key"
+          ]
+        },
+        "notice.show": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "Notice text (markup allowed)"
+            },
+            "seconds": {
+              "type": "number",
+              "description": "Seconds shown (default: notice style)"
+            },
+            "icon": {
+              "type": "string",
+              "description": "Icon image asset ID"
+            },
+            "log": {
+              "type": "boolean",
+              "description": "Also add to the message log (default: notice style)"
+            },
+            "position": {
+              "enum": [
+                "top_right",
+                "top_left",
+                "bottom_right",
+                "bottom_left",
+                "top",
+                "bottom",
+                "center"
+              ],
+              "description": "Position of this notice only"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        }
+      }
     }
   }
 }

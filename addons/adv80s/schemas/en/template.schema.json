@@ -203,7 +203,8 @@
           "description": "Command methods. select, parser, icon, click, verb_click (pick a verb, then click a target), verb_cursor (cycle the cursor verb, then click), context (verb chosen from the target)"
         },
         "parser_profile": {
-          "type": "string"
+          "type": "string",
+          "description": "How typed commands are read. ja (Japanese, default), en (English), free (free sentences), or a parser script path"
         },
         "command_columns": {
           "type": "integer",
@@ -532,6 +533,9 @@
         }
       }
     },
+    "notice": {
+      "$ref": "#/definitions/notice_style"
+    },
     "ext": {
       "type": "object",
       "description": "Extension area. Free-form"
@@ -548,6 +552,105 @@
     "id"
   ],
   "definitions": {
+    "notice_style": {
+      "type": "object",
+      "properties": {
+        "position": {
+          "enum": [
+            "top_right",
+            "top_left",
+            "bottom_right",
+            "bottom_left",
+            "top",
+            "bottom",
+            "center"
+          ],
+          "description": "Position (default top_right)"
+        },
+        "fg": {
+          "type": "integer",
+          "description": "Text color (palette index, default 7)"
+        },
+        "bg": {
+          "type": "integer",
+          "description": "Background color (default 0)"
+        },
+        "border": {
+          "type": "integer",
+          "description": "Border color (default 7; -1 = none)"
+        },
+        "se": {
+          "type": "string",
+          "description": "Sound effect when shown (asset ID)"
+        },
+        "seconds": {
+          "type": "number",
+          "description": "Seconds shown (default 2.5; 0 = until clicked)"
+        },
+        "click_close": {
+          "type": "boolean",
+          "description": "Click to dismiss (default true)"
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Max notices at once (default 5; oldest removed; 0 = no limit)"
+        },
+        "overflow": {
+          "enum": [
+            "instant",
+            "fade"
+          ],
+          "description": "How notices over the limit disappear (instant (default) or fade)"
+        },
+        "log_labels": {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "notice": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Labels of the log screen filter"
+        },
+        "log_filter": {
+          "enum": [
+            "all",
+            "text",
+            "notice"
+          ],
+          "description": "What the log screen shows first"
+        },
+        "log_mark": {
+          "type": "string",
+          "description": "Mark before notices in the message log (default ◆)"
+        },
+        "log_color": {
+          "type": "integer",
+          "description": "Notice color in the message log (palette index)"
+        },
+        "margin": {
+          "type": "number",
+          "description": "Margin from the screen edge (default 12)"
+        },
+        "icon_size": {
+          "type": "number",
+          "description": "Icon size (default 24)"
+        },
+        "log": {
+          "type": "boolean",
+          "description": "Also add notices to the message log (default false)"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Notice appearance"
+    },
     "font_entry": {
       "type": "object",
       "additionalProperties": false,

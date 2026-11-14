@@ -1,13 +1,14 @@
 {
-  "project_version": 1.0,
+  "project_version": 1,
   "template": "pc98_classic",
   "templates": [
     "pc98_classic",
     "pc88_classic"
   ],
   "scenarios": [
-    "res://tests/stage1/scenario/stage1.scenario.json",
-    "res://tests/stage1/scenario/stage1_talk.ink.json"
+    "res://tests/stage1/scenario/stage1_talk.ink.json",
+    "res://tests/stage1/scenario/stage1/_scenario.scenario.json",
+    "res://tests/stage1/scenario/stage1/chapter1.scenario.json"
   ],
   "asset_roots": [
     "res://tests/stage1/assets"
@@ -47,7 +48,7 @@
       "allow": true,
       "default": true,
       "options": {
-        "max_steps": 50.0
+        "max_steps": 50
       }
     },
     "era_switch": {
@@ -80,7 +81,11 @@
   },
   "ext": {
     "adv80s_editor": {
-      "scenario_root": "res://tests/stage1/scenario"
+      "scenario_root": "res://tests/stage1/scenario",
+      "scenario_order": [
+        "stage1"
+      ]
     }
-  }
+  },
+  "entry": "hallway"
 }

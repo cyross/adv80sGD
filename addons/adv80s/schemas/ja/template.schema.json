@@ -203,7 +203,8 @@
           "description": "使うコマンド方式。select=コマンド選択、parser=コマンド入力、icon=アイコン、click=絵のクリック、verb_click=動詞を選んで対象をクリック、verb_cursor=カーソルの動詞を切り替えてクリック、context=対象に合わせて自動で決める"
         },
         "parser_profile": {
-          "type": "string"
+          "type": "string",
+          "description": "コマンド入力の読み方。ja=日本式（標準）、en=英語式、free=自由文、またはパーサーのスクリプトのパス"
         },
         "command_columns": {
           "type": "integer",
@@ -532,6 +533,9 @@
         }
       }
     },
+    "notice": {
+      "$ref": "#/definitions/notice_style"
+    },
     "ext": {
       "type": "object",
       "description": "拡張領域。中身は自由"
@@ -548,6 +552,105 @@
     "id"
   ],
   "definitions": {
+    "notice_style": {
+      "type": "object",
+      "properties": {
+        "position": {
+          "enum": [
+            "top_right",
+            "top_left",
+            "bottom_right",
+            "bottom_left",
+            "top",
+            "bottom",
+            "center"
+          ],
+          "description": "位置（既定 top_right）"
+        },
+        "fg": {
+          "type": "integer",
+          "description": "文字の色（パレットの番号。既定 7）"
+        },
+        "bg": {
+          "type": "integer",
+          "description": "地の色（既定 0）"
+        },
+        "border": {
+          "type": "integer",
+          "description": "枠の色（既定 7。-1 で枠なし）"
+        },
+        "se": {
+          "type": "string",
+          "description": "出すときの効果音（素材ID）"
+        },
+        "seconds": {
+          "type": "number",
+          "description": "出しておく秒数（既定 2.5。0 なら時間では消えない）"
+        },
+        "click_close": {
+          "type": "boolean",
+          "description": "クリックで消せるか（既定 true）"
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "同時に出す数の上限（既定 5。超えたら古いものから消す。0 で上限なし）"
+        },
+        "overflow": {
+          "enum": [
+            "instant",
+            "fade"
+          ],
+          "description": "上限で消すときの消え方（instant：すぐ（既定）、fade：すっと）"
+        },
+        "log_labels": {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "notice": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "ログの画面の切り替えの文言（既定「ひょうじ：すべて」など）"
+        },
+        "log_filter": {
+          "enum": [
+            "all",
+            "text",
+            "notice"
+          ],
+          "description": "ログの画面を開いたときに出すもの（all：すべて、text：お知らせ以外、notice：お知らせだけ）"
+        },
+        "log_mark": {
+          "type": "string",
+          "description": "メッセージログでお知らせの前に付ける印（既定「◆ 」）"
+        },
+        "log_color": {
+          "type": "integer",
+          "description": "メッセージログでのお知らせの色（パレットの番号）"
+        },
+        "margin": {
+          "type": "number",
+          "description": "画面の端からの間（既定 12）"
+        },
+        "icon_size": {
+          "type": "number",
+          "description": "絵の大きさ（既定 24）"
+        },
+        "log": {
+          "type": "boolean",
+          "description": "メッセージログにも残すか（既定 false）"
+        }
+      },
+      "additionalProperties": false,
+      "description": "お知らせの見た目"
+    },
     "font_entry": {
       "type": "object",
       "additionalProperties": false,

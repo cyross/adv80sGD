@@ -11,6 +11,7 @@ const DOCK_SCRIPT := preload("res://addons/adv80s/editor/adv_dock.gd")
 const EXPORT_SCRIPT := preload("res://addons/adv80s/editor/adv_export_plugin.gd")
 const SCREEN_SCRIPT := preload("res://addons/adv80s/editor/adv_editor_screen.gd")
 const ANIM_IMPORTER := preload("res://addons/adv80s/editor/adv_anim_importer.gd")
+const DEBUGGER_SCRIPT := preload("res://addons/adv80s/editor/adv_debugger_plugin.gd")
 
 const MENU_GENERATE := "adv80s: マニフェストを生成"
 const MENU_VSCODE := "adv80s: VS Code の設定を書き出す"
@@ -20,6 +21,7 @@ var _dock: Control
 var _screen: Control
 var _gif: EditorImportPlugin
 var _export: EditorExportPlugin
+var _debugger: EditorDebuggerPlugin
 var _timer: Timer
 var _busy := false
 
@@ -41,6 +43,13 @@ func _enter_tree() -> void:
 	_export = EXPORT_SCRIPT.new()
 	_export.plugin = self
 	add_export_plugin(_export)
+
+	# デバッグ実行中のゲームの「エディタで開く」を受け取る
+	_debugger = DEBUGGER_SCRIPT.new()
+	_debugger.open_scene_requested.connect(open_scene_in_editor)
+	_debugger.preset_saved.connect(_on_game_preset)
+	_debugger.settings_saved.connect(_on_game_settings)
+	add_debugger_plugin(_debugger)
 
 	add_tool_menu_item(MENU_GENERATE, generate)
 	add_tool_menu_item(MENU_VSCODE, write_vscode_settings)
@@ -64,6 +73,9 @@ func _exit_tree() -> void:
 	remove_tool_menu_item(MENU_GENERATE)
 	remove_tool_menu_item(MENU_VSCODE)
 	remove_tool_menu_item(MENU_KEY)
+	if _debugger != null:
+		remove_debugger_plugin(_debugger)
+		_debugger = null
 	if _export != null:
 		remove_export_plugin(_export)
 		_export = null
@@ -88,6 +100,28 @@ func _make_visible(visible: bool) -> void:
 		_screen.visible = visible
 		if visible:
 			_screen.on_shown()
+
+
+## ゲームのコンソールの notice save：シナリオエディタに取り込ませる。
+func _on_game_settings() -> void:
+	if _screen != null:
+		_screen.import_game_settings()
+
+
+## ゲームの「ひな形に」：シナリオエディタに取り込ませる。
+func _on_game_preset(_name: String) -> void:
+	if _screen != null:
+		_screen.import_game_presets()
+
+
+## 「adv80s」の画面に切り替えて、シナリオエディタでシーンを開く。
+func open_scene_in_editor(scene_id: String, location: Dictionary = {}) -> void:
+	EditorInterface.set_main_screen_editor("adv80s")
+	if _screen != null:
+		_screen.open_scenario_scene(scene_id, location)
+	var w := EditorInterface.get_base_control().get_window()
+	if w != null:
+		w.grab_focus()
 
 
 func _get_plugin_name() -> String:

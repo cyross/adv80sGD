@@ -35,7 +35,11 @@ func _parse(text: String, core: AdvCore) -> Dictionary:
 		if r.is_empty():
 			return _reply("unknown_word")
 		tokens.append_array(r)
+	return _tokens_to_intent(tokens, core)
 
+
+## 切り分けた語（[{kind: "verb"/"noun"/"absent", value, particle}]）から意図を作る。
+func _tokens_to_intent(tokens: Array, core: AdvCore) -> Dictionary:
 	var verb := ""
 	var nouns := []
 	for t in tokens:

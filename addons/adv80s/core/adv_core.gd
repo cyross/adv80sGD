@@ -150,6 +150,15 @@ func start(entry: String = "") -> Array[Dictionary]:
 	return _drive(_adapters[0].start(entry))
 
 
+## シーンの途中から始める（エディタの「このシーンから実行」）。at は {dialogue, line} か {knot}。
+## 主のアダプタが start_at を持たなければ、ふつうに始める。
+func start_at(entry: String, at: Dictionary = {}) -> Array[Dictionary]:
+	_adapters = [_adapters[0]]
+	if at.is_empty() or not _adapters[0].has_method("start_at"):
+		return _drive(_adapters[0].start(entry))
+	return _drive(_adapters[0].call("start_at", entry, at))
+
+
 ## 意図を受け取る。省略形の意図も受け付け、slots の形にそろえてから渡す。
 func submit(intent: Dictionary) -> Array[Dictionary]:
 	var it := normalize_intent(intent)
@@ -225,7 +234,7 @@ func _drive(events: Array) -> Array[Dictionary]:
 	while not queue.is_empty():
 		var e: Dictionary = queue.pop_front()
 		var t := String(e.get("type", ""))
-		if t == "adapter.enter" or t == "adapter.exit":
+		if t == "adapter.enter" or t == "adapter.exit" or t == "adapter.call":
 			switches += 1
 			if switches > 1000:
 				AdvDiag.debug_warn("UNREACHABLE", "アダプタの受け渡しが多すぎます", "Too many adapter switches")
@@ -247,6 +256,15 @@ func _switch_adapter(e: Dictionary) -> Array:
 			return adapter.resume({"error": "no_adapter"})
 		_adapters.append(a)
 		return a.start(String(args.get("entry", "")))
+	if e["type"] == "adapter.call":
+		# 下のアダプタの手順を1つ借りて実行する（Ink からの JSON のサブシーンの呼び出し）。終われば adapter.exit で戻る
+		var cname := String(args.get("adapter", ""))
+		var ca = adapters_by_name.get(cname, _adapters[0] if cname == "main" and not _adapters.is_empty() else null)
+		if ca == null or not ca.has_method("call_step"):
+			AdvDiag.debug_warn("UNSUPPORTED", "アダプタがありません: %s" % cname, "Adapter not found: %s" % cname)
+			return adapter.resume({"error": "no_adapter"})
+		_adapters.append(ca)
+		return ca.call_step(args.get("step", {}))
 	if _adapters.size() <= 1:
 		return []  # 主のアダプタが終わった
 	_adapters.pop_back()
@@ -419,7 +437,19 @@ func validate() -> Array[Dictionary]:
 		r.append(d)
 	for a in adapters_by_name.values():
 		r.append_array(a.validate())
+	var refs = _adapter_query("alias_refs", {})
+	for d in AdvTextMarkup.check_aliases(aliases(), refs if refs is Array else []):
+		r.append(d)
 	return r
+
+
+## エイリアス（5.4）：プロジェクト設定の aliases に、シナリオの aliases を重ねたもの。
+func aliases() -> Dictionary:
+	var out: Dictionary = config.get("aliases", {}).duplicate(true) if config.get("aliases") is Dictionary else {}
+	var sa = _adapter_query("aliases", {})
+	if sa is Dictionary:
+		out.merge(sa, true)
+	return out
 
 
 ## セーブ：状態、乱数、すべてのアダプタの状態、積み上げの順番。

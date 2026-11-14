@@ -446,14 +446,14 @@ func _main() -> void:
 	check(vg != null and vg.material is ShaderMaterial, "video transition: shader while revealing")
 	await create_timer(1.2).timeout
 	check(vg.material == null and player.screen.video_player.is_playing(), "video transition: revealed and playing")
-	_run_ev([AdvEvents.make("video.stop", {"transition": {"type": "fade", "duration": 0.3}})])
+	_run_ev([AdvEvents.make("video.stop", {"transition": {"type": "fade", "duration": 1.0}})])
 	await _settle_frames(3)
 	check(is_instance_valid(vg) and not vg.is_queued_for_deletion() and player.busy, "video.stop waits for the transition")
 	await _settle()
 	check(not is_instance_valid(vg) or vg.is_queued_for_deletion(), "video.stop: removed after the transition")
 	# 終わりを待つ動画：飛ばしても、同じ演出で消えてから次へ進む
-	_run_ev([AdvEvents.make("video.play", {"id": "op_test", "transition": {"type": "fade_color", "duration": 0.2}})])
-	await create_timer(0.35).timeout
+	_run_ev([AdvEvents.make("video.play", {"id": "op_test", "transition": {"type": "fade_color", "duration": 0.8}})])
+	await create_timer(1.0).timeout
 	player._click_pending = true
 	await _settle_frames(4)
 	check(player.busy and player.screen._video_group != null, "video: leaving with the transition after a skip")
@@ -830,8 +830,1622 @@ func _main() -> void:
 	check(await player.load_game("03") == "", "save of the same game loads")
 	await _settle()
 
+	await _test_stage16()
+	check(_stage16_done, "ui: the stage16+ tests reached the end (no script error on the way)")
 	print("ui failed: %d" % _failed)
 	quit(1 if _failed > 0 else 0)
+
+
+## 段階16：タイトル、システムシーン、サブシーン、エイリアス、エンディング、スタッフロール。
+var _stage16_done := false
+
+
+func _test_stage16() -> void:
+	player.queue_free()
+	await process_frame
+	_rmdir("user://test16_saves")
+	player = AdvPlayer.new()
+	player.project_path = "res://tests/stage16/stage16.project.json"
+	player.auto_click = true
+	player.settings_path = ""
+	player.progress_path = ""
+	root.add_child(player)
+	await _settle()
+	var sel := player.screen.command_select
+	check(player.core.state.scene == "title", "s16: starts at the title scene after the opening: %s" % player.core.state.scene)
+	check(player.progress.openings.has("op"), "s16: opening recorded as seen")
+	check(player.message_log.entries.any(func(e): return String(e.get("body", "")) == "オープニング その3"), "s16: opening played the first time")
+	check(player.audio.current_bgm.get("id", "") == "theme", "s16: scene bgm")
+	check(player._input_modes() == ["select"], "s16: title accepts only choices: %s" % str(player._input_modes()))
+	check(_buttons(sel) == ["はじめから", "つづきから", "エンディング", "オープニング"], "s16: title menu (opening seen, so it can be replayed): %s" % str(_buttons(sel)))
+	await _shot("30_title_scene")
+	_press(sel, "はじめから")
+	await _settle()
+	await _settle()
+	check(player.core.state.scene == "shop" and player.core.state.frames.size() == 1, "s16: new game, subscene called: %s %s" % [player.core.state.scene, player.core.state.frames.size()])
+	var logs := player.message_log.entries.map(func(e): return String(e.get("body", "")))
+	check(logs.has("たろうは あゆみに「こんにちは です」と いった。"), "s16: alias expanded in the log: %s" % str(logs))
+	check(logs.has("いまは びんぼう。"), "s16: [if] in an alias")
+	check(logs.has("パンは 5えん。"), "s16: subscene args in text")
+	check(not logs.has("ゲームの タイトル"), "s16: title text cleared by new game")
+	# JSON のシステムシーン（セーブ）
+	player.open_save_menu("save")
+	await _settle()
+	check(player.is_system_scene_open() and player.core.state.scene == "sys_save", "s16: save system scene open")
+	check(player.screen.message_label.get_parsed_text().contains("どこに セーブする"), "s16: sys.mode in text: %s" % player.screen.message_label.get_parsed_text())
+	check(_buttons(sel).size() == 3 and String(_buttons(sel)[0]).contains("からっぽ"), "s16: slot labels: %s" % str(_buttons(sel)))
+	await _shot("31_system_save_scene")
+	_press(sel, _buttons(sel)[0])
+	await _settle()
+	check(FileAccess.file_exists("user://test16_saves/01.sav"), "s16: system.save wrote the slot")
+	check(String(_buttons(sel)[0]).contains("みせ"), "s16: slot label refreshed: %s" % str(_buttons(sel)))
+	_press(sel, "おとを ちいさく")
+	await _settle()
+	check(float(player.settings.get_value("bgm_volume")) == 0.25, "s16: settings.set")
+	_press(sel, "もどる")
+	await _settle()
+	check(not player.is_system_scene_open() and player.core.state.scene == "shop", "s16: system scene closed, back to the game: %s" % player.core.state.scene)
+	check(_buttons(sel) == ["かう", "かわない"], "s16: subscene choice restored: %s" % str(_buttons(sel)))
+	# Esc でも閉じる
+	player.open_save_menu("save")
+	await _settle()
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	player._input(esc)
+	await _settle()
+	check(not player.is_system_scene_open() and player.core.state.scene == "shop", "s16: Esc closes the system scene")
+	# サブシーンを最後まで：エンディング、スタッフロール、タイトルへ
+	_press(sel, "かう")
+	await _settle()
+	await _settle()
+	check(player.progress.endings.has("good"), "s16: ending recorded")
+	logs = player.message_log.entries.map(func(e): return String(e.get("body", "")))
+	check(player.core.state.scene == "title", "s16: game.title back to the title: %s" % player.core.state.scene)
+	check(player.message_log.entries.size() <= 1, "s16: log reset at the title: %d" % player.message_log.entries.size())
+	# つづきから → ロードのシステムシーン
+	_press(sel, "つづきから")
+	await _settle()
+	await _settle()
+	check(player.is_system_scene_open() and player.core.state.sys.get("mode") == "load", "s16: load system scene")
+	check(player.screen.message_label.get_parsed_text().contains("よみこむ"), "s16: load text")
+	_press(sel, _buttons(sel)[0])
+	await _settle()
+	await _settle()
+	check(not player.is_system_scene_open() and player.core.state.scene == "shop" and player.core.state.frames.size() == 1, "s16: loaded mid-subscene: %s" % player.core.state.scene)
+	check(_buttons(sel) == ["かう", "かわない"], "s16: choice after load: %s" % str(_buttons(sel)))
+	# 自作の設定画面（.tscn）
+	player.modern.open_settings()
+	await _settle_frames(3)
+	check(player._overlay is AdvSystemScreen and (player._overlay as AdvSystemScreen).mode == "settings", "s16: custom settings screen")
+	await _shot("32_custom_settings")
+	(player._overlay as AdvSystemScreen).set_setting("bgm_volume", 1.0)
+	(player._overlay as AdvSystemScreen).close()
+	await _settle_frames(3)
+	check(player._overlay == null and float(player.settings.get_value("bgm_volume")) == 1.0, "s16: custom screen closed")
+	# エンディング一覧
+	player.modern.open_endings()
+	await _settle_frames(3)
+	var txt := _panel_text(player._overlay)
+	check(txt.contains("1 / 2") and txt.contains("かいものの おわり") and txt.contains("まだ ないしょ") and not txt.contains("なにも しない"), "s16: endings list: %s" % txt)
+	await _shot("33_endings")
+	player._overlay.call("close")
+	await _settle_frames(3)
+	# テンプレートのタイトル画面
+	player.project.data["title_screen"] = "template"
+	player.go_title()
+	await _settle_frames(5)
+	check(player._overlay is AdvTitleScreen, "s16: template title screen")
+	var ts := player._overlay as AdvTitleScreen
+	check(ts != null and ts.buttons.has("new") and ts.buttons.has("continue") and ts.buttons.has("endings") and not ts.buttons.has("chapters"), "s16: title buttons: %s" % (str(ts.buttons.keys()) if ts else ""))
+	await _shot("34_template_title")
+	ts.choose("new")
+	await _settle()
+	await _settle()
+	check(player.core.state.scene == "shop", "s16: template title → new game: %s" % player.core.state.scene)
+	# スタッフロールはクリックで飛ばせる（画像、色、大きさ）
+	var t0 := Time.get_ticks_msec()
+	player.auto_click = false
+	player._run([AdvEvents.make("credits.roll", {"items": [{"text": "スタッフロール", "pal": 6, "size": 28},
+		{"image": "hallway", "scale": 0.5, "gap": 10}, {"text": "なまえ", "align": "left"}], "duration": 2.0, "bgm": "theme"})])
+	await create_timer(0.8).timeout
+	check(player.busy, "s16: credits rolling")
+	await _shot("35_credits")
+	player._click_pending = true
+	await _settle()
+	check(not player.busy and Time.get_ticks_msec() - t0 < 3000, "s16: credits skipped by a click")
+	# 2回目のオープニング：Esc で飛ばせる
+	player.project.data["title_screen"] = "title"
+	player._opening_boot = true
+	player._run(player.core.start("op"))
+	await _settle_frames(5)
+	check(player.can_skip_opening() and player._opening_hint != null, "s16: second opening is skippable")
+	await _shot("36_opening_skippable")
+	var esc2 := InputEventKey.new()
+	esc2.keycode = KEY_ESCAPE
+	esc2.pressed = true
+	player._input(esc2)
+	player.auto_click = true
+	await _settle()
+	await _settle()
+	check(player.core.state.scene == "title" and player._opening.is_empty(), "s16: Esc skips the opening to the title: %s" % player.core.state.scene)
+	check(not player.message_log.entries.any(func(e): return String(e.get("body", "")) == "オープニング その3"), "s16: rest of the opening skipped")
+	player.auto_click = true
+	# 1回だけの設定：見ていれば起動時に飛ばす
+	player.core.adapters_by_name["main"].scenes["op"]["replay"] = "once"
+	await player._reset_state()
+	player._boot()
+	await _settle()
+	check(player.core.state.scene == "title" and not player.message_log.entries.any(func(e): return String(e.get("body", "")).begins_with("オープニング")), "s16: once: opening skipped at boot")
+	# テンプレートのタイトル画面の BGM と切り替え演出
+	player.audio.stop_bgm()
+	player.project.data["title_screen"] = "template"
+	player.project.data["title_bgm"] = "theme"
+	player.project.data["title_transition"] = {"type": "fade", "duration": 0.8}
+	player.go_title()
+	await _settle_frames(5)
+	check(player.audio.current_bgm.get("id", "") == "theme", "s16: template title bgm")
+	var ts2 := player._overlay as AdvTitleScreen
+	check(ts2 != null and ts2.group.material != null, "s16: template title transition running")
+	await create_timer(1.0).timeout
+	check(ts2.group.material == null, "s16: template title transition done")
+	ts2.choose("new")
+	await create_timer(1.0).timeout
+	await _settle()
+	check(player.core.state.scene == "shop", "s16: template title with transition → new game: %s" % player.core.state.scene)
+
+	# 「おわり」の画面：エンディングを最後まで進めると出て、時間で閉じてタイトルへ
+	player.project.data["title_screen"] = "title"
+	player.project.data.erase("title_bgm")
+	player._run(player.core.start("end_bad"))
+	await _settle()
+	check(player._overlay is AdvFinScreen, "s17: fin screen after the ending")
+	check(player.progress.endings.has("bad"), "s17: bad ending recorded")
+	await _shot("37_fin")
+	await create_timer(1.2).timeout
+	await _settle()
+	check(player._overlay == null and player.core.state.scene == "title", "s17: fin closes by time, back to the title: %s" % player.core.state.scene)
+	# fin: false なら出さない
+	player._run(player.core.start("end_quiet"))
+	await _settle()
+	check(player._overlay == null and player.core.state.scene == "end_quiet", "s17: fin hidden")
+	# fin.show：合図で閉じて、指定のシーンへ
+	player._run([AdvEvents.make("fin.show", {"text": "つづく", "advance": ["trigger:next"], "min_time": 0.0, "then": "hall", "reset": true})])
+	await _settle_frames(5)
+	check(player._overlay is AdvFinScreen and not player.fire_trigger("other"), "s17: fin.show waits for its trigger")
+	check(player.fire_trigger("next"), "s17: trigger accepted")
+	await _settle()
+	await _settle()
+	check(player._overlay == null and player.core.state.scene == "shop", "s17: then goes to the scene (reset): %s" % player.core.state.scene)
+	# キーで閉じる
+	player._run([AdvEvents.make("fin.show", {"advance": ["key"], "min_time": 0.0, "then": "stay"})])
+	await _settle_frames(5)
+	var kev := InputEventKey.new()
+	kev.keycode = KEY_SPACE
+	kev.pressed = true
+	(player._overlay as AdvFinScreen)._input(kev)
+	await _settle_frames(5)
+	check(player._overlay == null, "s17: fin closes by a key")
+	# オープニングを見返す（条件）
+	check(player.can_replay_opening(), "s17: opening can be replayed (seen)")
+	player.project.data["opening_replay"] = "never"
+	check(not player.can_replay_opening(), "s17: opening_replay never")
+	player.project.data["opening_replay"] = {"endings": ["good", "bad"]}
+	check(player.can_replay_opening(), "s17: opening_replay by endings")
+	player.project.data["opening_replay"] = {"endings": ["true_end"]}
+	check(not player.can_replay_opening(), "s17: opening_replay needs an unseen ending")
+	player.project.data["opening_replay"] = "any_ending"
+	await player.replay_opening()
+	await _settle()
+	check(player.core.state.scene == "title", "s17: replayed opening returns to the title: %s" % player.core.state.scene)
+	check(player.message_log.entries.size() <= 1, "s17: replay starts from the initial state")
+	# テンプレートのタイトルの「オープニング」
+	player.project.data["title_screen"] = "template"
+	player.go_title()
+	await _settle_frames(5)
+	var ts3 := player._overlay as AdvTitleScreen
+	check(ts3 != null and ts3.buttons.has("opening"), "s17: template title has opening: %s" % (str(ts3.buttons.keys()) if ts3 else ""))
+	await create_timer(1.0).timeout   # 出る演出が終わるまで選べない（title_transition 0.8 秒）
+	player.auto_click = false
+	ts3.choose("opening")
+	await _settle_frames(3)
+	check(player._opening.get("replay", false) and player.core.state.scene == "op", "s17: template title replays the opening")
+	var esc3 := InputEventKey.new()
+	esc3.keycode = KEY_ESCAPE
+	esc3.pressed = true
+	player._input(esc3)
+	player.auto_click = true
+	await _settle_frames(10)
+	check(player._overlay is AdvTitleScreen, "s17: skipping the replay returns to the template title")
+	(player._overlay as AdvTitleScreen).close()
+	await _settle_frames(3)
+
+	# 段階19：見たエンディングの数でタイトルを変える
+	player.project.data["title_screen"] = "title"
+	await player.go_title()
+	await _settle()
+	check(player.core.state.sys.get("endings_seen") == 2 and player.core.state.sys.get("ending_good") == true, "s19: sys endings: %s" % str(player.core.state.sys))
+	check(String(player._images.get("bg", {}).get("id", "")) == "room", "s19: title scene variant image: %s" % str(player._images.get("bg")))
+	player.project.data["title_variants"] = [{"when": "sys.endings_seen >= 1", "image": "hallway"}, {"when": "sys.all_endings", "image": "room", "bgm": "theme"}]
+	check(player.title_variant() == {"image": "room", "bgm": "theme"}, "s19: template title variant: %s" % str(player.title_variant()))
+	player.project.data["title_variants"] = [{"when": "sys.ending_true_end", "image": "hallway"}]
+	check(player.title_variant().is_empty(), "s19: unmatched variant")
+	# 「おわり」の画面に複数の行と画像
+	player._run([AdvEvents.make("fin.show", {"items": [{"text": "おわり", "size": 40, "pal": 6}, {"image": "hallway", "scale": 0.5, "gap": 8},
+		{"text": "あそんでくれて ありがとう"}], "advance": ["key"], "min_time": 0.0, "then": "stay"})])
+	await _settle_frames(8)
+	check(player._overlay is AdvFinScreen and (player._overlay as AdvFinScreen).group.get_child_count() >= 2, "s19: fin with items")
+	await _shot("38_fin_items")
+	var kev2 := InputEventKey.new()
+	kev2.keycode = KEY_SPACE
+	kev2.pressed = true
+	(player._overlay as AdvFinScreen)._input(kev2)
+	await _settle_frames(5)
+	# クリアデータのセーブ（聞く → はい → セーブのシステムシーン → 01）
+	_rmdir("user://test16_saves")
+	player._run(player.core.start("end_quiet"))
+	await _settle()
+	player._run([AdvEvents.make("fin.show", {"advance": ["key"], "min_time": 0.0, "then": "title", "save_prompt": true, "save_resume": "hall"})])
+	await _settle_frames(5)
+	(player._overlay as AdvFinScreen)._input(kev2)
+	await _settle_frames(5)
+	check(player._overlay is AdvMenuPanel and _panel_text(player._overlay).contains("クリアデータ"), "s19: asks to save clear data")
+	await _shot("39_clear_save_prompt")
+	for b in player._overlay.find_children("*", "Button", true, false):
+		if (b as Button).text == "はい":
+			(b as Button).pressed.emit()
+	await _settle()
+	check(player.is_system_scene_open(), "s19: save screen opened")
+	_press(sel, _buttons(sel)[0])
+	await _settle()
+	var saved_meta: Dictionary = player._read_slot("01")["data"].get("meta", {})
+	check(saved_meta.get("clear", false) and saved_meta.get("ending", "") == "bad" and saved_meta.get("resume", "") == "hall", "s19: clear data meta: %s" % str(saved_meta))
+	check(String(_buttons(sel)[0]).contains("クリア"), "s19: slot shows clear: %s" % str(_buttons(sel)))
+	_press(sel, "もどる")
+	await _settle()
+	await _settle()
+	check(player.core.state.scene == "title", "s19: after clear save, then title: %s" % player.core.state.scene)
+	# クリアデータをロードすると、変数を引き継いで save_resume のシーンから
+	player.core.state.vars["money"] = 0
+	await player.load_game("01")
+	await _settle()
+	check(player.core.state.scene == "shop" and player.core.state.frames.size() == 1, "s19: clear data resumes at hall: %s" % player.core.state.scene)
+	# いいえなら聞くだけ
+	player._run([AdvEvents.make("fin.show", {"advance": ["key"], "min_time": 0.0, "then": "stay", "save_prompt": true})])
+	await _settle_frames(5)
+	(player._overlay as AdvFinScreen)._input(kev2)
+	await _settle_frames(5)
+	for b in player._overlay.find_children("*", "Button", true, false):
+		if (b as Button).text == "いいえ":
+			(b as Button).pressed.emit()
+	await _settle_frames(5)
+	check(player._overlay == null and not player.is_system_scene_open(), "s19: no means no save")
+
+	# 段階20：クリアデータで引き継ぐもの
+	player.core.state.vars["money"] = 99
+	player.core.state.vars["bought"] = "パン"
+	player.core.state.items["key"] = 1
+	await player._carry_over({"vars": ["money"], "items": "none"})
+	check(player.core.state.get_var("money") == 99 and player.core.state.get_var("bought") == "" and player.core.state.items.is_empty(), "s20: carry chosen vars only: %s %s" % [player.core.state.vars, player.core.state.items])
+	player.core.state.vars["money"] = 50
+	player.core.state.items["key"] = 1
+	await player._carry_over({"vars": "none", "items": "all"})
+	check(player.core.state.get_var("money") == 0 and player.core.state.items.has("key"), "s20: carry items only")
+	player.core.state.vars["money"] = 50
+	await player._carry_over("none")
+	check(player.core.state.get_var("money") == 0 and player.core.state.items.is_empty(), "s20: carry none")
+	player.core.state.vars["money"] = 50
+	await player._carry_over("all")
+	check(player.core.state.vars["money"] == 50, "s20: carry all")
+	# おまけ（すべてのエンディングを見たら）
+	player.project.data["extras"] = {"gallery": [{"id": "hallway", "label": "ろうか"}, {"id": "room", "label": "へや", "when": "false", "hint": "ないしょ"}],
+		"music": [{"id": "theme", "label": "テーマ"}]}
+	check(player.can_open_extras(), "s20: extras open (all endings)")
+	player.project.data["extras"]["show"] = false
+	check(not player.can_open_extras(), "s20: extras hidden by show: false")
+	player.project.data["extras"]["show"] = true
+	player.project.data["extras"]["when"] = "sys.ending_true_end"
+	check(not player.can_open_extras(), "s20: extras condition")
+	player.project.data["extras"].erase("when")
+	# タイトルのシーンの variants でメニューを差し替える
+	player.project.data["title_screen"] = "title"
+	await player.go_title()
+	await _settle()
+	check(_buttons(sel) == ["はじめから", "おまけ"], "s20: title scene menu variant: %s" % str(_buttons(sel)))
+	_press(sel, "おまけ")
+	await _settle_frames(5)
+	check(player._overlay is AdvMenuPanel and _panel_buttons().has("ギャラリー") and _panel_buttons().has("おんがく"), "s20: extras.open: %s" % str(_panel_buttons()))
+	_press_panel("ギャラリー")
+	await _settle_frames(5)
+	var gt := _panel_text(player._overlay)
+	check(gt.contains("1 / 2"), "s20: gallery count: %s" % gt)
+	check(_panel_buttons().has("ろうか") and _panel_buttons().has("？？？　ないしょ"), "s20: gallery entries: %s" % str(_panel_buttons()))
+	await _shot("40_gallery")
+	_press_panel("ろうか")
+	await _settle_frames(5)
+	check(player._overlay is AdvImageViewer, "s20: image viewer")
+	await create_timer(0.3).timeout
+	await _shot("41_gallery_view")
+	(player._overlay as AdvImageViewer).close()
+	await _settle_frames(5)
+	_press_panel("もどる")
+	await _settle_frames(5)
+	_press_panel("おんがく")
+	await _settle_frames(5)
+	player.audio.stop_bgm()
+	check(player.audio.current_bgm.is_empty(), "s20: music stopped")
+	_press_panel("テーマ")
+	await _settle_frames(3)
+	check(player.audio.current_bgm.get("id", "") == "theme", "s20: music room plays")
+	_press_panel("もどる")
+	await _settle_frames(5)
+	check(player.audio.current_bgm.get("id", "") == "theme", "s20: music room restores the title bgm: %s" % str(player.audio.current_bgm))
+	_press_panel("もどる")
+	await _settle_frames(5)
+	check(player._overlay == null and _buttons(sel) == ["はじめから", "おまけ"], "s20: back to the title menu")
+	# テンプレートのタイトルのメニューと文言を差し替える
+	player.project.data["title_screen"] = "template"
+	player.project.data["title_transition"] = "cut"
+	player.project.data["title_variants"] = [{"when": "sys.all_endings", "menu": ["new", "extras", "quit"], "labels": {"new": "さいしょから"}}]
+	player.go_title()
+	await _settle_frames(5)
+	var ts4 := player._overlay as AdvTitleScreen
+	check(ts4 != null and ts4.buttons.keys() == ["new", "extras", "quit"] and (ts4.buttons["new"] as Button).text == "さいしょから", "s20: template title menu variant: %s" % (str(ts4.buttons.keys()) if ts4 else ""))
+	ts4.close()
+	await _settle_frames(3)
+
+	# 段階21：ギャラリーの画像をめくる
+	player.progress.seen["image"].erase("room")
+	player.progress.mark_seen("image", "hallway")
+	var two := {"images": ["hallway", "room"], "label": "ふたつ"}
+	check(player.extra_unlocked(two, "image") and player.extra_pages(two) == ["hallway"], "s21: pages are the seen images: %s" % str(player.extra_pages(two)))
+	check(not player.extra_unlocked({"images": ["room"]}, "image"), "s21: unseen images stay locked")
+	check(player.extra_pages({"images": ["hallway", "room"], "when": "true"}) == ["hallway", "room"], "s21: when opens every page")
+	var t1: Texture2D = player._layer_texture("hallway")
+	var t2: Texture2D = player._layer_texture("room")
+	var vw := AdvImageViewer.new().setup([t1, t2], player.template, "ふたつ")
+	root.add_child(vw)
+	check(vw.page_count() == 2 and vw.page == 0 and vw._count.text == "1 / 2", "s21: viewer pages")
+	vw.next_page()
+	check(vw.page == 1 and vw._count.text == "2 / 2", "s21: viewer next")
+	vw.prev_page()
+	check(vw.page == 0, "s21: viewer prev")
+	var vclosed := [false]
+	vw.closed.connect(func(): vclosed[0] = true)
+	vw.next_page()
+	vw.next_page()
+	check(vclosed[0], "s21: viewer closes after the last page")
+	await _settle_frames(2)
+	# おまけに エンディング一覧と オープニングを並べる（menu の順）
+	player.project.data["extras"]["gallery"].append({"images": ["hallway", "room"], "label": "ふたつ", "when": "true"})
+	player.project.data["extras"]["menu"] = ["endings", "music", "gallery", "opening"]
+	player.project.data["extras"]["endings_label"] = "エンディングいちらん"
+	player.progress.openings["op"] = true
+	check(player.extras_menu() == ["endings", "music", "gallery", "opening"], "s21: extras menu: %s" % str(player.extras_menu()))
+	player.core.state.scene = ""
+	player.modern.open_extras()
+	await _settle_frames(5)
+	check(_panel_buttons() == ["エンディングいちらん", "おんがく", "ギャラリー", "オープニング", "もどる"], "s21: extras panel order: %s" % str(_panel_buttons()))
+	_press_panel("エンディングいちらん")
+	await _settle_frames(5)
+	check(_panel_text(player._overlay).contains("みた エンディング"), "s21: endings from extras")
+	_press_panel("もどる")
+	await _settle_frames(5)
+	_press_panel("ギャラリー")
+	await _settle_frames(5)
+	_press_panel("ふたつ")
+	await _settle_frames(5)
+	check(player._overlay is AdvImageViewer and (player._overlay as AdvImageViewer).page_count() == 2, "s21: gallery opens a paged viewer")
+	await create_timer(0.3).timeout
+	await _shot("42_gallery_pages")
+	(player._overlay as AdvImageViewer).close()
+	await _settle_frames(5)
+	_press_panel("もどる")
+	await _settle_frames(5)
+	# 音楽の鳴らし方
+	player.project.data["extras"]["music"] = [{"id": "theme", "label": "いち"}, {"id": "nope", "label": "に", "when": "false"}, {"id": "theme", "label": "さん"}]
+	player.settings.set_value("music_mode", "one")
+	_press_panel("おんがく")
+	await _settle_frames(5)
+	check(_panel_buttons().has("さいせい：1きょく くりかえし"), "s21: music mode button: %s" % str(_panel_buttons()))
+	_press_panel("いち")
+	await _settle_frames(3)
+	check(player.audio.current_bgm.get("loop", false) == true and _panel_text(player._overlay).contains("いま：いち"), "s21: one mode loops")
+	player.modern._on_music_finished()
+	await _settle_frames(3)
+	check(player.modern._music_index == 0, "s21: one mode stays")
+	_press_panel("さいせい：1きょく くりかえし")
+	await _settle_frames(2)
+	check(player.modern.music_mode() == "next" and player.audio.current_bgm.get("loop", true) == false and _panel_buttons().has("さいせい：つづけて"), "s21: switch to next mode")
+	player.modern._on_music_finished()
+	await _settle_frames(3)
+	check(player.modern._music_index == 2 and _panel_text(player._overlay).contains("いま：さん"), "s21: next skips locked tracks: %d" % player.modern._music_index)
+	player.modern._on_music_finished()
+	await _settle_frames(3)
+	check(player.modern._music_index == -1 and player.audio.current_bgm.is_empty(), "s21: next mode stops at the end")
+	_press_panel("さいせい：つづけて")
+	await _settle_frames(2)
+	check(player.modern.music_mode() == "all", "s21: all mode")
+	_press_panel("さん")
+	await _settle_frames(3)
+	player.modern._on_music_finished()
+	await _settle_frames(3)
+	check(player.modern._music_index == 0, "s21: all mode wraps around")
+	await _shot("43_music_room")
+	_press_panel("もどる")
+	await _settle_frames(5)
+	check(player.modern._music_index == -1, "s21: music room closed")
+	_press_panel("もどる")
+	await _settle_frames(5)
+	player.settings.set_value("music_mode", "one")
+
+	# 段階22：見本の画像、曲の説明、特典
+	player.project.data["extras"]["gallery"] = [{"id": "hallway", "label": "ろうか"}, {"id": "room", "label": "へや", "hint": "ないしょ"},
+		{"id": "room", "label": "とくてん", "bonus": true}, {"id": "room", "label": "かくれ", "bonus": true, "hidden": false, "hint": "ぜんぶ みたら"}]
+	player.project.data["extras"]["music"] = [{"id": "theme", "label": "いち", "desc": "さっきょく：だれか"}, {"id": "theme", "label": "ボーナス", "bonus": true, "when": "sys.gallery_all"}]
+	player.project.data["extras"]["menu"] = ["gallery", "music"]
+	player.progress.seen["image"].erase("room")
+	player.fill_extras_sys()
+	var sy: Dictionary = player.core.state.sys
+	check(sy["gallery_opened"] == 1 and sy["gallery_total"] == 2 and not sy["gallery_all"], "s22: counts skip bonus entries: %s/%s" % [sy["gallery_opened"], sy["gallery_total"]])
+	player.modern.open_extras()
+	await _settle_frames(5)
+	_press_panel("ギャラリー")
+	await _settle_frames(5)
+	check(_panel_buttons() == ["ろうか", "？？？　ないしょ", "？？？　ぜんぶ みたら", "もどる"], "s22: hidden bonus not listed: %s" % str(_panel_buttons()))
+	var thumb_ok := false
+	for b in player._overlay.find_children("*", "Button", true, false):
+		if (b as Button).text == "ろうか":
+			thumb_ok = (b as Button).icon != null
+	check(thumb_ok, "s22: thumbnail shown")
+	check(_panel_text(player._overlay).contains("1 / 2"), "s22: gallery count without bonus")
+	_press_panel("もどる")
+	await _settle_frames(5)
+	player.progress.mark_seen("image", "room")
+	_press_panel("ギャラリー")
+	await _settle_frames(5)
+	check(_panel_buttons() == ["ろうか", "へや", "とくてん", "かくれ", "もどる"], "s22: bonus opens when all seen: %s" % str(_panel_buttons()))
+	await _shot("44_gallery_thumbs")
+	_press_panel("もどる")
+	await _settle_frames(5)
+	player.project.data["extras"]["thumbnails"] = false
+	_press_panel("ギャラリー")
+	await _settle_frames(5)
+	var no_icon := true
+	for b in player._overlay.find_children("*", "Button", true, false):
+		no_icon = no_icon and (b as Button).icon == null
+	check(no_icon, "s22: thumbnails off")
+	_press_panel("もどる")
+	await _settle_frames(5)
+	_press_panel("おんがく")
+	await _settle_frames(5)
+	check(_panel_buttons().has("ボーナス"), "s22: bonus music unlocked by sys.gallery_all")
+	_press_panel("いち")
+	await _settle_frames(3)
+	check(_panel_text(player._overlay).contains("さっきょく：だれか"), "s22: music description")
+	await _shot("45_music_desc")
+	_press_panel("もどる")
+	await _settle_frames(5)
+	player.project.data["extras"]["music_desc"] = false
+	player.project.data["extras"]["bonus"] = false
+	_press_panel("おんがく")
+	await _settle_frames(5)
+	check(not _panel_buttons().has("ボーナス"), "s22: bonus off")
+	_press_panel("いち")
+	await _settle_frames(3)
+	check(not _panel_text(player._overlay).contains("さっきょく"), "s22: description off")
+	_press_panel("もどる")
+	await _settle_frames(5)
+	_press_panel("もどる")
+	await _settle_frames(5)
+	player.project.data["extras"].erase("thumbnails")
+
+	# 段階23：特典のお知らせ
+	player.project.data["extras"]["bonus"] = true
+	player.project.data["extras"]["gallery"] = [{"id": "hallway", "label": "ろうか"}, {"id": "room", "label": "へや"}, {"id": "room", "label": "とくてん", "bonus": true}]
+	player.project.data["extras"]["music"] = [{"id": "theme", "label": "いち"}]
+	player.progress.clear_extras()
+	await player._play(AdvEvents.make("image.show", {"id": "hallway"}))
+	check(player.notices().is_empty(), "s23: no notice before the bonus opens")
+	await player._play(AdvEvents.make("image.show", {"id": "room"}))
+	check(player.notices() == ["おまけが ふえました"], "s23: notice when the bonus opens: %s" % str(player.notices()))
+	await _shot("46_bonus_notice")
+	check(player.check_bonus_unlocks().is_empty(), "s23: notified only once")
+	player.progress.clear_extras()
+	player.project.data["extras"]["notify"] = false
+	player.progress.mark_seen("image", "hallway")
+	player.progress.mark_seen("image", "room")
+	check(player.check_bonus_unlocks().is_empty(), "s23: notice off")
+	player.project.data["extras"]["notify"] = true
+	player.project.data["extras"]["notify_text"] = "とくてんが ひらいた"
+	check(player.check_bonus_unlocks() == ["とくてん"], "s23: notice on again")
+	check(player.notices().has("とくてんが ひらいた"), "s23: notice text")
+	# タイトルに開いた数を出す
+	player.project.data["extras"]["title_count"] = true
+	player.project.data["title_screen"] = "template"
+	player.go_title()
+	await _settle_frames(5)
+	var ts5 := player._overlay as AdvTitleScreen
+	var xb: String = (ts5.buttons["extras"] as Button).text if ts5 != null and ts5.buttons.has("extras") else ""
+	player.fill_extras_sys()
+	var want := "おまけ（%d / %d）" % [player.core.state.sys["extras_opened"], player.core.state.sys["extras_total"]]
+	check(xb == want, "s23: title count: %s (%s)" % [xb, want])
+	await _shot("47_title_count")
+	ts5.close()
+	await _settle_frames(3)
+	player.project.data["extras"]["title_count"] = false
+	player.go_title()
+	await _settle_frames(5)
+	ts5 = player._overlay as AdvTitleScreen
+	check(ts5 != null and (ts5.buttons["extras"] as Button).text == "おまけ", "s23: title count off")
+	ts5.close()
+	await _settle_frames(3)
+	# デバッグコンソール：おまけとエンディングの記録
+	var con: Control = load("res://addons/adv80s/debug/adv_debug_console.gd").new()
+	root.add_child(con)
+	con.set("player", player)
+	con.call("setup", player.core)
+	con.call("execute_command", "extras clear")
+	check(player.progress.seen["image"].is_empty() and not player.progress.seen.has("bonus"), "s23: debug extras clear")
+	con.call("execute_command", "extras unlock")
+	check(player.progress.seen["image"].has("hallway") and player.progress.seen["image"].has("room") and player.progress.seen.get("bonus", {}).size() == 1, "s23: debug extras unlock opens the bonus too")
+	con.call("execute_command", "endings clear")
+	check(player.progress.endings.is_empty(), "s23: debug endings clear")
+	con.queue_free()
+	await _settle_frames(2)
+
+	# 段階24：お知らせの出力イベントと、自動のお知らせ
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+	await player._play(AdvEvents.make("notice.show", {"text": "てちょうを みなおそう", "seconds": 1.0}))
+	check(player.notices() == ["てちょうを みなおそう"], "s24: notice.show: %s" % str(player.notices()))
+	await player._play(AdvEvents.make("item.add", {"id": "key"}))
+	check(player.notices().size() == 1, "s24: no item notice unless set")
+	player.project.data["notices"] = {"item_add": "{name}を てにいれた（{count}）", "notebook_add": "てちょうに かきました：{title}"}
+	await player._play(AdvEvents.make("item.add", {"id": "key", "count": 2}))
+	check(player.notices().any(func(t): return t.ends_with("を てにいれた（2）")), "s24: item notice: %s" % str(player.notices()))
+	await player._play(AdvEvents.make("notebook.add", {"id": "n1", "title": "かぎの こと", "body": "…"}))
+	check(player.notices().has("てちょうに かきました：かぎの こと"), "s24: notebook notice")
+	await _shot("48_notices")
+	player.project.data.erase("notices")
+	# デバッグコンソール：ほかの記録
+	player.progress.read["l1"] = true
+	player.core.state.read["l1"] = true
+	player.progress.reached["n1"] = true
+	player.progress.snapshots["n1"] = {}
+	player.progress.openings["op"] = true
+	var con2: Control = load("res://addons/adv80s/debug/adv_debug_console.gd").new()
+	root.add_child(con2)
+	con2.set("player", player)
+	con2.call("setup", player.core)
+	con2.call("execute_command", "read clear")
+	check(player.progress.read.is_empty() and player.core.state.read.is_empty(), "s24: debug read clear")
+	con2.call("execute_command", "flow clear")
+	check(player.progress.reached.is_empty() and player.progress.snapshots.is_empty(), "s24: debug flow clear")
+	con2.call("execute_command", "openings clear")
+	check(player.progress.openings.is_empty(), "s24: debug openings clear")
+	player.progress.mark_seen("image", "hallway")
+	con2.call("execute_command", "progress clear")
+	check(player.progress.seen["image"].is_empty() and player.progress.endings.is_empty(), "s24: debug progress clear")
+	con2.queue_free()
+	await _settle_frames(2)
+
+	# 段階25：お知らせの見た目
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+	await _settle_frames(2)
+	player.project.data["notice_style"] = {"position": "bottom_left", "fg": 6, "bg": 1, "border": -1, "seconds": 5.0}
+	player.show_notice("ひだりした")
+	player.show_notice("その うえ")
+	var nb: Array = player._notices
+	var sc := Vector2(player.template.screen_size)
+	check(nb[0].position.x == 12 and nb[0].position.y + nb[0].size.y == sc.y - 12, "s25: bottom_left position: %s" % str(nb[0].position))
+	check(nb[1].position.y < nb[0].position.y, "s25: bottom notices stack upward")
+	var sb0 := (nb[0] as PanelContainer).get_theme_stylebox("panel") as StyleBoxFlat
+	check(sb0.bg_color == player.template.color(1) and sb0.border_width_left == 0 and (nb[0].find_child("Text", true, false) as Label).get_theme_color("font_color") == player.template.color(6), "s25: notice colors")
+	await _shot("49_notice_style")
+	check(player.notice_style()["seconds"] == 5.0, "s25: notice seconds from the project")
+	for n in player._notices:
+		n.queue_free()
+	player._notices.clear()
+	player.project.data.erase("notice_style")
+	player.template.data["notice"] = {"position": "top"}
+	check(player.notice_style()["position"] == "top", "s25: notice style from the template")
+	player.template.data.erase("notice")
+	# 自動のお知らせを広げる
+	player.project.data["notices"] = {"objective_set": "もくてき：{text}", "hint_set": "ヒント：{topic}", "item_remove": "{name}を てばなした", "autosave": "セーブしました"}
+	await player._play(AdvEvents.make("objective.set", {"text": "かぎを さがす"}))
+	await player._play(AdvEvents.make("objective.set", {"text": ""}))
+	await player._play(AdvEvents.make("hint.set", {"topic": "かぎ", "hints": ["つくえ"]}))
+	await player._play(AdvEvents.make("item.remove", {"id": "key"}))
+	check(player.notices() == ["もくてき：かぎを さがす", "ヒント：かぎ", "keyを てばなした"], "s25: more auto notices: %s" % str(player.notices()))
+	player.autosave()
+	check(player.notices().has("セーブしました"), "s25: autosave notice")
+	for n in player._notices:
+		n.queue_free()
+	player._notices.clear()
+	player.project.data["notices"]["enabled"] = false
+	await player._play(AdvEvents.make("objective.set", {"text": "とまる"}))
+	check(player.notices().is_empty(), "s25: auto notices off")
+	player.project.data.erase("notices")
+
+	# 段階26：お知らせの絵とメッセージログ
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+	await _settle_frames(2)
+	await player._play(AdvEvents.make("notice.show", {"text": "ろうかの え", "icon": "hallway"}))
+	var ic: Node = player._notices[0].find_child("Icon", true, false)
+	check(ic is TextureRect and (ic as TextureRect).texture != null and (ic as TextureRect).custom_minimum_size == Vector2(24, 24), "s26: notice icon")
+	var mains = player.core.adapters_by_name.get("main")
+	if mains != null and mains.get("items") is Dictionary:
+		mains.items["key"] = {"name": "かぎ", "icon": "room"}
+	check(player.core.query("item_info", {"id": "key"}).get("icon", "") == "room", "s26: item icon from the scenario")
+	player.project.data["notices"] = {"item_add": "{name}を てにいれた", "autosave": {"text": "セーブしました", "icon": "hallway", "log": true}}
+	await player._play(AdvEvents.make("item.add", {"id": "key"}))
+	var item_n: Node = player._notices.back()
+	check(player.notices().has("かぎを てにいれた") and item_n.find_child("Icon", true, false) != null, "s26: item notice uses the item icon")
+	await _shot("50_notice_icons")
+	var log_before: int = player.message_log.entries.size()
+	await player._play(AdvEvents.make("notice.show", {"text": "のこらない"}))
+	check(player.message_log.entries.size() == log_before, "s26: notices not logged by default")
+	player.autosave()
+	check(player.message_log.entries.size() == log_before + 1 and String(player.message_log.entries.back().get("body", "")) == "セーブしました", "s26: autosave notice logged (entry log: true)")
+	player.project.data["notice_style"] = {"log": true, "icon_size": 32}
+	await player._play(AdvEvents.make("notice.show", {"text": "のこる", "icon": "room"}))
+	check(String(player.message_log.entries.back().get("body", "")) == "のこる", "s26: notices logged by style")
+	check((player._notices.back().find_child("Icon", true, false) as Control).custom_minimum_size == Vector2(32, 32), "s26: icon size")
+	await player._play(AdvEvents.make("notice.show", {"text": "のこさない", "log": false}))
+	check(String(player.message_log.entries.back().get("body", "")) == "のこる", "s26: log: false on the event")
+	player.project.data.erase("notice_style")
+	player.project.data.erase("notices")
+
+	# 段階27：お知らせをクリックで消す・時間で消えない・ログで見分ける
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+	await _settle_frames(2)
+	player.project.data["notice_style"] = {"seconds": 0, "log": true}
+	await player._play(AdvEvents.make("notice.show", {"text": "クリックで きえる"}))
+	var cn: Control = player._notices[0]
+	await create_timer(0.6).timeout
+	check(is_instance_valid(cn) and player.notices().size() == 1, "s27: seconds 0 stays")
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = cn.get_global_rect().get_center()
+	player._click_pending = false
+	player._input(click)
+	check(not player._click_pending and cn.has_meta("closing"), "s27: click dismisses the notice (not the text)")
+	await create_timer(0.3).timeout
+	check(not is_instance_valid(cn) and player.notices().is_empty(), "s27: dismissed notice removed")
+	player.project.data["notice_style"] = {"seconds": 0.2, "click_close": false, "log": true, "log_mark": "★", "log_color": 4}
+	await player._play(AdvEvents.make("notice.show", {"text": "じかんで きえる"}))
+	var tn: Control = player._notices[0]
+	check(player.notice_at(tn.get_global_rect().get_center()) == null, "s27: click_close false")
+	await create_timer(0.8).timeout
+	check(not is_instance_valid(tn), "s27: notice disappears after its seconds")
+	check(String(player.message_log.entries.back().get("kind", "")) == "notice", "s27: notice entry kind in the log")
+	var lv := AdvLogView.new()
+	lv.open(player.message_log, player.template, Vector2(player.template.screen_size), false, player.notice_style())
+	player.screen.add_child(lv)
+	await _settle_frames(3)
+	var lt := lv._text.text
+	check(lt.contains("★じかんで きえる") and lt.contains("[color=#%s]★" % player.template.color(4).to_html(false)), "s27: notices marked in the log view: %s" % lt.right(200))
+	await _shot("51_log_notice")
+	lv.close()
+	await _settle_frames(3)
+	player.project.data.erase("notice_style")
+
+	# 段階28：お知らせの上限と並べ直し
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+	await _settle_frames(2)
+	player.project.data["notice_style"] = {"max": 3, "seconds": 0}
+	for i in 5:
+		player.show_notice("おしらせ %d" % (i + 1))
+	check(player.notices() == ["おしらせ 3", "おしらせ 4", "おしらせ 5"], "s28: max removes the oldest: %s" % str(player.notices()))
+	var first_y: float = player._notices[0].position.y
+	check(first_y == 12.0, "s28: relayout fills the gap: %s" % first_y)
+	player.dismiss_notice(player._notices[0])
+	await create_timer(0.4).timeout
+	check(player.notices() == ["おしらせ 4", "おしらせ 5"] and player._notices[0].position.y == 12.0, "s28: dismissed gap closed")
+	for n in player._notices:
+		n.queue_free()
+	player._notices.clear()
+	player.project.data.erase("notice_style")
+	# ログの画面：出すものの切り替え
+	player.message_log.add_text("ふつうの ぶん")
+	player.message_log.add_notice("おしらせの ぶん")
+	var lv2 := AdvLogView.new()
+	lv2.open(player.message_log, player.template, Vector2(player.template.screen_size), false, player.notice_style())
+	player.screen.add_child(lv2)
+	await _settle_frames(2)
+	check(lv2.filter_button != null and lv2.filter == "all" and lv2._text.text.contains("ふつうの ぶん") and lv2._text.text.contains("おしらせの ぶん"), "s28: log shows all")
+	lv2.filter_button.pressed.emit()
+	check(lv2.filter == "text" and lv2._text.text.contains("ふつうの ぶん") and not lv2._text.text.contains("おしらせの ぶん"), "s28: log text only")
+	lv2.filter_button.pressed.emit()
+	check(lv2.filter == "notice" and not lv2._text.text.contains("ふつうの ぶん") and lv2._text.text.contains("おしらせの ぶん"), "s28: log notices only")
+	await _shot("52_log_filter")
+	lv2.close()
+	var log3 := AdvMessageLog.new()
+	log3.add_text("だけ")
+	var lv3 := AdvLogView.new()
+	lv3.open(log3, player.template, Vector2(player.template.screen_size))
+	check(lv3.filter_button == null, "s28: no filter button without notices")
+	lv3.queue_free()
+	player.project.data["notice_style"] = {"log_filter": "notice"}
+	var lv4 := AdvLogView.new()
+	lv4.open(player.message_log, player.template, Vector2(player.template.screen_size), false, player.notice_style())
+	check(lv4.filter == "notice", "s28: log_filter sets the first view")
+	lv4.queue_free()
+	player.project.data.erase("notice_style")
+
+	# 段階29：お知らせごとの位置、上限で消すときの消え方、ログの切り替えの文言
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+	await _settle_frames(2)
+	player.project.data["notice_style"] = {"seconds": 0, "max": 2, "overflow": "fade"}
+	await player._play(AdvEvents.make("notice.show", {"text": "ひだりうえ", "position": "top_left"}))
+	check(player._notices[0].position.x == 12.0 and player._notices[0].get_meta("position") == "top_left", "s29: notice position per event")
+	player.show_notice("ふたつめ")
+	player.show_notice("みっつめ")
+	var faded: Control = player._notices[0]
+	check(faded.has_meta("closing") and is_instance_valid(faded) and player.notices().size() == 3, "s29: overflow fade keeps the old one while fading")
+	await create_timer(0.5).timeout
+	check(not is_instance_valid(faded) and player.notices() == ["ふたつめ", "みっつめ"], "s29: faded one removed")
+	for n in player._notices:
+		n.queue_free()
+	player._notices.clear()
+	player.project.data["notices"] = {"objective_set": {"text": "もくてき", "position": "bottom"}}
+	await player._play(AdvEvents.make("objective.set", {"text": "x"}))
+	check(player._notices.back().get_meta("position") == "bottom", "s29: auto notice position")
+	for n in player._notices:
+		n.queue_free()
+	player._notices.clear()
+	player.project.data.erase("notices")
+	player.project.data["notice_style"] = {"log_labels": {"all": "ぜんぶ", "notice": "しらせ"}}
+	var lv5 := AdvLogView.new()
+	lv5.open(player.message_log, player.template, Vector2(player.template.screen_size), false, player.notice_style())
+	check(lv5.filter_button.text == "ぜんぶ", "s29: log label all")
+	lv5.filter_button.pressed.emit()
+	check(lv5.filter_button.text == "ひょうじ：ぶんしょう", "s29: default label kept for text")
+	lv5.filter_button.pressed.emit()
+	check(lv5.filter_button.text == "しらせ", "s29: log label notice")
+	lv5.queue_free()
+	player.project.data.erase("notice_style")
+
+	# 段階30：起動時の ID の確認（プロジェクト設定）
+	var pc := AdvIdCheck.check_project({"title_image": "no_title_bg", "extras": {"music": [{"id": "theme"}, {"id": "no_music"}]}, "title": "x"},
+		func(k: String, id: String) -> bool: return player.core.assets.has(k, id), "p.json")
+	check(pc.size() == 2 and String(pc[0]["message"]).contains("no_title_bg") and String(pc[1]["message"]).contains("no_music") and pc[1]["path"] == "/extras/music/1/id", "s30: project ids checked: %s" % str(pc.map(func(d): return [d["message"], d["path"]])))
+	check(player.missing_ids is Array, "s30: missing ids kept")
+	player.missing_ids = pc
+	var con3: Control = load("res://addons/adv80s/debug/adv_debug_console.gd").new()
+	root.add_child(con3)
+	con3.set("player", player)
+	con3.call("setup", player.core)
+	con3.call("execute_command", "ids")
+	var con3_log := ""
+	for rt in con3.find_children("*", "RichTextLabel", true, false):
+		con3_log += (rt as RichTextLabel).get_parsed_text()
+	check(con3_log.contains("見つからない ID が 2 件あります") and con3_log.contains("no_music"), "s30: debug console lists missing ids")
+	con3.queue_free()
+	player.missing_ids = []
+
+	# 段階31：デバッグ実行中に読み直す
+	player._allow_reload_in_release = true
+	await _settle()
+	var scene31: String = player.core.state.scene
+	player.core.state.vars["money"] = 31
+	var got_reload := [false]
+	player.reloaded.connect(func(): got_reload[0] = true)
+	var why31: String = await player.debug_reload()
+	await _settle_frames(3)
+	check(why31 == "" and got_reload[0], "s31: debug reload: %s" % why31)
+	check(player.core.state.scene == scene31 and player.core.state.get_var("money") == 31, "s31: state kept after reload")
+	check(player.notices().any(func(t): return String(t).begins_with("読み直しました")), "s31: reload notice: %s" % str(player.notices()))
+	player._allow_reload_in_release = false
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+
+	# 段階32：保存したら自動で読み直す、入り直す
+	player._allow_reload_in_release = true
+	var wroot := "user://s32_assets"
+	DirAccess.make_dir_recursive_absolute(wroot + "/bg")
+	_rmdir(wroot + "/bg")
+	DirAccess.make_dir_recursive_absolute(wroot + "/bg")
+	player.core.add_asset_roots([wroot])
+	player.set_auto_reload(true)
+	check(player.is_auto_reload(), "s32: auto reload on")
+	check(not await player.check_watch(), "s32: nothing changed")
+	var src_png: String = player.core.assets.resolve("image", "hallway")
+	var img := Image.new()
+	img.load(ProjectSettings.globalize_path(src_png) if not src_png.begins_with("res://") else src_png)
+	if img.is_empty():
+		img = Image.create(8, 8, false, Image.FORMAT_RGB8)
+	var reload_count := [0]
+	player.reloaded.connect(func(): reload_count[0] += 1)
+	img.save_png(wroot + "/bg/s32_new.png")
+	await create_timer(1.6).timeout   # 見張りのタイマー（1秒ごと）が気づいて読み直す
+	await _settle()
+	var reloaded32: bool = reload_count[0] >= 1
+	check(reloaded32 and player.core.assets.has("image", "s32_new"), "s32: saving a file reloads (new asset found): %s %s %s" % [reloaded32, player.core.assets.has("image", "s32_new"), Array(player.core.assets.roots)])
+	var sc32: String = player.core.state.scene
+	var why32: String = await player.debug_reload(true)
+	await _settle()
+	check(why32 == "" and player.notices().any(func(t): return String(t).contains("入り直しました")) and player.core.state.scene == sc32, "s32: reload and re-enter: %s" % str(player.notices()))
+	player.set_auto_reload(false)
+	check(not player.is_auto_reload(), "s32: auto reload off")
+	player._allow_reload_in_release = false
+	_rmdir(wroot + "/bg")
+	_rmdir(wroot)
+
+	# 段階33：変わったファイルの名前、プロジェクト設定の debug.auto_reload に合わせる
+	player._allow_reload_in_release = true
+	var r33 := "user://s33_assets"
+	DirAccess.make_dir_recursive_absolute(r33 + "/bg")
+	player.core.add_asset_roots([r33])
+	player._watch_snap = player.watch_snapshot()
+	Image.create(8, 8, false, Image.FORMAT_RGB8).save_png(r33 + "/bg/s33_a.png")
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+	await player.debug_reload()
+	check(player.last_reload_changes.has(r33 + "/bg/s33_a.png"), "s33: changed files: %s" % str(player.last_reload_changes))
+	check(player.notices().any(func(t): return String(t).contains("s33_a.png")), "s33: changed file in the notice: %s" % str(player.notices()))
+	check(AdvPlayer.changes_text(["a/x.json", "b/y.png", "c/z.png", "d/w.png"]) == "x.json、y.png ほか 2 件" and AdvPlayer.changes_text([]) == "", "s33: changes text")
+	# プロジェクト設定の debug.auto_reload が書き換わったら入・切する
+	var pp_old: String = player.project_path
+	var pcopy := "user://s33_project.json"
+	var pdata = AdvJson.load_file(pp_old, [])
+	pdata["debug"] = {"auto_reload": false}
+	_write_json(pcopy, pdata)
+	player.project_path = pcopy
+	player.set_auto_reload(false)
+	player._poll_mtime = -2
+	player._poll_auto = false
+	check(not player.poll_debug_settings(), "s33: no change in debug.auto_reload")
+	await create_timer(1.1).timeout
+	pdata["debug"] = {"auto_reload": true}
+	_write_json(pcopy, pdata)
+	check(player.poll_debug_settings() and player.is_auto_reload(), "s33: turned on from the project file")
+	await create_timer(1.1).timeout
+	pdata["debug"] = {"auto_reload": false}
+	_write_json(pcopy, pdata)
+	check(player.poll_debug_settings() and not player.is_auto_reload(), "s33: turned off from the project file")
+	player.project_path = pp_old
+	player._allow_reload_in_release = false
+	DirAccess.remove_absolute(pcopy)
+	DirAccess.remove_absolute(r33 + "/bg/s33_a.png")
+	DirAccess.remove_absolute(r33 + "/bg")
+	DirAccess.remove_absolute(r33)
+
+	# 段階34：お知らせに出すファイルの数、エディタで開く
+	check(AdvPlayer.changes_text(["a/x.json", "b/y.png", "c/z.png"], 3) == "x.json、y.png、z.png" and AdvPlayer.changes_text(["a/x.json"], 0) == "", "s34: notice_files limit")
+	check(not player.request_open_in_editor() if not EngineDebugger.is_active() else true, "s34: no editor link without the debugger")
+
+	# 段階35：エディタの「このシーンから実行」、いまの場所
+	var loc35: Dictionary = player.current_location()
+	check(loc35.has("scene") and loc35["scene"] == player.core.state.scene, "s35: current location: %s" % str(loc35))
+	var target35 := String(player.core.query("scene_info", {"id": player.core.state.scene}).get("id", player.core.state.scene)) if player.core.state.scene != "" else ""
+	if target35 == "":
+		target35 = player._entry_scene()
+	var fr := FileAccess.open(AdvPlayer.RUN_FROM_FILE, FileAccess.WRITE)
+	fr.store_string(JSON.stringify({"scene": target35, "time": Time.get_unix_time_from_system() - 100}))
+	fr.close()
+	check(AdvPlayer.take_run_from_request() == "" and not FileAccess.file_exists(AdvPlayer.RUN_FROM_FILE), "s35: old run-from request ignored and removed")
+	fr = FileAccess.open(AdvPlayer.RUN_FROM_FILE, FileAccess.WRITE)
+	fr.store_string(JSON.stringify({"scene": target35, "time": Time.get_unix_time_from_system()}))
+	fr.close()
+	if player._overlay != null and player._overlay.has_method("close"):
+		player._overlay.close()
+	await _settle_frames(3)
+	player._boot()
+	await _settle()
+	check(player.run_from_scene == target35 and player.core.state.visited.has(target35) and player.notices().any(func(t): return String(t) == "シーンから実行：" + target35), "s35: boot from the requested scene: %s / %s" % [player.run_from_scene, player.core.state.scene])
+
+	# 段階36：ひな形の値（変数・持ち物）を入れてから始める
+	fr = FileAccess.open(AdvPlayer.RUN_FROM_FILE, FileAccess.WRITE)
+	fr.store_string(JSON.stringify({"scene": target35, "time": Time.get_unix_time_from_system(), "preset": "テスト",
+		"vars": {"s36flag": true, "s36n": 4}, "items": {"s36key": 2}}))
+	fr.close()
+	if player._overlay != null and player._overlay.has_method("close"):
+		player._overlay.close()
+	await _settle_frames(3)
+	player._boot()
+	await _settle()
+	check(player.core.state.get_var("s36flag") == true and int(player.core.state.get_var("s36n")) == 4 and player.core.state.item_count("s36key") == 2, "s36: preset values put in before starting")
+	check(player.run_from.get("preset") == "テスト" and player.notices().any(func(t): return String(t) == "シーンから実行：%s（ひな形 テスト）" % target35), "s36: notice names the preset")
+	# 段階40：先に入った値をお知らせとログに
+	var ja40 = player.core.adapters_by_name.get("main")
+	if ja40 != null:
+		ja40.dialogues["s40talk"] = [{"set": {"s40a": 5}}, {"let": "s40b = s40a + 1"}, "s40 はじめ。"]
+		fr = FileAccess.open(AdvPlayer.RUN_FROM_FILE, FileAccess.WRITE)
+		fr.store_string(JSON.stringify({"scene": target35, "time": Time.get_unix_time_from_system(), "dialogue": "s40talk", "line": 2, "pre_sets": true}))
+		fr.close()
+		player._boot()
+		await _settle()
+		check(int(player.core.state.get_var("s40b")) == 6, "s40: pre-sets ran at boot")
+		check(player.notices().any(func(t): return String(t) == "先に設定：s40a = 5、s40b = 6"), "s40: pre-set values in a notice: %s" % str(player.notices()))
+		check(player.message_log.entries.any(func(e): return String(e.get("body", "")) == "先に設定：s40a = 5、s40b = 6"), "s40: pre-set values in the log")
+		# 段階41：お知らせ・ログを出すかの切り替え
+		var dbg41 = player.project.data.get("debug", null)
+		player.project.data["debug"] = {"pre_set_notice": false}
+		player.message_log.entries.clear()
+		var pre41 := func(): return player.notices().filter(func(t): return String(t).begins_with("先に設定")).size()
+		var c41: int = pre41.call()
+		fr = FileAccess.open(AdvPlayer.RUN_FROM_FILE, FileAccess.WRITE)
+		fr.store_string(JSON.stringify({"scene": target35, "time": Time.get_unix_time_from_system(), "dialogue": "s40talk", "line": 2, "pre_sets": true}))
+		fr.close()
+		player._boot()
+		await _settle()
+		check(String(player.notices().back()).begins_with("シーンから実行") and player.message_log.entries.any(func(e): return String(e.get("body", "")).begins_with("先に設定")), "s41: notice off, log on")
+		player.project.data["debug"] = {"pre_set_log": false}
+		player.message_log.entries.clear()
+		c41 = pre41.call()
+		fr = FileAccess.open(AdvPlayer.RUN_FROM_FILE, FileAccess.WRITE)
+		fr.store_string(JSON.stringify({"scene": target35, "time": Time.get_unix_time_from_system(), "dialogue": "s40talk", "line": 2, "pre_sets": true}))
+		fr.close()
+		player._boot()
+		await _settle()
+		check(String(player.notices().back()).begins_with("先に設定") and not player.message_log.entries.any(func(e): return String(e.get("body", "")).begins_with("先に設定")), "s41: log off, notice on")
+		# 段階42：お知らせを出しておく秒数（0 でクリックするまで）
+		for nn in player._notices.duplicate():
+			if is_instance_valid(nn):
+				player._dismiss_now(nn)
+		player.project.data["debug"] = {"pre_set_seconds": 0, "pre_set_position": "bottom_left", "pre_set_style": {"fg": 10, "border": 12}, "notice_style": {"bg": 4, "border": 9, "fg": 14, "seconds": 10}}
+		fr = FileAccess.open(AdvPlayer.RUN_FROM_FILE, FileAccess.WRITE)
+		fr.store_string(JSON.stringify({"scene": target35, "time": Time.get_unix_time_from_system(), "dialogue": "s40talk", "line": 2, "pre_sets": true}))
+		fr.close()
+		player._boot()
+		await create_timer(3.2).timeout
+		check(player.notices().filter(func(t): return String(t).begins_with("先に設定")).size() == 1 and String(player.notices().back()).begins_with("先に設定"), "s42: pre-set notice stays until clicked: %s" % str(player.notices()))
+		var pn43 = player._notices.filter(func(n): return is_instance_valid(n)).back()
+		check(String(pn43.get_meta("position")) == "bottom_left" and pn43.position.y > 200 and pn43.position.x < 100, "s43: pre-set notice position: %s" % str(pn43.position))
+		var sb44 := (pn43 as PanelContainer).get_theme_stylebox("panel") as StyleBoxFlat
+		var lb44 := pn43.find_child("Text", true, false) as Label
+		check(sb44.border_color == player.template.color(12) and lb44.get_theme_color("font_color") == player.template.color(10) and sb44.bg_color == player.template.color(4), "s44/s45: pre-set notice style over the debug notice style")
+		var rn45 = player._notices.filter(func(n): return is_instance_valid(n) and String((n.find_child("Text", true, false) as Label).text).begins_with("シーンから実行")).back()
+		var sb45 := (rn45 as PanelContainer).get_theme_stylebox("panel") as StyleBoxFlat
+		check(sb45.border_color == player.template.color(9) and sb45.bg_color == player.template.color(4) and (rn45.find_child("Text", true, false) as Label).get_theme_color("font_color") == player.template.color(14), "s45: debug notice style on the run-from notice")
+		await _shot("43_pre_set_notice")
+		for nn in player._notices.duplicate():
+			if is_instance_valid(nn):
+				player._dismiss_now(nn)
+		player.project.data["debug"] = {"pre_set_seconds": 0.3}
+		fr = FileAccess.open(AdvPlayer.RUN_FROM_FILE, FileAccess.WRITE)
+		fr.store_string(JSON.stringify({"scene": target35, "time": Time.get_unix_time_from_system(), "dialogue": "s40talk", "line": 2, "pre_sets": true}))
+		fr.close()
+		player._boot()
+		await _settle_frames(3)
+		check(player.notices().any(func(t): return String(t).begins_with("先に設定")), "s42: short pre-set notice shown")
+		await create_timer(1.2).timeout
+		check(not player.notices().any(func(t): return String(t).begins_with("先に設定")) and player.notices().any(func(t): return String(t).begins_with("シーンから実行")), "s42: short pre-set notice gone first")
+		# 段階46：デバッグのお知らせを種類ごとに出さない
+		for nn in player._notices.duplicate():
+			if is_instance_valid(nn):
+				player._dismiss_now(nn)
+		player.project.data["debug"] = {"notices": {"run_from": false}, "pre_set_seconds": 0}
+		check(not player.debug_notice_on("run_from") and player.debug_notice_on("reload") and player.debug_notice_on(""), "s46: notice kinds")
+		fr = FileAccess.open(AdvPlayer.RUN_FROM_FILE, FileAccess.WRITE)
+		fr.store_string(JSON.stringify({"scene": target35, "time": Time.get_unix_time_from_system(), "dialogue": "s40talk", "line": 2, "pre_sets": true}))
+		fr.close()
+		player._boot()
+		await _settle_frames(3)
+		check(not player.notices().any(func(t): return String(t).begins_with("シーンから実行")) and player.notices().any(func(t): return String(t).begins_with("先に設定")), "s46: run-from notice hidden: %s" % str(player.notices()))
+		for nn in player._notices.duplicate():
+			if is_instance_valid(nn):
+				player._dismiss_now(nn)
+		player.project.data["debug"] = {"notices": {"pre_set": false, "preset": false}}
+		fr = FileAccess.open(AdvPlayer.RUN_FROM_FILE, FileAccess.WRITE)
+		fr.store_string(JSON.stringify({"scene": target35, "time": Time.get_unix_time_from_system(), "dialogue": "s40talk", "line": 2, "pre_sets": true}))
+		fr.close()
+		player._boot()
+		await _settle_frames(3)
+		check(player.notices().any(func(t): return String(t).begins_with("シーンから実行")) and not player.notices().any(func(t): return String(t).begins_with("先に設定")), "s46: pre-set notice hidden")
+		player.send_preset_to_editor("s46")
+		check(not player.notices().any(func(t): return String(t).begins_with("ひな形にしました")), "s46: preset notice hidden")
+		DirAccess.remove_absolute(AdvPlayer.GAME_PRESETS_FILE)
+		# 段階47：コンソールでお知らせを切り替える（動かしている間だけ。設定より先）
+		var con47: Control = load("res://addons/adv80s/debug/adv_debug_console.gd").new()
+		root.add_child(con47)
+		con47.set("player", player)
+		con47.call("setup", player.core)
+		con47.call("execute_command", "notice preset on")
+		check(player.debug_notice_on("preset") and player.debug_notice_override.get("preset") == true, "s47: console turns a kind on over the setting")
+		con47.call("execute_command", "notice reload off")
+		check(not player.debug_notice_on("reload") and player.debug_notice_report().contains("reload：出さない（コンソール）"), "s47: console turns a kind off")
+		con47.call("execute_command", "notice off")
+		check(player.DEBUG_NOTICE_KINDS.all(func(k): return not player.debug_notice_on(k)), "s47: notice off = all off")
+		con47.call("execute_command", "notice reset reload")
+		check(not player.debug_notice_override.has("reload") and player.debug_notice_on("reload"), "s47: reset one kind")
+		con47.call("execute_command", "notice bogus on")
+		check(player.debug_notice_override.size() == 5, "s47: unknown kind changes nothing")
+		player.send_preset_to_editor("s47")
+		check(not player.notices().any(func(t): return String(t) == "ひな形にしました：s47"), "s47: console off hides the notice")
+		# 段階48：切り替えを設定に書く（エディタへ渡す）
+		if FileAccess.file_exists(AdvPlayer.GAME_SETTINGS_FILE):
+			DirAccess.remove_absolute(AdvPlayer.GAME_SETTINGS_FILE)
+		con47.call("execute_command", "notice save")
+		var gs48 = AdvJson.load_file(AdvPlayer.GAME_SETTINGS_FILE, [])
+		check(gs48 is Dictionary and gs48["notices"].size() == 5 and gs48["notices"]["preset"] == false and not gs48["notices"].has("reload"), "s48: notice save writes the switched kinds: %s" % str(gs48))
+		DirAccess.remove_absolute(AdvPlayer.GAME_SETTINGS_FILE)
+		con47.call("execute_command", "notice reset")
+		check(player.debug_notice_override.is_empty(), "s47: reset all")
+		check(player.save_debug_notices_to_editor() == 0 and not FileAccess.file_exists(AdvPlayer.GAME_SETTINGS_FILE), "s48: nothing to save")
+		# 段階49：お知らせの見た目をゲームの中で試して保存
+		check(player.set_debug_notice_style("bogus", 1) != "" and player.set_debug_notice_style("fg", "x") != "" and player.set_debug_notice_style("position", "nowhere") != "" and player.set_debug_notice_style("seconds", "-1") != "", "s49: bad style values are refused")
+		con47.call("execute_command", "noticestyle fg 11")
+		con47.call("execute_command", "noticestyle border 13")
+		check(player.debug_notice_style_override == {"fg": 11, "border": 13} and player.debug_notice_style_now()["fg"] == 11, "s49: console sets the style")
+		var tn49 = player._notices.filter(func(n): return is_instance_valid(n) and String((n.find_child("Text", true, false) as Label).text) == "お知らせの見た目のためし").back()
+		check(tn49 != null and (tn49.find_child("Text", true, false) as Label).get_theme_color("font_color") == player.template.color(11), "s49: a sample notice uses the tried style")
+		con47.call("execute_command", "noticestyle reset border")
+		check(not player.debug_notice_style_override.has("border"), "s49: reset one key")
+		con47.call("execute_command", "noticestyle save")
+		var gs49 = AdvJson.load_file(AdvPlayer.GAME_SETTINGS_FILE, [])
+		check(gs49 is Dictionary and gs49.get("notice_style", {}).size() == 1 and int(gs49["notice_style"]["fg"]) == 11, "s49: style saved for the editor: %s" % str(gs49))
+		DirAccess.remove_absolute(AdvPlayer.GAME_SETTINGS_FILE)
+		con47.call("execute_command", "noticestyle reset")
+		check(player.debug_notice_style_override.is_empty() and player.save_debug_notice_style_to_editor() == 0, "s49: reset all")
+		# 段階50：ふつうのお知らせの見た目をゲームの中で試して保存
+		check(player.set_game_notice_style("overflow", "nope") != "" and player.set_game_notice_style("max", "0") != "" and player.set_game_notice_style("click_close", "maybe") != "", "s50: bad game style values are refused")
+		con47.call("execute_command", "noticestyle game fg 12")
+		con47.call("execute_command", "noticestyle game click_close false")
+		check(player.notice_style()["fg"] == 12 and player.notice_style()["click_close"] == false and player.debug_notice_style_override.is_empty(), "s50: console tries the game notice style")
+		var tn50 = player._notices.filter(func(n): return is_instance_valid(n) and String((n.find_child("Text", true, false) as Label).text) == "お知らせの見た目のためし").back()
+		check(tn50 != null and (tn50.find_child("Text", true, false) as Label).get_theme_color("font_color") == player.template.color(12), "s50: sample game notice uses the tried style")
+		await _shot("50_game_notice_style")
+		con47.call("execute_command", "noticestyle game save")
+		var gs50 = AdvJson.load_file(AdvPlayer.GAME_SETTINGS_FILE, [])
+		check(gs50 is Dictionary and int(gs50.get("game_notice_style", {}).get("fg", 0)) == 12 and gs50["game_notice_style"]["click_close"] == false, "s50: game style saved for the editor: %s" % str(gs50))
+		DirAccess.remove_absolute(AdvPlayer.GAME_SETTINGS_FILE)
+		con47.call("execute_command", "noticestyle game reset")
+		check(player.notice_style_override.is_empty() and player.notice_style()["fg"] != 12 and player.save_game_notice_style_to_editor() == 0, "s50: game style reset")
+		# 段階51：見た目に名前を付けて取っておき、切り替えて見比べる
+		if FileAccess.file_exists(AdvPlayer.NOTICE_STYLE_SETS_FILE):
+			DirAccess.remove_absolute(AdvPlayer.NOTICE_STYLE_SETS_FILE)
+		check(not player.keep_notice_style(true, "空"), "s51: nothing to keep")
+		con47.call("execute_command", "noticestyle game fg 9")
+		con47.call("execute_command", "noticestyle game keep あお")
+		con47.call("execute_command", "noticestyle game fg 10")
+		con47.call("execute_command", "noticestyle game border 4")
+		con47.call("execute_command", "noticestyle game keep みどり")
+		con47.call("execute_command", "noticestyle fg 13")
+		con47.call("execute_command", "noticestyle keep デバッグ")
+		check(AdvPlayer.notice_style_sets(true).keys().size() == 2 and AdvPlayer.notice_style_sets(false).has("デバッグ") and int(AdvPlayer.notice_style_sets(true)["みどり"]["fg"]) == 10 and int(AdvPlayer.notice_style_sets(true)["みどり"]["border"]) == 4, "s51: keep named styles (game and debug separately)")
+		con47.call("execute_command", "noticestyle game use あお")
+		check(player.notice_style_override == {"fg": 9} and player.notice_style()["fg"] == 9, "s51: use a kept style")
+		con47.call("execute_command", "noticestyle game next")
+		check(player.notice_style_override.get("fg") == 10 and player.notice_style_override.get("border") == 4, "s51: next cycles to the next one")
+		con47.call("execute_command", "noticestyle game next")
+		check(player.notice_style_override == {"fg": 9}, "s51: next wraps around")
+		check(not player.use_notice_style(true, "ない") and player.notice_style_override == {"fg": 9}, "s51: unknown name keeps the current style")
+		con47.call("execute_command", "noticestyle game drop あお")
+		check(not AdvPlayer.notice_style_sets(true).has("あお") and AdvPlayer.notice_style_sets(true).has("みどり") and AdvPlayer.notice_style_sets(false).has("デバッグ"), "s51: drop one")
+		con47.call("execute_command", "noticestyle game reset")
+		con47.call("execute_command", "noticestyle reset")
+		DirAccess.remove_absolute(AdvPlayer.NOTICE_STYLE_SETS_FILE)
+		DirAccess.remove_absolute(AdvPlayer.GAME_PRESETS_FILE)
+		con47.queue_free()
+		if dbg41 == null:
+			player.project.data.erase("debug")
+		else:
+			player.project.data["debug"] = dbg41
+	else:
+		check(false, "s40: json adapter not found")
+	# 段階37：いまの値をひな形にしてエディタへ（ファイルに書き足す）
+	if FileAccess.file_exists(AdvPlayer.GAME_PRESETS_FILE):
+		DirAccess.remove_absolute(AdvPlayer.GAME_PRESETS_FILE)
+	check(player.send_preset_to_editor("試し") == "試し" and player.send_preset_to_editor("") != "", "s37: send presets")
+	var gp37 = AdvJson.load_file(AdvPlayer.GAME_PRESETS_FILE, [])
+	check(gp37 is Array and gp37.size() == 2 and gp37[0]["name"] == "試し" and gp37[0]["vars"].get("s36flag") == true and int(gp37[0]["items"]["s36key"]) == 2 and String(gp37[1]["name"]).begins_with(player.core.state.scene), "s37: presets written for the editor: %s" % str(gp37))
+	check(player.notices().any(func(t): return String(t) == "ひな形にしました：試し"), "s37: preset notice")
+	DirAccess.remove_absolute(AdvPlayer.GAME_PRESETS_FILE)
+	# 段階38：入れるものを選んでひな形に
+	player.open_preset_picker()
+	await _settle_frames(2)
+	check(player.preset_picker != null and player._picker_checks.has("v:s36flag") and player._picker_checks.has("i:s36key"), "s38: picker lists vars and items")
+	await _shot("38_preset_picker")
+	# 段階39：絞り込み（「全部」「なし」は見えているものだけ）
+	var all39 := player._picker_checks.size()
+	check(player.filter_picker("S36") == 3 and player.filter_picker("s36N") == 1 and not player._picker_row_visible("v:s36flag"), "s39: filter the picker")
+	player.set_picker_all(false)
+	check(not (player._picker_checks["v:s36n"] as CheckBox).button_pressed and (player._picker_checks["v:s36flag"] as CheckBox).button_pressed, "s39: none only touches the visible ones")
+	check(player.filter_picker("") == all39 and not player.picker_selection()["vars"].has("s36n") and player.picker_selection()["vars"].has("s36flag"), "s39: clearing the filter shows all, marks kept")
+	player.set_picker_all(false)
+	check(player.confirm_preset_picker() == "" and player.preset_picker != null, "s38: nothing picked → not sent")
+	# 段階40：値を書きかえて送る
+	player.set_picker_check("v:s36n", true)
+	player.set_picker_check("i:s36key", true)
+	player.set_picker_value("v:s36n", "10")
+	player.set_picker_value("i:s36key", 0)
+	check(player.picker_preset() == {"vars": {"s36n": 10.0}, "items": {"s36key": 0}}, "s40: picker values can be edited: %s" % str(player.picker_preset()))
+	player.set_picker_value("v:s36n", "あいう")
+	check(player.picker_preset()["vars"]["s36n"] == "あいう" and AdvPlayer.parse_value_text("true") == true and AdvPlayer.value_text(4.0) == "4", "s40: non-JSON value is text")
+	# 段階41：まだ書かれていない変数・持ち物を足す
+	player.set_picker_all(false)
+	check(player.picker_add("v", "s41new", "\"やあ\"") and player.picker_add("i", "s41item", "3") and player.picker_add("i", "s41one", ""), "s41: add new rows")
+	check(not player.picker_add("v", "  ", "1"), "s41: empty name is not added")
+	var pp41 := player.picker_preset()
+	check(pp41.get("vars", {}) == {"s41new": "やあ"} and pp41.get("items", {}) == {"s41item": 3, "s41one": 1}, "s41: new rows are marked and sent: %s" % str(pp41))
+	player.picker_add("v", "s41new", "7")
+	check(player.picker_preset()["vars"]["s41new"] == 7.0 and player._picker_checks.size() == all39 + 3, "s41: adding an existing name updates it")
+	await _shot("41_picker_add")
+	# 段階42：行を外す
+	var n42 := player._picker_checks.size()
+	check(player.picker_remove("v:s41new") and not player._picker_checks.has("v:s41new") and not player.picker_preset().get("vars", {}).has("s41new"), "s42: remove an added row")
+	check(player.picker_remove("v:money") and player._picker_checks.size() == n42 - 2 and not player.picker_remove("v:nope"), "s42: remove an original row")
+	player.picker_add("v", "s41new", "1")
+	check(player._picker_checks.has("v:s41new"), "s42: a removed row can be added again")
+	# 段階43：外したものをまとめて戻す（外したときの値と印で。足し直したものはそのまま）
+	player.set_picker_value("v:s40a", "55")
+	player.set_picker_check("v:s40a", true)
+	player.picker_remove("v:s40a")
+	check(not player._picker_restore_btn.disabled, "s43: restore button enabled")
+	check(player.picker_restore_removed() == 2 and player._picker_checks.has("v:money") and player._picker_checks.has("v:s40a"), "s43: restore removed rows")
+	check(player.picker_preset()["vars"]["s40a"] == 55.0 and player.picker_preset()["vars"]["s41new"] == 1.0 and player._picker_restore_btn.disabled, "s43: restored with the values at removal")
+	check(player.picker_restore_removed() == 0, "s43: nothing more to restore")
+	# 段階44：送っても閉じない（名前は次の番号に）
+	check(AdvPlayer.next_preset_name("試し") == "試し 2" and AdvPlayer.next_preset_name("試し 9") == "試し 10" and AdvPlayer.next_preset_name("hall 07:43:28") == "hall 07:43:28 2", "s44: next preset name")
+	if FileAccess.file_exists(AdvPlayer.GAME_PRESETS_FILE):
+		DirAccess.remove_absolute(AdvPlayer.GAME_PRESETS_FILE)
+	player._picker_name.text = "続け"
+	player._picker_group.text = ""
+	player._picker_keep_check.button_pressed = true
+	check(player._picker_group.text == "続け", "s45: keep-open fills the group with the name")
+	player.set_picker_check("v:money", true)
+	check(player.confirm_preset_picker() == "続け" and player.preset_picker != null and player._picker_name.text == "続け 2", "s44: keep open after sending")
+	player.set_picker_value("v:money", "99")
+	check(player.confirm_preset_picker() == "続け 2" and player._picker_name.text == "続け 3", "s44: send again with the next name")
+	var gp44 = AdvJson.load_file(AdvPlayer.GAME_PRESETS_FILE, [])
+	check(gp44 is Array and gp44.size() == 2 and gp44[1]["name"] == "続け 2" and gp44[1]["vars"]["money"] == 99.0 and gp44[0]["vars"]["money"] != 99.0, "s44: both sent: %s" % str(gp44).left(160))
+	check(gp44[0].get("group") == "続け" and gp44[1].get("group") == "続け", "s45: sent presets carry the group")
+	DirAccess.remove_absolute(AdvPlayer.GAME_PRESETS_FILE)
+	player._picker_keep_check.button_pressed = false
+	player._picker_group.text = ""
+	check(not player.picker_keep_open, "s44: keep-open off")
+	player.set_picker_all(false)
+	player.set_picker_check("v:s36flag", true)
+	player.set_picker_check("i:s36key", true)
+	player._picker_name.text = "選んだ"
+	check(player.confirm_preset_picker() == "選んだ" and player.preset_picker == null, "s38: send the picked ones")
+	var gp38 = AdvJson.load_file(AdvPlayer.GAME_PRESETS_FILE, [])
+	check(gp38 is Array and gp38.size() == 1 and gp38[0]["vars"] == {"s36flag": true} and gp38[0]["items"].size() == 1, "s38: only the picked ones written: %s" % str(gp38))
+	DirAccess.remove_absolute(AdvPlayer.GAME_PRESETS_FILE)
+	player.open_preset_picker()
+	var esc38 := InputEventAction.new()
+	esc38.action = "ui_cancel"
+	esc38.pressed = true
+	Input.parse_input_event(esc38)
+	await _settle_frames(3)
+	check(player.preset_picker == null, "s38: Esc closes the picker")
+	check(AdvPlayer.run_from_text({"scene": "h", "dialogue": "t", "line": 1, "pre_sets": true}) == "シーンから実行：h（会話 t の 2 番目から（設定を先に））", "s38: run-from text with pre-sets")
+	check(AdvPlayer.run_from_text({"scene": "h", "dialogue": "t", "path": [1, "then", 0]}) == "シーンから実行：h（会話 t の 2 › そうなら › 1 番目から）", "s37: run-from text with a path")
+	check(AdvPlayer.run_from_text({"scene": "h", "dialogue": "t", "line": 2}) == "シーンから実行：h（会話 t の 3 番目から）" and AdvPlayer.run_from_text({"scene": "h", "knot": "k"}) == "シーンから実行：h（ノット k から）", "s36: run-from text")
+	# 段階61：見直し（長い名前・長い文字で写真を撮る）
+	player.core.state.set_var("review_very_long_variable_name_for_the_picker_window", "とても長い文字の値をここに入れて、窓の幅からはみ出すかどうか見る")
+	player.core.state.set_var("みじかい", 1)
+	player.open_preset_picker()
+	await _settle_frames(2)
+	player._picker_name.text = "見直し：とても長い名前のひな形を一つ作っておく（ゲームの中から）"
+	player._picker_group.text = "見直しのためのとても長い組の名前"
+	await _shot("review_61_picker")
+	var le61 := player._picker_values["v:review_very_long_variable_name_for_the_picker_window"] as LineEdit
+	var cb61 := player._picker_checks["v:review_very_long_variable_name_for_the_picker_window"] as CheckBox
+	check(cb61.clip_text and cb61.tooltip_text.contains("review_very_long_variable_name_for_the_picker_window") and le61.size.x > 100.0 and le61.get_global_rect().end.x <= player.preset_picker.get_global_rect().end.x + 1.0, "s61: long name in the picker leaves room for the value: %s" % str(le61.size))
+	player.close_preset_picker()
+	await _settle_frames(2)
+	player.show_debug_notice("見直し：とても長いお知らせの文字を出して、画面の幅に収まるか、折り返すか、切れてしまうかを確かめるための文です。シーンから実行：review_scene_with_a_long_name（会話 talk_with_a_long_name の 12 番目から（設定を先に・条件も））")
+	await _settle_frames(3)
+	await _shot("review_62_debug_notice")
+	var n61: Control = player._notices.back()
+	check(n61.get_global_rect().position.x >= 0.0 and n61.get_global_rect().end.x <= root.get_visible_rect().size.x + 1.0 and (n61.find_child("Text", true, false) as Label).autowrap_mode != TextServer.AUTOWRAP_OFF, "s61: long notice wraps inside the screen: %s" % str(n61.get_global_rect()))
+	player.show_notice("みじかい")
+	await _settle_frames(2)
+	check((player._notices.back().find_child("Text", true, false) as Label).autowrap_mode == TextServer.AUTOWRAP_OFF, "s61: short notice does not wrap")
+	# 段階62：小さい画面（GB 160×144・FC 256×240）でお知らせと選ぶ窓を見直す
+	var tpl62 := String(player.template.id)
+	player.debug_notice_style_override["layer"] = "screen"   # ここではゲームの画面の中のお知らせを見る（段階64）
+	for t62 in ["gb_classic", "fc_classic"]:
+		await player.switch_template(t62)
+		await _settle_frames(3)
+		for n in player._notices:
+			if is_instance_valid(n):
+				n.queue_free()
+		player._notices.clear()
+		player.show_debug_notice("シーンから実行：review_scene（会話 talk の 12 番目から（設定を先に・条件も））")
+		player.show_notice("みじかい")
+		await _settle_frames(3)
+		var scr62 := Vector2(player.template.screen_size)
+		var ok62 := true
+		for n in player._notices:
+			if is_instance_valid(n):
+				var r62 := Rect2((n as Control).position, (n as Control).size)
+				ok62 = ok62 and r62.position.x >= 0.0 and r62.end.x <= scr62.x + 0.5 and r62.end.y <= scr62.y + 0.5
+		check(ok62, "s62: notices fit the %s screen %s" % [t62, str(scr62)])
+		var live62: Array = player._notices.filter(func(n): return is_instance_valid(n))
+		var r0 := Rect2((live62[0] as Control).position, (live62[0] as Control).size)
+		var r1 := Rect2((live62[1] as Control).position, (live62[1] as Control).size)
+		check(not r0.intersects(r1), "s62: notices do not overlap on %s: %s / %s" % [t62, str(r0), str(r1)])
+		await _shot("review_64_notice_" + t62)
+		player.open_preset_picker()
+		await _settle_frames(2)
+		var vr62 := root.get_visible_rect()
+		var pr62 := player.preset_picker.get_global_rect()
+		check(vr62.encloses(pr62), "s62: picker fits the window with %s: %s in %s" % [t62, str(pr62), str(vr62)])
+		await _shot("review_65_picker_" + t62)
+		player.close_preset_picker()
+		# 段階63：ゲームを窓いっぱいにして（ふつうのゲームと同じ見た目で）ゲームの中の画面を見直す
+		var off63 := [player.anchor_right, player.anchor_bottom, player.offset_right, player.offset_bottom]
+		player.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		await _settle_frames(3)
+		var fr63: Control = player.display.frame
+		check(player.display.display_scale().x >= 1.0 and absf(fr63.position.x * 2.0 + fr63.size.x - player.display.size.x) <= 2.0, "s63: %s is scaled and centred when the game fills the window: %s" % [t62, str(player.display.display_scale())])
+		await _shot("review_66_full_" + t62)
+		var scr63: Rect2 = player.template.visible_rect()   # 見える範囲（FC は上下 8 を隠す）
+		for what63 in ["log", "save", "menu", "settings"]:
+			match what63:
+				"log": player.open_log()
+				"save": player.open_save_menu("load")
+				"menu": player.modern.open_system_menu()
+				"settings": player.modern.open_settings()
+			await _settle()
+			_clear_notices()
+			await _settle_frames(2)
+			var ov63: Control = player._overlay
+			var sys63: bool = player.is_system_scene_open()
+			check(ov63 != null or sys63, "s63: %s opens on %s" % [what63, t62])
+			# 作者が自分で作ったシステム画面（AdvSystemScreen。テストの設定画面）は作者の受け持ちなので、写真だけ撮る
+			if not (ov63 is AdvSystemScreen):
+				var bad63 := _overflowing(ov63 if ov63 != null else player.screen, scr63)
+				check(bad63.is_empty(), "s63: %s fits the %s screen: %s" % [what63, t62, ", ".join(bad63)])
+			if what63 == "log" and ov63 is AdvLogView:
+				var lv63 := ov63 as AdvLogView
+				var lsb63 = lv63.get_theme_stylebox("panel")
+				check(lv63._title.get_theme_color("font_color") == lv63._text.get_theme_color("default_color") and absf((lsb63 as StyleBoxFlat).bg_color.get_luminance() - lv63._text.get_theme_color("default_color").get_luminance()) >= 0.3, "s63: log text stands out on %s" % t62)
+			if what63 == "menu":
+				var sb63 = ov63.get_theme_stylebox("panel")
+				var t63: Label = ov63._title
+				check(sb63 is StyleBoxFlat and absf((sb63 as StyleBoxFlat).bg_color.get_luminance() - t63.get_theme_color("font_color").get_luminance()) >= 0.3, "s63: menu text stands out from its background on %s" % t62)
+			await _shot("review_67_%s_%s" % [what63, t62])
+			if ov63 != null:
+				ov63.close()
+			elif sys63:
+				player.close_system_scene(false)
+			await _settle()
+		player.anchor_right = off63[0]
+		player.anchor_bottom = off63[1]
+		player.offset_right = off63[2]
+		player.offset_bottom = off63[3]
+		await _settle_frames(2)
+	player.debug_notice_style_override.erase("layer")
+	# 段階64：デバッグのお知らせをゲームの画面の外に（auto は狭い画面だけ）
+	for t64 in ["gb_classic", "fc_classic", "pc98_classic"]:
+		await player.switch_template(t64)
+		await _settle_frames(3)
+		_clear_notices()
+		player.show_debug_notice("シーンから実行：review_scene（会話 talk の 12 番目から（設定を先に・条件も））")
+		player.show_notice("みじかい")
+		await _settle_frames(3)
+		var dn64: Control = player._notices[0]
+		var gn64: Control = player._notices[1]
+		var narrow64: bool = t64 != "pc98_classic"
+		check(bool(dn64.get_meta("window")) == narrow64 and (dn64.get_parent() == player._debug_layer) == narrow64, "s64: debug notice on the window layer only for a narrow screen (%s)" % t64)
+		check(not bool(gn64.get_meta("window")) and gn64.get_parent() == player.screen, "s64: game notice stays in the game screen (%s)" % t64)
+		if narrow64:
+			var ws64: Vector2 = player._window_layer_size()
+			var r64 := Rect2(dn64.position, dn64.size)
+			check(r64.position.y >= AdvPlayer.NOTICE_WINDOW_TOP and r64.end.x <= ws64.x + 0.5 and r64.position.x >= 0.0 and r64.size.x <= AdvPlayer.NOTICE_WINDOW_MAX_WIDTH + 1.0, "s64: window notice below the debug buttons and inside the window: %s in %s" % [str(r64), str(ws64)])
+			await _shot("review_70_debug_notice_window_" + t64)
+			# 段階66：画面の外のお知らせもクリックで消える
+			var click66 := InputEventMouseButton.new()
+			click66.button_index = MOUSE_BUTTON_LEFT
+			click66.pressed = true
+			click66.position = dn64.get_global_rect().get_center()
+			player._input(click66)
+			await _settle_frames(2)
+			check(not is_instance_valid(dn64) or dn64.has_meta("closing"), "s66: a window-layer notice closes on click (%s)" % t64)
+	# 段階64：画像を見る画面の絵と文字も見える範囲に（FC は上下 8 を隠す）
+	await player.switch_template("fc_classic")
+	var img64 := ImageTexture.create_from_image(Image.create(8, 8, false, Image.FORMAT_RGB8))
+	var iv64: AdvImageViewer = AdvImageViewer.new().setup([img64, img64], player.template, "見出し")
+	var vr64: Rect2 = player.template.visible_rect()
+	var cap64: Label = iv64.get_children().filter(func(c): return c is Label and (c as Label).text == "見出し")[0]
+	check(iv64._rect.position == vr64.position and iv64._rect.size == vr64.size and cap64.position.y >= vr64.position.y and cap64.position.y + 20.0 <= vr64.end.y and iv64._count.position.y + 20.0 <= vr64.end.y, "s64: image viewer keeps picture and captions in the visible area %s" % str(vr64))
+	iv64.free()
+	check(player.set_debug_notice_style("layer", "window") == "" and player.set_debug_notice_style("layer", "sky") != "", "s64: layer can be tried in the console")
+	await player.switch_template("pc98_classic")
+	await _settle_frames(2)
+	_clear_notices()
+	player.show_debug_notice("ウィンドウの層に")
+	await _settle_frames(2)
+	check(bool(player._notices[0].get_meta("window")), "s64: layer window forces the window layer")
+	player.set_debug_notice_style("layer", "screen")
+	_clear_notices()
+	await player.switch_template("gb_classic")
+	player.show_debug_notice("ゲームの画面に")
+	await _settle_frames(2)
+	check(not bool(player._notices[0].get_meta("window")), "s64: layer screen keeps it in the game screen")
+	player.set_debug_notice_style("layer", null)
+	_clear_notices()
+	await player.switch_template(tpl62)
+	await _settle_frames(3)
+	# 段階65：フローチャート・チャプターのないゲームでも開ける（前は止まっていた）
+	for w65 in ["flowchart", "chapters"]:
+		if w65 == "flowchart":
+			player.modern.open_flowchart()
+		else:
+			player.modern.open_chapters()
+		await _settle()
+		var ov65: Control = player._overlay
+		check(ov65 != null and ov65.find_children("*", "RichTextLabel", true, false).any(func(l): return (l as RichTextLabel).text.contains("ありません")), "s65: %s without data says so" % w65)
+		if ov65 != null:
+			ov65.close()
+			await _settle()
+	# 段階66：小さい画面のタイトルのメニュー：▼で下にまだあると知らせ、選ぶと付いて流れ、▲に変わる
+	var tpl66 := String(player.template.id)
+	await player.switch_template("gb_classic")
+	await _settle_frames(2)
+	var ts66: AdvTitleScreen = AdvTitleScreen.new().setup(player)
+	player.screen.add_child(ts66)
+	await _settle_frames(3)
+	var bl66: Array = ts66.buttons.values()
+	check(bl66.size() >= 3 and ts66._more_down.visible and not ts66._more_up.visible, "s66: ▼ shows more items below on GB (%d items)" % bl66.size())
+	(bl66.back() as Button).grab_focus()
+	await _settle_frames(4)
+	var sr66 := ts66._menu_scroll.get_global_rect()
+	check(sr66.grow(0.5).encloses((bl66.back() as Button).get_global_rect()) and ts66._more_up.visible and not ts66._more_down.visible, "s66: focusing the last item scrolls it into view and ▲ shows")
+	await _shot("review_71_title_scrolled_gb")
+	ts66.queue_free()
+	# 段階67：項目の多いメニュー（設定）も、キーで選んだ項目に付いて流れ、長い項目は「…」
+	var sp67: AdvMenuPanel = player.modern._panel("せってい")
+	player.modern._fill_settings(sp67)
+	player.screen.add_child(sp67)
+	await _settle_frames(3)
+	var btn67: Array = sp67.find_children("*", "Button", true, false)
+	(btn67.back() as Button).grab_focus()
+	await _settle_frames(4)
+	var sc67 := (btn67.back() as Control).get_parent().get_parent() as ScrollContainer
+	check(sc67.follow_focus and sc67.get_global_rect().grow(0.5).encloses((btn67.back() as Button).get_global_rect()) and (btn67[0] as Button).clip_text, "s67: settings list follows focus and clips long items on GB")
+	sp67.queue_free()
+	await player.switch_template(tpl66)
+	await _settle_frames(2)
+	# 段階64：全部のテンプレートでメニュー・ログ・セーブを見直す（はみ出し・文字と地の見分け）。うまくいかないものだけ写真を撮る
+	# 段階65：時間がかかるので、-- の後ろに --review を付けたときだけ（ふだんのテストを速く保つ）
+	if "--review" in OS.get_cmdline_user_args():
+		await _review_all_templates()
+	else:
+		print("info: 全部のテンプレートの見直しは --review を付けたときだけ")
+	await player.switch_template(tpl62)
+	await _settle_frames(3)
+	var con61: Control = load("res://addons/adv80s/debug/adv_debug_console.gd").new()
+	root.add_child(con61)
+	con61.set("player", player)
+	con61.call("setup", player.core)
+	if con61.has_method("open"):
+		con61.call("open")
+	con61.visible = true
+	con61.call("execute_command", "set review_very_long_variable_name_for_the_picker_window \"とても長い文字の値をここに入れて、コンソールの幅からはみ出すかどうか見る\"")
+	con61.call("execute_command", "notice")
+	con61.call("execute_command", "noticestyle list")
+	await _settle_frames(3)
+	await _shot("review_63_console")
+	con61.queue_free()
+	await _settle_frames(2)
+	_stage16_done = true   # ここまで来たしるし（途中のスクリプトのエラーで止まると false のまま）
+
+
+## 段階64：全部のテンプレートで、ゲームを窓いっぱいにしてメニュー・ログ・セーブを開いて確かめる。
+func _review_all_templates() -> void:
+	var off := [player.anchor_right, player.anchor_bottom, player.offset_right, player.offset_bottom]
+	player.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var names: Array = Array(DirAccess.get_directories_at("res://addons/adv80s/templates"))
+	names.sort()
+	var problems: Array = []
+	for t in names:
+		await player.switch_template(t)
+		await _settle_frames(3)
+		_clear_notices()
+		var area: Rect2 = player.template.visible_rect()
+		for what in REVIEW_SCREENS:
+			match what:
+				"log": player.open_log()
+				"save": player.open_save_menu("load")
+				"menu": player.modern.open_system_menu()
+				"hints": player.modern.open_hints()
+				"notebook": player.modern.open_notebook()
+				"flowchart": player.modern.open_flowchart()
+				"chapters": player.modern.open_chapters()
+				"endings": player.modern.open_endings()
+				"extras": player.modern.open_extras()
+				"settings_std": player.modern.open_settings()
+				"title", "fin", "credits", "image", "settings":
+					await _review_built(t, what, area, problems)
+					continue
+			await _settle()
+			var ov: Control = player._overlay
+			if ov == null and not player.is_system_scene_open():
+				problems.append("%s/%s: 開かない" % [t, what])
+				continue
+			var sys: bool = player.is_system_scene_open()
+			var bad: Array = _overflowing(ov if ov != null else player.screen, area)
+			var low := _low_contrast(ov) if ov != null else []
+			var msg := ", ".join(bad + low)
+			if msg != "":
+				problems.append("%s/%s: %s" % [t, what, msg])
+			_review_note(t, what, msg)
+			await _shot("review_t_%s_%s" % [t, what])
+			if ov != null:
+				ov.close()
+			elif sys:
+				player.close_system_scene(false)
+			await _settle()
+	_write_review_index(names)
+	check(problems.is_empty(), "s64: all %d templates show menu, log and save inside the screen and readable:\n  %s" % [names.size(), "\n  ".join(problems)])
+	player.anchor_right = off[0]
+	player.anchor_bottom = off[1]
+	player.offset_right = off[2]
+	player.offset_bottom = off[3]
+	await _settle_frames(2)
+
+
+const REVIEW_SCREENS := ["menu", "log", "save", "hints", "notebook", "flowchart", "chapters", "endings", "extras", "title", "fin", "credits", "image", "settings"]
+var _review_results := {}   ## テンプレート → 画面 → 問題の文（"" なら問題なし）。見直しの一覧（index.html）に使う（段階67）
+
+
+## 段階65：組み立てて置く画面（タイトル・おわり・クレジット・画像を見る）を、ゲームの画面に入れて確かめる。
+func _review_built(t: String, what: String, area: Rect2, problems: Array) -> void:
+	var node: Control
+	match what:
+		"title":
+			node = AdvTitleScreen.new().setup(player)
+		"fin":
+			node = AdvFinScreen.new().setup(player, {"text": "おわり", "lines": ["見直しのための長めの一行を、ここに書いておく", "おわり"]})
+		"credits":
+			node = AdvCredits.new().setup({"items": ["スタッフ", "見直しのための長めの名前の人と、その仕事の名前", "おわり"]}, player.template, player.core.state)
+		"image":
+			var tex := ImageTexture.create_from_image(Image.create(32, 32, false, Image.FORMAT_RGB8))
+			node = AdvImageViewer.new().setup([tex, tex], player.template, "見直しの見出し")
+		"settings":   # このテストのゲームは設定画面を作者の画面にしているので、ふつうの設定画面を組み立てて見る（段階67）
+			var m: AdvMenuPanel = player.modern._panel("せってい")
+			player.modern._fill_settings(m)
+			m.position = area.position
+			node = m
+	player.screen.add_child(node)
+	await _settle_frames(3)
+	var bad: Array = _overflowing(node, area)
+	if what == "credits":   # 下から上へ流れるので、横だけ見る
+		bad = []
+		for c in node.find_children("*", "Label", true, false):
+			var r := Rect2((c as Control).global_position, (c as Control).size)
+			if (c as Control).is_visible_in_tree() and (r.position.x < area.position.x - 0.5 or r.end.x > area.end.x + 0.5):
+				bad.append("%s「%s」%s" % [c.name, (c as Label).text.left(12), str(r)])
+	if what == "settings":
+		bad += _low_contrast(node)
+	var msg := ", ".join(bad)
+	if msg != "":
+		problems.append("%s/%s: %s" % [t, what, msg])
+	_review_note(t, what, msg)
+	await _shot("review_t_%s_%s" % [t, what])
+	node.queue_free()
+	await _settle_frames(1)
+
+
+func _review_note(t: String, what: String, msg: String) -> void:
+	if not _review_results.has(t):
+		_review_results[t] = {}
+	_review_results[t][what] = msg
+
+
+## 見直しの一覧（段階67）：写真の置き場所に index.html を書く。行がテンプレート、列が画面。問題のある写真は赤い枠と文。
+func _write_review_index(names: Array) -> void:
+	if _shot_dir == "":
+		return
+	var h := PackedStringArray()
+	h.append("<!DOCTYPE html><html lang=\"ja\"><head><meta charset=\"utf-8\"><title>adv80sGD 見直し</title>")
+	h.append("<style>body{font-family:sans-serif;background:#222;color:#ddd;margin:16px}table{border-collapse:collapse}th,td{padding:4px;vertical-align:top;font-size:12px}th{position:sticky;top:0;background:#222}img{width:200px;border:2px solid #444;display:block}td.bad img{border-color:#e33}td.bad p{color:#f88;max-width:200px;word-break:break-all}</style></head><body>")
+	var bad_n := 0
+	for t in names:
+		for w in REVIEW_SCREENS:
+			if String(_review_results.get(t, {}).get(w, "")) != "":
+				bad_n += 1
+	h.append("<h1>見直し：テンプレート %d × 画面 %d（問題 %d）</h1><table><tr><th>テンプレート</th>" % [names.size(), REVIEW_SCREENS.size(), bad_n])
+	for w in REVIEW_SCREENS:
+		h.append("<th>%s</th>" % w)
+	h.append("</tr>")
+	for t in names:
+		h.append("<tr><th>%s</th>" % t)
+		for w in REVIEW_SCREENS:
+			var msg := String(_review_results.get(t, {}).get(w, ""))
+			var img := "review_t_%s_%s.png" % [t, w]
+			h.append("<td%s><a href=\"%s\"><img src=\"%s\" alt=\"%s %s\"></a>%s</td>" % [" class=\"bad\"" if msg != "" else "", img, img, t, w, "<p>%s</p>" % msg.xml_escape() if msg != "" else ""])
+		h.append("</tr>")
+	h.append("</table></body></html>")
+	var f := FileAccess.open("%s/index.html" % _shot_dir, FileAccess.WRITE)
+	if f != null:
+		f.store_string("\n".join(h))
+		f.close()
+
+
+## 窓の地の色と、中の文字（Label・Button）の色の明るさが近すぎるもの（0.3 より小さい）。地の色のわからない窓は調べない。
+func _low_contrast(ov: Control) -> Array:
+	var sb = ov.get_theme_stylebox("panel")
+	if not sb is StyleBoxFlat:
+		return []
+	var bg := (sb as StyleBoxFlat).bg_color.get_luminance()
+	var out: Array = []
+	for c in ov.find_children("*", "Control", true, false):
+		var ct := c as Control
+		if not ct.is_visible_in_tree():
+			continue
+		var col: Color
+		var txt := ""
+		if ct is Label:
+			col = ct.get_theme_color("font_color")
+			txt = (ct as Label).text
+		elif ct is Button:
+			col = ct.get_theme_color("font_focus_color" if ct.has_focus() else "font_color")
+			txt = (ct as Button).text
+		elif ct is RichTextLabel:
+			col = ct.get_theme_color("default_color")
+			txt = (ct as RichTextLabel).get_parsed_text()
+		else:
+			continue
+		# ボタンは自分の地（normal・focus のスタイル）があればそれと比べる
+		var own_bg := bg
+		if ct is Button:
+			var bs = ct.get_theme_stylebox("focus" if ct.has_focus() else "normal")
+			if bs is StyleBoxFlat and (bs as StyleBoxFlat).bg_color.a > 0.5:
+				own_bg = (bs as StyleBoxFlat).bg_color.get_luminance()
+		if txt.strip_edges() != "" and absf(col.get_luminance() - own_bg) < 0.3:
+			out.append("見分けにくい%s「%s」" % [ct.get_class(), txt.strip_edges().left(8)])
+	return out
+
+
+## お知らせを全部消す。
+func _clear_notices() -> void:
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+
+
+## 段階63：見える範囲（元の解像度の area）の外へはみ出している見える文字・ボタンの一覧（名前と文字）。ないなら []。
+func _overflowing(node: Node, area: Rect2) -> Array:
+	var out: Array = []
+	for c in node.find_children("*", "Control", true, false):
+		var ct := c as Control
+		if not ct.is_visible_in_tree() or ct.size.x <= 0.0:
+			continue
+		if not (ct is Label or ct is Button or ct is RichTextLabel):
+			continue
+		var r := Rect2(ct.global_position, ct.size)
+		var pa := ct.get_parent()
+		while pa is Control:   # 中身を切る窓（clip_contents）の中なら、見えるのはその窓の中だけ
+			if (pa as Control).clip_contents:
+				r = r.intersection(Rect2((pa as Control).global_position, (pa as Control).size))
+			pa = pa.get_parent()
+		if r.size.x <= 0.0 or r.size.y <= 0.0:
+			continue
+		if not area.grow(0.5).encloses(r):
+			var t := String(ct.get("text")) if ct.get("text") != null else ""
+			out.append("%s「%s」%s" % [ct.name, t.left(12), str(r)])
+	return out
 
 
 ## 文字送りが止まるまで待つ（送りの途中ならクリックして早める）。
@@ -886,6 +2500,21 @@ func _rmdir(path: String) -> void:
 	DirAccess.remove_absolute(path)
 
 
+func _panel_buttons() -> Array:
+	if player._overlay == null:
+		return []
+	return player._overlay.find_children("*", "Button", true, false).map(func(b): return (b as Button).text)
+
+
+func _press_panel(label: String) -> void:
+	if player._overlay != null:
+		for b in player._overlay.find_children("*", "Button", true, false):
+			if (b as Button).text == label and not (b as Button).disabled:
+				(b as Button).pressed.emit()
+				return
+	check(false, "panel button not found: %s" % label)
+
+
 func _buttons(sel: AdvCommandSelect) -> Array:
 	var r := []
 	for b in sel._grid.get_children():
@@ -908,3 +2537,9 @@ func _press(sel: AdvCommandSelect, label: String) -> void:
 			b.pressed.emit()
 			return
 	check(false, "button not found: %s" % label)
+
+
+func _write_json(path: String, data: Variant) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(data, "  "))
+	f.close()

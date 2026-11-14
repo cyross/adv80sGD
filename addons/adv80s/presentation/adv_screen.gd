@@ -463,6 +463,22 @@ func _transition(new_g: CanvasGroup, old: Array, tr: Dictionary, hiding: bool, a
 		new_g.material = null
 
 
+## 画面に重ねたもの（CanvasGroup にまとめたもの）に切り替え演出をかける（テンプレートのタイトル画面など）。
+## hiding が true なら消す向き。終わるまで待つ。
+func transition_group(g: CanvasGroup, tr: Dictionary, hiding: bool) -> void:
+	if g == null or String(tr.get("type", "cut")) == "cut":
+		return
+	var host := g.get_parent() as Control
+	if host == null:
+		host = self
+	var xf := host.get_global_transform_with_canvas()
+	var area := {"region": xf * Rect2(Vector2.ZERO, host.size), "screen": host.get_viewport().get_visible_rect().size, "host": host}
+	if hiding:
+		await _transition(null, [g], tr, true, area)
+	else:
+		await _transition(g, [], tr, false, area)
+
+
 func _tween(obj: Object, prop: String, from: Variant, to: Variant, dur: float) -> void:
 	if dur <= 0.0:
 		obj.set_indexed(prop, to)

@@ -1,12 +1,12 @@
 # adv80sGD 仕様一覧
 
-最終更新：2026-11-02
+最終更新：2026-11-12
 
-adv80sGD（段階10）で使えるものの一覧です。引数や書き方の詳しい説明は「[リファレンスマニュアル](reference.md)」、設計の理由は「[仕様書](../SPEC.md)」にあります。
+adv80sGD（段階67）で使えるものの一覧です。引数や書き方の詳しい説明は「[リファレンスマニュアル](reference.md)」、設計の理由は「[仕様書](../SPEC.md)」にあります。
 
 ## 出力イベント
 
-出力イベントは 38 種類です。「状態」の列が○のものは、画面ではなくゲームの状態を変えます（Core が記録する）。
+出力イベントは 58 種類です。「状態」の列が○のものは、画面ではなくゲームの状態を変えます（Core が記録する）。
 
 | 分類 | イベント | 既定の wait | 状態 |
 | --- | --- | --- | --- |
@@ -25,6 +25,7 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | 音 | `bgm.play`、`bgm.stop`、`se.play`、`voice.play` | `none` |  |
 | 状態 | `state.set`、`item.add`、`item.remove` | `none` | ○ |
 | 進行 | `scene.goto` | `end` | ○ |
+| 進行 | `scene.call`、`scene.return`（サブシーン） | `end` | ○ |
 | 進行 | `wait` | その秒数 |  |
 | 進行 | `group` | `end` |  |
 | 進行 | `choice.show`、`input.request` | `input` |  |
@@ -34,6 +35,13 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | モダン機能 | `checkpoint` | `none` |  |
 | システム | `template.switch` | `end` |  |
 | システム | `save.request` | `input` |  |
+| 特殊シーン | `ending.reach` | `none` |  |
+| 特殊シーン | `fin.show`、`opening.play`、`extras.open` | 流れを切る |  |
+| モダン機能 | `notice.show` | `none` |  |
+| 特殊シーン | `credits.roll` | `end` |  |
+| 特殊シーン | `game.new`、`game.title`、`game.continue`、`game.quit`、`endings.open`、`chapters.open`、`settings.open` | 流れを切る |  |
+| システムシーン | `system.save`、`settings.set` | `none` |  |
+| システムシーン | `system.load`、`system.close` | 流れを切る |  |
 
 - `wait` の値：`none`、`click`、`end`、`input`、秒数。書き換えはイベント自身 → シナリオの `event_defaults` → プロジェクトの `event_defaults` の順。
 - 自作のイベントは `x.名前`。知らないイベントは警告して無視します。
@@ -85,6 +93,8 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | `[speed=n]…[/speed]` | 文字の速さ | ○ |
 | `[instant]…[/instant]` | 一度に表示 | ○ |
 | `[gaiji=ID]` | 外字（素材の画像を1文字として入れる） | ○ |
+| `[alias=名前 引数…]` | エイリアス（置き換えてから装飾タグを読む） | ○ |
+| `[if=条件]…[elif=条件]…[else]…[/if]` | 文中の条件 | ○ |
 
 **条件式の演算子**：`and`（`&&`）、`or`（`||`）、`not`（`!`）、`==`、`!=`、`<`、`<=`、`>`、`>=`、`( )`。計算式は `+`、`-`、`*`、`/`、`%`。JSON の形は `all`、`any`、`not`、`var` と `eq`、`ne`、`lt`、`le`、`gt`、`ge`、`in`。
 
@@ -101,6 +111,28 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | `chosen(選択肢, 項目)` | その項目を選んだ |
 | `preset`、`group` | 画面プリセット、グループ |
 | `feature(機能)` | モダン機能が有効 |
+| `arg.名前` | サブシーンの引数 |
+| `sys.名前` | システムシーンの値（`mode`、`slot_count`、`slot_<枠>`、`slot_<枠>_exists`、`slot_<枠>_label`、設定のキー、`feature_<キー>`） |
+
+**シーンの種類（`kind`）**：`normal`、`title`（タイトル）、`opening`（オープニング）、`ending`（エンディング）、`sub`（サブシーン）、`system`（システムシーン）。
+
+**オープニングの流し方（シーンの `replay`）**：`always`（毎回）、`once`（2回目からは流さない）、`skippable`（2回目からは Esc で飛ばせ、Ctrl で早送り）。
+
+**オープニングを見返せる条件（`opening_replay`）**：`seen`（既定）、`always`、`never`、`any_ending`、`all_endings`、`{endings, seen, when}`。
+
+**見たエンディングの値**：`sys.endings_seen`、`sys.endings_total`、`sys.all_endings`、`sys.ending_<ID>`（タイトルのシーンの `variants`、プロジェクト設定 `title_variants` の条件に使う）。
+
+**クリアデータの引き継ぎ（`save_carry`）**：`all`、`none`、`{vars, items, visited, talked, notebook, chosen}`。
+
+**おまけ（`extras`）**：`gallery`（項目に `images` も）、`music`。条件 `when`（既定 `sys.all_endings`）、`show`、`menu`（`gallery`・`music`・`endings`・`opening`）、`music_mode`（`one`・`next`・`all`）、`thumbnails`、`music_desc`、`bonus`、`notify`、`notify_text`、`title_count`。項目に `thumb`、`desc`、`bonus`、`hidden`。値 `sys.gallery_opened`・`sys.gallery_total`・`sys.gallery_all`（`sys.music_…` も）、`sys.extras_opened`・`sys.extras_total`。デバッグコンソールの `extras [clear|unlock]`、`endings [clear]`、`read clear`、`flow clear`、`openings clear`、`progress [clear]`、`ids`。
+
+**お知らせ（`notices`）**：`enabled`、`item_add`・`item_remove`（`{name}`、`{count}`）、`notebook_add`（`{title}`）、`objective_set`（`{text}`）、`hint_set`（`{topic}`）、`autosave`。見た目は `notice_style`（テンプレートは `notice`）：`position`、`fg`、`bg`、`border`、`se`、`seconds`、`margin`、`icon_size`、`log`、`click_close`、`log_mark`、`log_color`、`max`、`overflow`、`log_filter`、`log_labels`。項目は文言か `{text, icon, log}`。`notice.show` の `icon`・`log`・`position`。持ち物の `icon`。出力イベント `notice.show`（`text`、`seconds`）。
+
+**「おわり」の画面（`fin`）の閉じ方（`advance`）**：`click`、`key`、`key:キー名`、秒数、`trigger:名前`。閉じたあと（`then`）：`title`、`new`、`quit`、`stay`、シーン ID。
+
+**タイトル画面（プロジェクト設定 `title_screen`）**：`""`（タイトルなし）、`"template"`（テンプレートのタイトル画面。メニュー `new`、`continue`、`chapters`、`endings`、`settings`、`quit`）、シーン ID。
+
+**差し替えられるシステム画面（`system_scenes`）**：`save`、`load`、`settings`、`log`。値は `.tscn`（`AdvSystemScreen` を継ぐ）か kind `system` のシーン ID。
 
 **変数の操作（`state.set` の `op`）**：`set`、`add`、`sub`、`mul`、`div`、`mod`、`min`、`max`、`toggle`。変数の型：`bool`、`int`、`float`、`string`。
 
@@ -247,6 +279,7 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | F5、F9 | クイックセーブ、クイックロード |
 | F6 | 調べられる場所の表示 |
 | Esc | セーブ・ロードの画面 |
+| F8（デバッグ実行時のみ） | シナリオ・プロジェクト設定・素材の一覧を読み直す（状態はそのまま。Shift+F8 はいまのシーンに入り直す） |
 | F11（デバッグ実行時のみ） | シーングラフの表示・閉じる |
 | F12（デバッグ実行時のみ） | デバッグコンソールの表示・再開 |
 
@@ -255,7 +288,7 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | 値 | 方式 | 操作 |
 | --- | --- | --- |
 | `select` | コマンド選択 | 動詞 → 対象を一覧から選ぶ |
-| `parser` | コマンド入力 | 文字で入力する |
+| `parser` | コマンド入力 | 文字で入力する（読み方は `parser_profile`：`ja` 日本式、`en` 英語式、`free` 自由文） |
 | `icon` | アイコン選択 | 動詞をアイコンで選ぶ |
 | `click` | 画面選択 | 絵の中の対象をクリックする（動詞は選んだもの、なければ `click_verb`） |
 | `verb_click` | 動詞リスト＋クリック | 出したままの動詞を選び、絵の中の対象を選ぶ |
@@ -281,9 +314,9 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | コマンドエディタ | 対象（入ったとき、初めて入ったとき、シーン、もの、出口）と動詞、手順 |
 | 式エディタ | 条件式と変数の計算を複数行で書く。名前の候補、その場の確認 |
 
-- 設定のタブ：初期設定・変数・コマンド・セリフ・アセット・その他。「アセットエディタ…」でマニフェストへ。
+- 設定のタブ：初期設定・変数・コマンド・セリフ・アセット・その他（ゲームの段はタイトル・おわり・おまけ・システムも）。素材とシーンの ID は一覧から選べる。「アセットエディタ…」でマニフェストへ。
 - カードの操作：ダブルクリック（Enter）で開く、Ctrl・Shift+クリックで複数選択、右クリックで 開く・名前を変更（F2）・新規作成・複写…（いくつ作るか）・別のシナリオ（チャプター）へ複写…・削除（Delete。ファイルはごみ箱へ）。
-- 手順の種類：地の文、台詞、条件分岐、選択肢、選択肢の項目、変数の計算、移動、会話の呼び出し、Ink のノット、そのほか（JSON）。
+- 手順の種類：地の文、台詞、条件分岐、選択肢、選択肢の項目、変数の計算、移動、会話の呼び出し、サブシーンの呼び出し、サブシーンから戻る、Ink のノット、演出・システム（出力イベント）、そのほか（JSON）。
 
 **マウスカーソルの種類**：`default`、`look`、`talk`、`take`、`use`、`exit`、`wait`、`next`、`text`（自作の種類も書ける）。OS 標準の形：`arrow`、`pointing_hand`、`cross`、`help`、`move`、`busy`、`ibeam`、`wait`。
 
@@ -323,10 +356,17 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 | `TAMPERED`、`KEY_MISMATCH` | 実行 | セーブが改ざんされている、鍵が違う |
 | `GAME_MISMATCH` | 実行 | ほかのゲーム（ゲームIDが違う）のセーブデータ |
 | `INK_LOAD`、`INK_VERSION`、`INK_UNSUPPORTED` | 確認 | Ink の JSON が読めない、版が合わない、読めない部分がある |
-| `INK_LIST` | 確認 | `LIST` を使っている（未対応） |
 | `INK_EXTERNAL` | 確認 | ない外部関数を使っている |
 | `INK_MISSING_KNOT` | 確認 | JSON の `{"ink"}` の行き先のノットがない |
 | `INK_TAG`、`INK_RUNTIME` | 実行 | タグの JSON が読めない、Ink の実行中のエラー |
+| `ALIAS_CYCLE` | 確認（エラー）・実行（エラー） | エイリアスが自分自身に戻る |
+| `ALIAS_UNKNOWN` | 確認（エラー）・実行 | 定義していないエイリアス |
+| `IF_UNCLOSED` | 確認・実行 | `[if]` と `[/if]` の数が合わない |
+| `SUBSCENE_KIND` | 確認 | kind が sub でないシーンを `call_scene` で呼んでいる |
+| `SUBSCENE_ARG` | 確認 | サブシーンにない引数、足りない必須の引数 |
+| `SUBSCENE_RETURN` | 確認・実行 | sub でないシーンの `return`、呼ばれていないのに戻ろうとした |
+| `SUBSCENE_DEPTH` | 実行 | サブシーンの呼び出しが `subscene_max_depth` を超えた |
+| `ENDING_UNKNOWN` | 確認 | エンディングのシーンに `ending` がない、`endings` にない ID |
 
 ## まだのもの
 
@@ -334,6 +374,5 @@ adv80sGD（段階10）で使えるものの一覧です。引数や書き方の�
 
 | 対象 | いまの動き |
 | --- | --- |
-| Ink の `LIST` | 未対応（validate が `INK_LIST`） |
 | 当時の画像形式 | MAG は読む、PI など他形式は読まない（PNG などに変換して置く）。200ライン用の MAG も縦に伸ばさない |
 | mp4 などの動画 | 読まない（`.ogv` に変換して置く） |

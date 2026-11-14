@@ -19,6 +19,10 @@ var objective: Dictionary = {}   ## 目的 {id, text}。空なら目的なし
 var hints: Dictionary = {}       ## ヒント（話題 → {hints: [段階の文…], revealed: 見た段階の数}）
 var flow: Dictionary = {}        ## フローチャートで到達した点（点ID → true）
 var ui: Dictionary = {}          ## 入力UIの上書き {verbs: [動詞ID…] | null, hidden: {物ID: true}, input_modes: [...] | null}
+## サブシーンの呼び出し（6.9）：[{from: 呼び出し元のシーン, scene: サブシーン, args: 引数, into: 戻り値を入れる変数}]
+var frames: Array = []
+## システムの値（sys.名前 で読む。セーブには入れない）。システムシーンのセーブ枠の説明や設定の値など
+var sys: Dictionary = {}
 
 ## 宣言された変数（名前 → {type, default}）。未定義の変数の判定に使う。
 var declared: Dictionary = {}
@@ -27,6 +31,10 @@ var constants: Dictionary = {}
 
 
 func get_var(name: String) -> Variant:
+	if name.begins_with("arg."):
+		return frames.back().get("args", {}).get(name.substr(4)) if not frames.is_empty() else null
+	if name.begins_with("sys."):
+		return sys.get(name.substr(4))
 	if constants.has(name):
 		return constants[name]
 	if vars.has(name):
@@ -37,6 +45,10 @@ func get_var(name: String) -> Variant:
 
 
 func has_var(name: String) -> bool:
+	if name.begins_with("arg."):
+		return not frames.is_empty() and frames.back().get("args", {}).has(name.substr(4))
+	if name.begins_with("sys."):
+		return sys.has(name.substr(4))
 	return vars.has(name) or declared.has(name) or constants.has(name)
 
 
@@ -91,6 +103,20 @@ func apply_event(ev: Dictionary) -> bool:
 		"scene.goto":
 			scene = String(args.get("scene", args.get("id", "")))
 			visited[scene] = true
+			frames.clear()   # サブシーンの中から移ったら、呼び出しはすべて終わる
+			return true
+		"scene.call":
+			frames.append({"from": scene, "scene": String(args.get("scene", "")), "args": args.get("args", {}).duplicate(true),
+				"into": String(args.get("into", ""))})
+			scene = String(args.get("scene", ""))
+			visited[scene] = true
+			return true
+		"scene.return":
+			if not frames.is_empty():
+				var f: Dictionary = frames.pop_back()
+				scene = String(f.get("from", scene))
+				if String(f.get("into", "")) != "":
+					set_var(String(f["into"]), args.get("value"))
 			return true
 		"state.mark":
 			_apply_mark(args)
@@ -241,6 +267,7 @@ func duplicate_state() -> AdvState:
 	s.from_dict(to_dict())
 	s.declared = declared
 	s.constants = constants
+	s.sys = sys
 	return s
 
 
@@ -259,6 +286,7 @@ func to_dict() -> Dictionary:
 		"hints": hints.duplicate(true),
 		"flow": flow.duplicate(),
 		"ui": ui.duplicate(true),
+		"frames": frames.duplicate(true),
 	}
 
 
@@ -276,3 +304,4 @@ func from_dict(d: Dictionary) -> void:
 	hints = d.get("hints", {}).duplicate(true)
 	flow = d.get("flow", {}).duplicate()
 	ui = d.get("ui", {}).duplicate(true)
+	frames = d.get("frames", []).duplicate(true)

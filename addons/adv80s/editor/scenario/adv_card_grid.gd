@@ -7,14 +7,19 @@ extends ScrollContainer
 ## - ダブルクリック（Enter）で開く
 ## - 右クリックで編集メニュー（menu_requested を出す。メニューは使う側が作る）
 ## - F2 で名前の変更（item_renamed を出す）、Delete で削除（delete_requested を出す）
+## - ドラッグで並べ替え（reordered を出す）。items に image（Texture2D）があれば、カードに小さな絵を出す
 
 signal opened(id: String)
 signal menu_requested(ids: Array, at: Vector2)
 signal item_renamed(id: String, name: String)
 signal delete_requested(ids: Array)
 signal selection_changed
+signal reordered(ids: Array)
 
 const CARD_SIZE := Vector2(180, 96)
+const THUMB_SIZE := Vector2(164, 82)
+
+var reorderable: bool = true
 
 var selected: Array = []
 var _flow: HFlowContainer
@@ -69,6 +74,15 @@ func set_items(items: Array) -> void:
 		var box := VBoxContainer.new()
 		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.add_child(box)
+		if it.get("image") is Texture2D:
+			var tr := TextureRect.new()
+			tr.texture = it["image"]
+			tr.custom_minimum_size = THUMB_SIZE
+			tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			box.add_child(tr)
 		var name := Label.new()
 		name.text = String(it.get("name", id))
 		name.add_theme_font_size_override("font_size", 16)
@@ -82,6 +96,8 @@ func set_items(items: Array) -> void:
 		sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		box.add_child(sub)
 		card.gui_input.connect(_on_card_input.bind(id))
+		card.set_drag_forwarding(func(_p): return _drag_data(id), func(_p, d): return _can_drop(d),
+			func(p, d): _drop(id, p, d))
 		_flow.add_child(card)
 		_cards[id] = card
 		_names[id] = name
@@ -197,6 +213,46 @@ func _gui_input(event: InputEvent) -> void:
 				_refresh_styles()
 				selection_changed.emit()
 				accept_event()
+
+
+# ---------------------------------------------------------------- 並べ替え
+
+func _drag_data(id: String) -> Variant:
+	if not reorderable:
+		return null
+	var ids: Array = selected.duplicate() if id in selected else [id]
+	var l := Label.new()
+	l.text = "%d 件を移動" % ids.size() if ids.size() > 1 else String((_names[id] as Label).text)
+	set_drag_preview(l)
+	return {"adv_cards": ids, "grid": get_instance_id()}
+
+
+func _can_drop(d: Variant) -> bool:
+	return reorderable and d is Dictionary and d.get("grid") == get_instance_id()
+
+
+func _drop(target: String, pos: Vector2, d: Variant) -> void:
+	if not _can_drop(d):
+		return
+	var moving: Array = d["adv_cards"]
+	if target in moving:
+		return
+	var after: bool = pos.x > (_cards[target] as Control).size.x / 2
+	reordered.emit(move_ids(_order, moving, target, after))
+
+
+## order の moving を、target の前（after なら後ろ）へ移した並び。
+static func move_ids(order: Array, moving: Array, target: String, after: bool) -> Array:
+	var rest := order.filter(func(x): return not x in moving)
+	var i := rest.find(target)
+	if i < 0:
+		return order.duplicate()
+	if after:
+		i += 1
+	var keep := order.filter(func(x): return x in moving)
+	for j in keep.size():
+		rest.insert(i + j, keep[j])
+	return rest
 
 
 func _refresh_styles() -> void:

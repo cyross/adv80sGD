@@ -19,10 +19,12 @@ extends AdvScenarioAdapter
 ## 変数：Ink のグローバル変数のうち Core の状態に同じ名前があるものは、Ink に入るときに Core の値を写す。
 ##   Ink の中で変わったグローバル変数は state.set で Core に返す（ink.sync_variables が false なら返さない）。
 ## 外部関数（EXTERNAL で宣言して使う）：has_item(id)、item_count(id)、item_add(id)、item_remove(id)、
-##   get_var(名前)、set_var(名前, 値)、visited(シーン)、talked(ID)、cond(条件式)、event(種類, 引数のJSON)、goto_scene(ID)
+##   get_var(名前)、set_var(名前, 値)、visited(シーン)、talked(ID)、cond(条件式)、event(種類, 引数のJSON)、goto_scene(ID)、
+##   call_scene(サブシーンID, 引数のJSON, 戻り値を入れる変数)：その行のあとで Ink を止めて JSON のサブシーンを呼び、
+##   return で戻ってきたら続きから進める（6.9）。タイトルやエンディングの出力イベント（game.title など）は event() かタグで出す。
 
 const EXTERNALS := ["has_item", "item_count", "item_add", "item_remove", "get_var", "set_var", "visited",
-	"talked", "cond", "event", "goto_scene"]
+	"talked", "cond", "event", "goto_scene", "call_scene"]
 
 var stories: Dictionary = {}       ## ファイル → AdvInkStory
 var files: PackedStringArray = []
@@ -37,6 +39,7 @@ var _scratch: AdvState
 var _out: Array[Dictionary] = []
 var _occurrence: Dictionary = {}
 var _carry_tags: Array = []        ## タグだけの行のタグ（次の行の ext.tags に入れる）
+var _pending_call: Dictionary = {} ## call_scene で頼まれたサブシーンの呼び出し（その行を出したあとで JSON に渡す）
 
 
 func load_sources(paths: PackedStringArray) -> Error:
@@ -168,6 +171,13 @@ func _run() -> void:
 	var lines := story.continue_maximally()
 	for l in lines:
 		_line(String(l["text"]), l["tags"])
+	if not _pending_call.is_empty():
+		# サブシーンを呼ぶ：Core が JSON のアダプタを上に積み、戻ってきたら resume で続きから
+		var step := _pending_call
+		_pending_call = {}
+		story.stop_requested = false
+		_emit(AdvEvents.make("adapter.call", {"adapter": "main", "step": step}))
+		return
 	for e in story.errors:
 		ctx.warn("INK_RUNTIME", "Ink の実行中のエラー: %s" % e)
 	if not story.errors.is_empty():
@@ -299,6 +309,8 @@ func _on_var(name: String, value: Variant) -> void:
 		return
 	if value is AdvInkStory.DivertTarget or value is AdvInkStory.VarPointer:
 		return
+	if value is AdvInkList:
+		value = str(value)   # Core には「項目名, 項目名」の文字列で渡す
 	_emit(AdvEvents.make("state.set", {"name": name, "value": value}))
 
 
@@ -352,6 +364,55 @@ func _x_event(a: Array) -> Variant:
 	return null
 
 
+func _x_call_scene(a: Array) -> Variant:
+	if a.size() > 0:
+		var args := parse_args(str(a[1])) if a.size() > 1 else {}
+		_pending_call = {"call_scene": str(a[0]), "args": args}
+		if a.size() > 2 and str(a[2]) != "":
+			_pending_call["into"] = str(a[2])
+		story.stop_requested = true
+	return null
+
+
+## call_scene の引数：JSON の形（{"price": 7}）か、"名前=値; 名前=値" の形（Ink の文字列では { が書きにくいため）。
+## 値は数・true・false・"=式" ならそのまま、ほかは文字列。
+static func parse_args(s: String) -> Dictionary:
+	s = s.strip_edges()
+	if s == "":
+		return {}
+	if s.begins_with("{"):
+		var d = JSON.parse_string(s)
+		return d if d is Dictionary else {}
+	var out := {}
+	for part in s.split(";", false):
+		var kv := part.split("=", true, 1)
+		if kv.size() < 2:
+			continue
+		var k := kv[0].strip_edges()
+		var v := kv[1].strip_edges()
+		if v.begins_with("="):
+			out[k] = v
+		elif v.is_valid_int():
+			out[k] = int(v)
+		elif v.is_valid_float():
+			out[k] = float(v)
+		elif v == "true" or v == "false":
+			out[k] = v == "true"
+		else:
+			out[k] = v
+	return out
+
+
+## サブシーンから戻ってきたら、Core の値（戻り値など）を写して続きから進める。
+func resume(_result: Dictionary = {}) -> Array[Dictionary]:
+	_begin()
+	if not _active or story == null:
+		return _out
+	_sync_in()
+	_run()
+	return _out
+
+
 func _x_goto_scene(a: Array) -> Variant:
 	if a.size() > 0:
 		_emit(AdvEvents.make("scene.goto", {"scene": str(a[0])}))
@@ -381,6 +442,8 @@ func query(what: String, _args: Dictionary = {}) -> Variant:
 			return list
 		"ink_active":
 			return _entry if _active else null
+		"location":
+			return {"knot": _entry} if _active else null
 	return null
 
 
@@ -407,6 +470,31 @@ func load_state(data: Dictionary) -> Error:
 
 const _TAG_ASSETS := {"bg": "image", "bgm": "bgm", "se": "se", "voice": "voice"}
 
+## 物語の中の call_scene(…) で、最初の引数が文字列そのままのもの [{scene, path}]。
+static func subscene_calls(s: AdvInkStory) -> Array:
+	var out := []
+	for o in s.all_objects():
+		if o.kind != AdvInkStory.K_DIVERT or o.d != "x" or String(o.a) != "call_scene" or o.parent == null:
+			continue
+		var c: Array = o.parent.content
+		var i := c.find(o) - 1
+		var lits := []
+		var ok := true
+		# 引数を後ろから読む："str" 文字列 "/str" の組だけなら、いちばん前が行き先
+		while i >= 2 and lits.size() < int(o.e):
+			var close_cmd = c[i]
+			if close_cmd is AdvInkStory.InkObj and close_cmd.kind == AdvInkStory.K_CMD and close_cmd.a == "/str" \
+					and c[i - 1] is AdvInkStory.InkObj and c[i - 1].kind == AdvInkStory.K_STR:
+				lits.push_front(String(c[i - 1].a))
+				i -= 3
+			else:
+				ok = false
+				break
+		if ok and lits.size() == int(o.e) and not lits.is_empty():
+			out.append({"scene": lits[0], "path": o.parent.path()})
+	return out
+
+
 func validate() -> Array[Dictionary]:
 	var out: Array[Dictionary] = diags.duplicate()
 	for f in files:
@@ -416,12 +504,8 @@ func validate() -> Array[Dictionary]:
 		for e in s.errors:
 			out.append(AdvDiag.make("error", "INK_UNSUPPORTED", "Ink の JSON に読めない部分があります: %s" % e,
 				"Unsupported content in ink JSON: %s" % e, f, ""))
-		var uses_list := s.has_lists
 		var missing := {}
 		for o in s.all_objects():
-			if o.kind == AdvInkStory.K_LIST or (o.kind == AdvInkStory.K_CMD and o.a in ["listInt", "range", "lrnd"]) \
-					or (o.kind == AdvInkStory.K_NATIVE and String(o.a).begins_with("LIST")):
-				uses_list = true
 			if o.kind == AdvInkStory.K_DIVERT and o.d == "x" and not o.a in EXTERNALS and not s.root.named.has(o.a):
 				missing[o.a] = true
 			if o.kind == AdvInkStory.K_STR:
@@ -432,9 +516,15 @@ func validate() -> Array[Dictionary]:
 					if id != "" and not ctx.has_asset(_TAG_ASSETS[kv[0]], id):
 						out.append(AdvDiag.make("warning", "ASSET_NOT_FOUND", "素材が見つかりません: %s（%s）" % [id, _TAG_ASSETS[kv[0]]],
 							"Asset not found: %s (%s)" % [id, _TAG_ASSETS[kv[0]]], f, o.parent.path()))
-		if uses_list:
-			out.append(AdvDiag.make("error", "INK_LIST", "LIST は使えません（adv80s の Ink 実行部は未対応）",
-				"LIST is not supported by the adv80s ink runtime", f, ""))
+		for r in subscene_calls(s):
+			# call_scene の行き先（JSON のシーン）を確かめる
+			var info = ctx.query("scene_info", {"id": r["scene"]})
+			if info == null:
+				out.append(AdvDiag.make("error", "MISSING_TARGET", "サブシーンが見つかりません: %s" % r["scene"],
+					"Subscene not found: %s" % r["scene"], f, r["path"]))
+			elif String(info.get("kind", "normal")) != "sub":
+				out.append(AdvDiag.make("warning", "SUBSCENE_KIND", "kind が sub でないシーンをサブシーンとして呼んでいます: %s" % r["scene"],
+					"Calling a scene whose kind is not sub: %s" % r["scene"], f, r["path"]))
 		for n in missing:
 			out.append(AdvDiag.make("error", "INK_EXTERNAL", "外部関数がありません: %s（使えるのは %s）" % [n, ", ".join(EXTERNALS)],
 				"External function not provided: %s" % n, f, ""))

@@ -1,0 +1,151 @@
+{
+  "scenario_version": 1,
+  "start": "hallway",
+  "variables": {
+    "door_unlocked": {
+      "type": "bool",
+      "default": false
+    },
+    "got_key": {
+      "type": "bool",
+      "default": false
+    },
+    "knocks": {
+      "type": "int",
+      "default": 0
+    },
+    "met_ayumi": {
+      "type": "bool",
+      "default": false
+    },
+    "saw_lights": {
+      "type": "bool",
+      "default": false
+    }
+  },
+  "characters": {
+    "ayumi": {
+      "name": "あゆみ",
+      "names": [
+        "しょうじょ",
+        "少女",
+        "girl",
+        "ayumi"
+      ],
+      "pal": 13
+    }
+  },
+  "items": {
+    "key": {
+      "name": "かぎ",
+      "names": [
+        "鍵",
+        "カギ",
+        "key",
+        "brass key"
+      ],
+      "on": {
+        "LOOK": "ふるびた しんちゅうの かぎだ。",
+        "USE+door": [
+          {
+            "set": {
+              "door_unlocked": true
+            }
+          },
+          "かぎを まわした。 カチリと おとが した。"
+        ],
+        "USE": {
+          "if": "scene == hallway and not door_unlocked",
+          "then": [
+            {
+              "set": {
+                "door_unlocked": true
+              }
+            },
+            "ドアの かぎあなに さしこんで まわした。 カチリと おとが した。"
+          ],
+          "else": "ここでは つかえない。"
+        }
+      }
+    }
+  },
+  "topics": {
+    "ayumi": [
+      {
+        "id": "case",
+        "label": "じけんについて",
+        "dialogue": "ayumi_case",
+        "names": [
+          "case",
+          "incident"
+        ]
+      },
+      {
+        "id": "memo",
+        "label": "メモについて",
+        "dialogue": "ayumi_jump",
+        "when": "met_ayumi"
+      },
+      {
+        "id": "window",
+        "label": "まどの そとについて",
+        "dialogue": "ayumi_window",
+        "names": [
+          "まど",
+          "まどのそと",
+          "そと",
+          "window"
+        ]
+      }
+    ]
+  },
+  "flow": {
+    "nodes": [
+      {
+        "id": "start",
+        "label": "ろうか",
+        "chapter": "ch1"
+      },
+      {
+        "id": "room",
+        "label": "へや",
+        "chapter": "ch2"
+      },
+      {
+        "id": "met",
+        "label": "あゆみと であう",
+        "chapter": "ch2"
+      }
+    ],
+    "edges": [
+      {
+        "from": "start",
+        "to": "room"
+      },
+      {
+        "from": "room",
+        "to": "met"
+      }
+    ]
+  },
+  "chapters": [
+    {
+      "id": "ch1",
+      "label": "だい1しょう ろうか",
+      "node": "start"
+    },
+    {
+      "id": "ch2",
+      "label": "だい2しょう へや",
+      "node": "room"
+    }
+  ],
+  "ext": {
+    "adv80s_editor": {
+      "name": "段階1のサンプル",
+      "chapter_order": [
+        "chapter1"
+      ]
+    }
+  }
+}

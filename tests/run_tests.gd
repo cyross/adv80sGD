@@ -17,9 +17,11 @@ func _initialize() -> void:
 	_test_features()
 	_test_visuals()
 	_test_save()
+	_test_parser_free()
 	_test_stage1_scenario()
 	_test_english()
 	_test_ink_story()
+	_test_ink_lists()
 	_test_ink_conformance()
 	_test_ink_random()
 	_test_mag()
@@ -32,6 +34,8 @@ func _initialize() -> void:
 	_test_setup()
 	_test_scenario_model()
 	_test_stage12()
+	_test_stage16()
+	_test_stage36()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -50,6 +54,248 @@ func eq(a: Variant, b: Variant, label: String) -> void:
 
 
 # ---------------------------------------------------------------- 式
+
+# ---------------------------------------------------------------- 段階16：エイリアス、条件、サブシーン、特殊シーン
+
+## 段階36：シーンの途中（会話の何番目か、Ink のノット）から始める。入ったときの手順は動かさない。
+func _test_stage36() -> void:
+	var c36 := AdvCore.new()
+	c36.setup({"seed": 1})
+	c36.use_adapter(AdvJsonAdapter.new())
+	c36.load_scenario(["res://tests/ink/hand.scenario.json", "res://tests/ink/sample.ink.json"])
+	var ev36 := c36.start_at("room", {"knot": "shop"})
+	check(not _bodies(ev36).contains("へやだ。") and _bodies(ev36).contains("Coins:"), "s36: start at an ink knot: %s" % _bodies(ev36))
+	check(c36.state.scene == "room" and ev36.all(func(e): return not String(e["type"]).begins_with("adapter.")), "s36: knot start keeps the scene")
+	ev36 = c36.start_at("room", {})
+	eq(_bodies(ev36), "へやだ。", "s36: start_at without a place is a plain start")
+	var p := "user://s36.scenario.json"
+	var f := FileAccess.open(p, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"start": "hall", "scenes": {"hall": {"name": "ひろま", "enter": ["ひろまだ。"]}},
+		"dialogues": {"talk": ["ひとつめ。", "ふたつめ。", "みっつめ。"]}}))
+	f.close()
+	var cd := AdvCore.new()
+	cd.setup({"seed": 1})
+	cd.use_adapter(AdvJsonAdapter.new())
+	cd.load_scenario([p])
+	var evd := cd.start_at("hall", {"dialogue": "talk", "line": 1})
+	eq(_bodies(evd), "ふたつめ。 / みっつめ。", "s36: start in a dialogue at a line")
+	check(cd.state.scene == "hall" and cd.state.talked.has("talk"), "s36: dialogue start marks it talked")
+	eq(_bodies(cd.start_at("hall", {"dialogue": "talk", "line": 99})), "みっつめ。", "s36: line past the end is clamped")
+	eq(_bodies(cd.start_at("hall", {"dialogue": "nope"})), "ひろまだ。", "s36: missing dialogue falls back to entering the scene")
+	DirAccess.remove_absolute(p)
+	# 段階37：入れ子の手順から（「もし」の中、選択肢の項目の中）
+	f = FileAccess.open(p, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"start": "hall", "scenes": {"hall": {"name": "ひろま", "enter": ["ひろまだ。"]}},
+		"dialogues": {"talk": ["はじめ。", {"if": "false", "then": ["そう1。", "そう2。"], "else": ["ちがう。"]}, "あと。",
+			{"choice": {"options": [{"label": "x", "do": ["x1。"]}, {"label": "y", "do": ["y1。", "y2。"]}]}}, "おわり。"]}}))
+	f.close()
+	var cn := AdvCore.new()
+	cn.setup({"seed": 1})
+	cn.use_adapter(AdvJsonAdapter.new())
+	cn.load_scenario([p])
+	check(_bodies(cn.start_at("hall", {"dialogue": "talk", "path": [1, "then", 1]})).begins_with("そう2。 / あと。"), "s37: start inside then (condition not checked)")
+	check(_bodies(cn.start_at("hall", {"dialogue": "talk", "path": [1, "else", 0]})).begins_with("ちがう。 / あと。"), "s37: start inside else")
+	eq(_bodies(cn.start_at("hall", {"dialogue": "talk", "path": [3, "choice", "options", "1", "do", 1]})), "y2。 / おわり。", "s37: start inside a choice option")
+	check(_bodies(cn.start_at("hall", {"dialogue": "talk", "path": [1, "nothere", 0]})).begins_with("あと。"), "s37: missing branch continues after it")
+	eq(_bodies(cn.start_at("hall", {"dialogue": "talk", "path": [1.0, "then", 0.0]})), _bodies(cn.start_at("hall", {"dialogue": "talk", "path": [1, "then", 0]})), "s37: path numbers from JSON (floats)")
+	DirAccess.remove_absolute(p)
+	# 段階38：そこまでの「設定する」を先に動かす（通り道のそれぞれの段で、始める場所より前の set・let）
+	f = FileAccess.open(p, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"start": "hall", "scenes": {"hall": {"name": "ひろま", "enter": ["ひろまだ。"]}},
+		"dialogues": {"talk": ["a。", {"set": {"x": 1}}, "b。", {"if": "x > 5", "then": [{"set": {"y": 2}}, "c。", {"let": "z = x + 2"}, "d。", {"set": {"w": 9}}]},
+			{"if": "true", "then": [{"set": {"skip": 1}}]}, "e。"]}}))
+	f.close()
+	var cp := AdvCore.new()
+	cp.setup({"seed": 1})
+	cp.use_adapter(AdvJsonAdapter.new())
+	cp.load_scenario([p])
+	eq(_bodies(cp.start_at("hall", {"dialogue": "talk", "path": [3, "then", 3], "pre_sets": true})), "d。 / e。", "s38: pre-sets run silently, then the start point")
+	check(int(cp.state.get_var("x")) == 1 and int(cp.state.get_var("y")) == 2 and int(cp.state.get_var("z")) == 3 and int(cp.state.get_var("w")) == 9 and int(cp.state.get_var("skip")) == 1,
+		"s38: only the sets before the start on the way: x=%s y=%s z=%s w=%s" % [cp.state.get_var("x"), cp.state.get_var("y"), cp.state.get_var("z"), cp.state.get_var("w")])
+	var cq := AdvCore.new()
+	cq.setup({"seed": 1})
+	cq.use_adapter(AdvJsonAdapter.new())
+	cq.load_scenario([p])
+	cq.start_at("hall", {"dialogue": "talk", "path": [3, "then", 3]})
+	check(cq.state.get_var("x") == null and cq.state.get_var("y") == null, "s38: without pre_sets nothing is set")
+	cq.start_at("hall", {"dialogue": "talk", "line": 2, "pre_sets": true})
+	check(int(cq.state.get_var("x")) == 1, "s38: pre-sets with a top-level line")
+	eq(AdvJsonAdapter.sets_before(["a", {"set": {"x": 1}}, {"let": "y = 1"}, {"say": "s"}, {"set": {"z": 1}}], 4).size(), 2, "s38: sets before an index")
+	DirAccess.remove_absolute(p)
+	# 段階39：前にある「もし」も、中の「設定する」だけを、動かすときの値で条件を見て
+	f = FileAccess.open(p, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"start": "hall", "scenes": {"hall": {"name": "ひろま", "enter": ["ひろまだ。"]}},
+		"dialogues": {"talk": [{"set": {"a": 1}}, {"if": "a == 1", "then": [{"set": {"b": 2}}, "なか。", {"if": "b == 2", "then": [{"set": {"c": 3}}]}], "else": [{"set": {"b": -1}}]},
+			{"if": "a == 9", "then": [{"set": {"d": 4}}]}, {"if": "true", "then": ["文だけ。"]}, "はじめ。"]}}))
+	f.close()
+	var cc := AdvCore.new()
+	cc.setup({"seed": 1})
+	cc.use_adapter(AdvJsonAdapter.new())
+	cc.load_scenario([p])
+	eq(_bodies(cc.start_at("hall", {"dialogue": "talk", "line": 4, "pre_sets": "cond"})), "はじめ。", "s39: conditional pre-sets show no text")
+	check(int(cc.state.get_var("a")) == 1 and int(cc.state.get_var("b")) == 2 and int(cc.state.get_var("c")) == 3 and cc.state.get_var("d") == null,
+		"s39: ifs judged with the values set so far: b=%s c=%s d=%s" % [cc.state.get_var("b"), cc.state.get_var("c"), cc.state.get_var("d")])
+	var cc2 := AdvCore.new()
+	cc2.setup({"seed": 1})
+	cc2.use_adapter(AdvJsonAdapter.new())
+	cc2.load_scenario([p])
+	cc2.start_at("hall", {"dialogue": "talk", "line": 4, "pre_sets": true})
+	check(int(cc2.state.get_var("a")) == 1 and cc2.state.get_var("b") == null, "s39: plain pre-sets skip ifs")
+	# 段階40：先に入った値の記録
+	var pl40 = cc.query("pre_set_log")
+	check(pl40 is Dictionary and pl40.keys() == ["a", "b", "c"] and int(pl40["c"]) == 3, "s40: pre-set log in order: %s" % str(pl40))
+	check(cc2.query("pre_set_log").keys() == ["a"], "s40: plain pre-set log")
+	cc2.start_at("hall", {"dialogue": "talk", "line": 4})
+	check(cc2.query("pre_set_log") == null, "s40: no log without pre-sets")
+	eq(AdvPlayer.pre_set_text({"a": 1.0, "b": true, "c": "x", "d": [1], "e": 2}, 4), "先に設定：a = 1、b = true、c = \"x\"、d = [1] …ほか 1", "s40: pre-set text (short)")
+	eq(AdvPlayer.pre_set_text({"a": 1, "b": 2}, 0), "先に設定：a = 1、b = 2", "s40: pre-set text (all)")
+	var so := AdvJsonAdapter.sets_only([{"if": "x", "then": ["t"]}, {"if": "y", "then": "z", "else": {"set": {"q": 1}}}, [{"let": "r = 1"}]], true)
+	check(so.size() == 2 and so[0]["then"] == [] and so[0]["else"] == [{"set": {"q": 1}}] and so[1] == {"let": "r = 1"}, "s39: sets_only keeps ifs with sets only: %s" % str(so))
+	DirAccess.remove_absolute(p)
+	# いまの状態からひな形の中身（定数は入れない）
+	var s37 := AdvState.new()
+	s37.vars = {"a": 1, "c": 9}
+	s37.constants = {"c": 9}
+	s37.items = {"key": 2}
+	eq(AdvPlayer.preset_from_state(s37), {"vars": {"a": 1}, "items": {"key": 2}}, "s37: preset from state")
+	eq(AdvPlayer.preset_from_state(AdvState.new()), {}, "s37: empty state gives an empty preset")
+	s37.vars["b"] = 2
+	eq(AdvPlayer.preset_from_state(s37, {"vars": ["b"], "items": []}), {"vars": {"b": 2}}, "s38: preset with only the picked ones")
+
+
+func _s16_core(cfg: Dictionary = {}) -> AdvCore:
+	var c := AdvCore.new()
+	c.setup(AdvJson.merge({"seed": 1}, cfg))
+	c.use_adapter(AdvJsonAdapter.new())
+	c.load_scenario(["res://tests/stage16/stage16.scenario.json", "res://tests/stage16/ink/sub.ink.json"])
+	AdvTextMarkup.set_aliases(c.aliases())
+	AdvTextMarkup.cond_evaluator = func(t: String, st: AdvState) -> bool: return c.ctx.eval(t, st)
+	return c
+
+
+func _choose(c: AdvCore, id: String) -> Array:
+	return c.submit({"verb": "CHOOSE", "target": id})
+
+
+func _types(events: Array) -> Array:
+	return events.map(func(e): return e["type"])
+
+
+func _test_stage16() -> void:
+	var tpl := AdvTemplate.load_template("pc98_classic")
+	var s := AdvState.new()
+	s.vars = {"name": "たろう", "money": 0}
+	# エイリアス：引数、入れ子、装飾タグより先
+	AdvTextMarkup.set_aliases({
+		"hero": "[pal=6]{name}[/pal]",
+		"greet": {"params": ["who", "words"], "text": "[alias=hero]は {arg.who}に「{arg.words}」"},
+		"loop_a": "[alias=loop_b]", "loop_b": "x[alias=loop_a]",
+	})
+	AdvTextMarkup.cond_evaluator = Callable()
+	eq(AdvTextMarkup.expand("[alias=greet あゆみ \"やあ どうも\"]", s), "[pal=6]{name}[/pal]は あゆみに「やあ どうも」", "alias: args and nesting")
+	eq(AdvTextMarkup.to_plain("[alias=greet あゆみ やあ]", s, tpl), "たろうは あゆみに「やあ」", "alias: plain text")
+	check(AdvTextMarkup.to_bbcode("[alias=hero]", s, tpl).contains("[color="), "alias: decoration applied after expansion")
+	eq(AdvTextMarkup.expand("[alias=greet]", s), "[pal=6]{name}[/pal]は に「」", "alias: missing args are empty")
+	eq(AdvTextMarkup.expand("a[alias=nope]b", s), "ab", "alias: unknown alias is dropped")
+	eq(AdvTextMarkup.expand("[alias=loop_a]", s), "x", "alias: cycle stops")
+	var ad := AdvTextMarkup.check_aliases(AdvTextMarkup.aliases.duplicate(), [{"name": "zzz", "file": "f", "path": "p"}])
+	check(_codes(ad).has("ALIAS_CYCLE"), "alias: cycle diagnosed: %s" % str(_codes(ad)))
+	check(_codes(ad).has("ALIAS_UNKNOWN"), "alias: unknown ref diagnosed")
+	check(not _codes(AdvTextMarkup.check_aliases({"a": "[alias=b]", "b": "x"})).has("ALIAS_CYCLE"), "alias: no false cycle")
+	# 条件
+	eq(AdvTextMarkup.expand("[if=money >= 10]A[elif=money > 0]B[else]C[/if]", s), "C", "if: else")
+	s.vars["money"] = 5
+	eq(AdvTextMarkup.expand("[if=money >= 10]A[elif=money > 0]B[else]C[/if]", s), "B", "if: elif")
+	s.vars["money"] = 20
+	eq(AdvTextMarkup.expand("[if=money >= 10]A[if=money > 15]+[/if][elif=money > 0]B[else]C[/if]!", s), "A+!", "if: nested")
+	eq(AdvTextMarkup.expand("[if=money < 0]x[if=money > 15]y[else]z[/if][else]w[/if]", s), "w", "if: nested inside a false branch")
+	eq(AdvTextMarkup.expand("[if=money > 0]open", s), "open", "if: unclosed keeps text")
+
+	# シナリオ：タイトルのメニュー
+	var c := _s16_core()
+	eq(c.validate().filter(func(d): return d["severity"] == "error").map(func(d): return d["code"]), [], "stage16 scenario: no errors")
+	var ev := c.start("title")
+	eq(c.query("scene_kind"), "title", "title: kind")
+	var pc = c.query("pending_choice")
+	check(pc is Dictionary and pc.get("style", "") == "menu", "title: menu choice: %s" % str(pc))
+	eq(pc["choices"].map(func(o): return o["label"]) if pc is Dictionary else [], ["はじめから", "つづきから", "エンディング"], "title: menu options (when filters)")
+	ev = _choose(c, "o3")
+	check(_types(ev).has("endings.open"), "title: menu emits endings.open: %s" % str(_types(ev)))
+	check(c.query("pending_choice") is Dictionary, "title: menu comes back after the action")
+	ev = _choose(c, "o1")
+	check(_types(ev).has("game.new"), "title: game.new")
+
+	# サブシーン
+	c = _s16_core()
+	ev = c.start("hall")
+	check(_bodies(ev).contains("[alias=greet"), "core keeps the alias tag in text (expanded when shown)")
+	eq(c.state.scene, "shop", "subscene: entered")
+	eq(c.state.frames.size(), 1, "subscene: one frame")
+	eq(c.state.get_var("arg.price"), 5, "subscene: arg from expression")
+	eq(c.state.get_var("arg.item"), "パン", "subscene: default arg")
+	check(_bodies(ev).contains("{arg.item}は {arg.price}えん。"), "subscene: text")
+	eq(AdvTextMarkup.to_plain("{arg.item}は {arg.price}えん", c.state, tpl), "パンは 5えん", "subscene: args in text")
+	# 途中でセーブ・ロード
+	var saved := c.save_state()
+	ev = _choose(c, "yes")
+	eq(_bodies(ev).count("ふかさ"), 3, "subscene: recursion 3 levels: %s" % _bodies(ev))
+	eq(c.state.get_var("result"), 10, "subscene: return value into")
+	eq(c.state.get_var("bought"), "パン", "subscene: set from arg")
+	check(_bodies(ev).contains("かいもの おわり"), "subscene: caller continues")
+	eq(c.state.frames.size(), 0, "subscene: frames empty after goto")
+	check(_types(ev).has("ending.reach") and _types(ev).has("credits.roll"), "ending: reach and credits: %s" % str(_types(ev)))
+	eq(c.state.scene, "end_good", "ending scene")
+	var c2 := _s16_core()
+	c2.load_state(saved)
+	eq(c2.state.scene, "shop", "subscene: load mid-call")
+	eq(c2.state.frames.size(), 1, "subscene: frames saved")
+	ev = _choose(c2, "no")
+	eq(c2.state.get_var("result"), 0, "subscene: return after load")
+	eq(c2.state.scene, "end_good", "subscene: caller resumes after load")
+	# 深さの上限
+	var c3 := _s16_core({"subscene_max_depth": 2})
+	c3.start("hall")
+	ev = _choose(c3, "yes")
+	eq(_bodies(ev).count("ふかさ"), 1, "subscene: depth limit stops recursion: %s" % _bodies(ev))
+	eq(c3.state.get_var("result"), 10, "subscene: still returns at the limit")
+	# Ink からサブシーンを呼ぶ
+	var ci := _s16_core()
+	ev = ci.start("ink_hall")
+	check(_bodies(ev).contains("みせに よった。") and ci.state.get_var("arg.item") == "ミルク" and ci.state.get_var("arg.price") == 7, "ink call_scene: subscene runs: %s" % _bodies(ev))
+	check(not _bodies(ev).contains("もどった"), "ink call_scene: ink waits for the subscene")
+	eq(ci.state.scene, "shop", "ink call_scene: in the subscene")
+	eq(ci.adapter, ci.adapters_by_name["main"], "ink call_scene: json on top")
+	check(ev.all(func(e): return not String(e["type"]).begins_with("adapter.")), "ink call_scene: adapter events hidden")
+	var isaved := ci.save_state()
+	ev = _choose(ci, "yes")
+	check(_bodies(ev).contains("もどった。けっか 14。"), "ink call_scene: back to ink with the return value: %s" % _bodies(ev))
+	eq(ci.adapter, ci.adapters_by_name["ink"], "ink call_scene: ink on top again")
+	ev = _choose(ci, "c0")
+	check(_bodies(ev).contains("おしまい。") and _bodies(ev).contains("インクから もどった。"), "ink call_scene: ink ends, json continues: %s" % _bodies(ev))
+	var ci2 := _s16_core()
+	ci2.load_state(isaved)
+	ev = _choose(ci2, "no")
+	check(_bodies(ev).contains("けっか 0。"), "ink call_scene: load mid-subscene: %s" % _bodies(ev))
+	var ia: AdvInkAdapter = ci.adapters_by_name["ink"]
+	eq(AdvInkAdapter.subscene_calls(ia.stories.values()[0]).map(func(r): return r["scene"]), ["shop"], "ink call_scene: found in the story")
+	var cb := AdvCore.new()
+	cb.setup({})
+	cb.use_adapter(AdvJsonAdapter.new())
+	cb.load_scenario(["res://tests/stage16/stage16.scenario.json", "res://tests/stage16/ink/bad_sub.ink.json"])
+	var cbc := _codes(cb.validate())
+	check(cbc.has("MISSING_TARGET") and cbc.has("SUBSCENE_KIND"), "ink call_scene: validated: %s" % str(cbc))
+	eq(AdvInkAdapter.parse_args("price=7; item=ミルク; x==a+1; ok=true"), {"price": 7, "item": "ミルク", "x": "=a+1", "ok": true}, "ink call_scene: args")
+	# 検証
+	var bad := AdvCore.new()
+	bad.setup({"endings": [{"id": "true_end"}]})
+	bad.use_adapter(AdvJsonAdapter.new())
+	bad.load_scenario(["res://tests/stage16/bad.scenario.json"])
+	var codes := _codes(bad.validate())
+	for code in ["ALIAS_CYCLE", "ALIAS_UNKNOWN", "SUBSCENE_KIND", "SUBSCENE_ARG", "SUBSCENE_RETURN", "ENDING_UNKNOWN", "IF_UNCLOSED"]:
+		check(codes.has(code), "validate: %s in %s" % [code, str(codes)])
+	AdvTextMarkup.set_aliases({})
+	AdvTextMarkup.cond_evaluator = Callable()
+
 
 # ---------------------------------------------------------------- 段階12：外字、text.append
 
@@ -543,6 +789,39 @@ func _contains_bytes(hay: PackedByteArray, needle: PackedByteArray) -> bool:
 	return hay.hex_encode().contains(needle.hex_encode())
 
 
+# ---------------------------------------------------------------- 自由文のパーサー（4.2）
+
+func _test_parser_free() -> void:
+	var c := AdvCore.new()
+	c.setup({"seed": 1})
+	c.use_adapter(AdvJsonAdapter.new())
+	eq(c.load_scenario(["res://tests/parser/free.scenario.json"]), OK, "free parser: load")
+	c.start()
+	c.state.items["key"] = 1
+	var f := func(text: String) -> String:
+		var r := AdvParsers.parse("free", text, c)
+		if r.has("reply"):
+			return "reply:" + String(r["code"])
+		var it: Dictionary = r["intent"]
+		var parts := [it["verb"]]
+		var names: Array = it["slots"].keys()
+		names.sort()
+		for k in names:
+			parts.append("%s=%s" % [k, it["slots"][k]["id"]])
+		return " ".join(parts)
+	eq(f.call("古いドアを開けてみる"), "OPEN target=old_door", "free: 古いドアを開けてみる")
+	eq(f.call("新しいドアを あけてください。"), "OPEN target=new_door", "free: polite request")
+	eq(f.call("ふるいドアをしらべたい"), "EXAMINE target=old_door", "free: たい")
+	eq(f.call("鍵でとびらを開けよう"), "OPEN target=old_door with=key", "free: instrument with で")
+	eq(f.call("その木箱をよく調べてみよう！"), "EXAMINE target=box", "free: skips unknown words")
+	eq(f.call("箱を見た"), "LOOK target=box", "free: past form")
+	eq(f.call("部屋へ行ってみる"), "MOVE target=room", "free: 行ってみる")
+	eq(f.call("かぎを使ってみます"), "USE target=key", "free: ます")
+	eq(f.call("こんにちは"), "reply:unknown_word", "free: nothing known")
+	eq(f.call("はこ"), "reply:no_verb", "free: noun only")
+	eq(f.call("箱 しらべる"), "EXAMINE target=box", "free: spaced input still works")
+
+
 # ---------------------------------------------------------------- 段階1のシナリオ
 
 var core: AdvCore
@@ -568,7 +847,7 @@ func _test_stage1_scenario() -> void:
 	core.setup({"seed": 1, "verbs": ["GIVE", "THINK"]})
 	core.add_asset_roots(["res://tests/stage1/assets"])
 	core.use_adapter(AdvJsonAdapter.new())
-	eq(core.load_scenario(["res://tests/stage1/scenario/stage1.scenario.json"]), OK, "load scenario")
+	eq(core.load_scenario(["res://tests/stage1/scenario/stage1/_scenario.scenario.json", "res://tests/stage1/scenario/stage1/chapter1.scenario.json"]), OK, "load scenario")
 	var all := core.validate()
 	var errors := all.filter(func(d): return d["severity"] != "info")
 	eq(errors.size(), 0, "validate has no errors or warnings: %s" % str(errors))
@@ -700,7 +979,7 @@ func _test_english() -> void:
 	core = AdvCore.new()
 	core.setup({"seed": 1, "lang": "en", "verbs": ["GIVE"]})
 	core.use_adapter(AdvJsonAdapter.new())
-	core.load_scenario(["res://tests/stage1/scenario/stage1.scenario.json"])
+	core.load_scenario(["res://tests/stage1/scenario/stage1/_scenario.scenario.json", "res://tests/stage1/scenario/stage1/chapter1.scenario.json"])
 	core.start()
 	var r := AdvParsers.parse("en", "Open the door", core)
 	check(r.has("intent") and r["intent"]["verb"] == "OPEN" and r["intent"]["slots"]["target"]["id"] == "door", "en: open the door")
@@ -815,6 +1094,31 @@ func _test_ink_random() -> void:
 	check(s.errors.is_empty(), "ink random no errors: %s" % str(s.errors))
 
 
+## LIST が本家（inklecate -p、tests/ink/lists.expected.txt）と同じになるか。セーブと Core との受け渡しも。
+func _test_ink_lists() -> void:
+	var s := AdvInkStory.new()
+	s.load_json(FileAccess.get_file_as_string("res://tests/ink/lists.ink.json"))
+	var out := PackedStringArray()
+	for l in s.continue_maximally():
+		out.append(l["text"])
+	var want := FileAccess.get_file_as_string("res://tests/ink/lists.expected.txt").replace("\r", "").strip_edges()
+	var got := "\n".join(out).strip_edges()
+	check(got == want, "ink LIST matches inklecate -p:\n%s" % got)
+	check(s.errors.is_empty(), "ink LIST no errors: %s" % str(s.errors))
+	# セーブ：空のリストの元の名前も残る
+	var st := s.save_state()
+	var s2 := AdvInkStory.new()
+	s2.load_json(FileAccess.get_file_as_string("res://tests/ink/lists.ink.json"))
+	s2.load_state(JSON.parse_string(JSON.stringify(st)))
+	eq(str(s2.variable("inv")), "red, green, yellow", "ink LIST save/load")
+	check(s2.variable("empty_colors") is AdvInkList and s2.variable("empty_colors").origin_names() == ["colors"], "ink LIST keeps origins of an empty list")
+	# Core の状態から戻す（文字列）
+	s2.set_global("inv", "blue, red")
+	eq(str(s2.variable("inv")), "red, blue", "ink LIST from a Core string")
+	s2.set_global("empty_colors", "")
+	eq(s2.variable("empty_colors").origin_names(), ["colors"], "ink LIST from an empty string keeps origins")
+
+
 ## inklecate -p の出力（tests/ink/conformance.expected.txt）と同じになるか。
 func _test_ink_conformance() -> void:
 	var s := AdvInkStory.new()
@@ -898,7 +1202,7 @@ func _test_ink_adapter() -> void:
 	c4.setup({"seed": 1})
 	c4.add_asset_roots(["res://tests/stage1/assets"])
 	c4.use_adapter(AdvJsonAdapter.new())
-	c4.load_scenario(["res://tests/stage1/scenario/stage1.scenario.json", "res://tests/stage1/scenario/stage1_talk.ink.json"])
+	c4.load_scenario(["res://tests/stage1/scenario/stage1/_scenario.scenario.json", "res://tests/stage1/scenario/stage1/chapter1.scenario.json", "res://tests/stage1/scenario/stage1_talk.ink.json"])
 	var e4 := c4.validate().filter(func(d): return d["severity"] != "info")
 	eq(e4.size(), 0, "stage1 + ink: validate %s" % str(e4))
 	c4.start("room")
@@ -928,7 +1232,7 @@ func _test_ink_adapter() -> void:
 	c3.use_adapter(AdvJsonAdapter.new())
 	c3.load_scenario(["res://tests/ink/bad.scenario.json", "res://tests/ink/list.ink.json"])
 	var codes := _codes(c3.validate())
-	check("INK_MISSING_KNOT" in codes and "INK_LIST" in codes, "ink validate codes: %s" % str(codes))
+	check("INK_MISSING_KNOT" in codes and not "INK_LIST" in codes, "ink validate codes: %s" % str(codes))
 
 
 # ---------------------------------------------------------------- エディタの編集フォーム
@@ -967,7 +1271,7 @@ func _test_editor_form() -> void:
 	for it in f2.get_root().get_children():
 		if it.get_text(0) == "template":
 			row = it
-	check(row != null and row.get_cell_mode(1) == TreeItem.CELL_MODE_RANGE and row.get_text(1) == "zzz,a,b", "form: suggestions as a dropdown keeping the current value")
+	check(row != null and row.get_cell_mode(1) == TreeItem.CELL_MODE_RANGE and row.get_text(1) == "zzz,a,b,（手で入力…）", "form: suggestions as a dropdown keeping the current value, with manual entry")
 	f2.free()
 	# 継承した値
 	var f3 := AdvSchemaForm.new()

@@ -1,0 +1,19 @@
+{
+  "scenario_version": 1,
+  "start": "hall",
+  "items": {
+    "key": {"name": "かぎ", "names": ["鍵", "カギ"]}
+  },
+  "scenes": {
+    "hall": {
+      "enter": "ひろま。",
+      "objects": {
+        "old_door": {"label": "ふるいドア", "names": ["ドア", "古いドア", "とびら"]},
+        "new_door": {"label": "あたらしいドア", "names": ["ドア", "新しいドア"]},
+        "box": {"label": "はこ", "names": ["箱", "木箱"]}
+      },
+      "exits": {"room": {"label": "へや", "names": ["部屋"]}}
+    },
+    "room": {"enter": "へや。"}
+  }
+}

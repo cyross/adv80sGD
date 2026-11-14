@@ -256,6 +256,27 @@ func _offer_setup() -> void:
 		_kind.select(KIND_SETUP)
 
 
+## シナリオエディタでシーンを開く（デバッグ実行中のゲームの「エディタで開く」）。開けたら true。
+## ゲームのコンソールの notice save で書かれた設定を取り込む。
+func import_game_settings() -> Dictionary:
+	_ensure_ui()
+	return _scenario_view.import_game_settings()
+
+
+## ゲームの「ひな形に」で書かれたひな形を取り込む（シナリオエディタの import_game_presets）。
+func import_game_presets() -> Array:
+	_ensure_ui()
+	return _scenario_view.import_game_presets()
+
+
+func open_scenario_scene(id: String, location: Dictionary = {}) -> bool:
+	_ensure_ui()
+	if _kind.selected != KIND_SCENARIO:
+		_kind.select(KIND_SCENARIO)
+		_refresh_files()
+	return _scenario_view.open_location(id, location)
+
+
 ## 画面に切り替えたとき。保存していない変更がなければ、ファイルの一覧と中身を読み直す。
 func on_shown() -> void:
 	_ensure_ui()

@@ -1,7 +1,7 @@
 class_name AdvMessageLog
 extends RefCounted
 ## メッセージログ（第9章）。表示した文章と、プレイヤーの入力を記録する。セーブデータに含める。
-## 記録の形：{kind: "text" | "input", name?, body, id?, voice?}
+## 記録の形：{kind: "text" | "input" | "notice", name?, body, id?, voice?}
 
 var entries: Array = []
 var max_entries: int = 500
@@ -24,6 +24,11 @@ func append_text(body: String) -> void:
 		entries.back()["body"] = String(entries.back()["body"]) + body
 	else:
 		add_text(body)
+
+
+## お知らせを記録する（ログの画面では印と色で見分ける）。
+func add_notice(text: String) -> void:
+	_add({"kind": "notice", "body": text})
 
 
 func add_input(text: String) -> void:

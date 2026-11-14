@@ -4,7 +4,8 @@ extends RefCounted
 
 ## 状態を変えるイベント（Core が適用する）。
 const STATE_TYPES := ["state.set", "item.add", "item.remove", "scene.goto", "state.mark",
-	"notebook.add", "objective.set", "hint.set", "flow.mark", "verbs.update", "hotspots.update", "input.mode"]
+	"notebook.add", "objective.set", "hint.set", "flow.mark", "verbs.update", "hotspots.update", "input.mode",
+	"scene.call", "scene.return"]
 
 
 static func make(type: String, args: Dictionary = {}, wait: Variant = null) -> Dictionary:
@@ -40,7 +41,7 @@ static func default_wait(ev: Dictionary) -> Variant:
 			return "end"
 		"video.play":
 			return "none" if bool(args.get("loop", false)) else "end"
-		"effect.play", "scene.goto", "group", "template.switch", "layout.set":
+		"effect.play", "scene.goto", "scene.call", "scene.return", "group", "template.switch", "layout.set", "credits.roll":
 			return "end"
 		"choice.show", "input.request", "save.request":
 			return "input"

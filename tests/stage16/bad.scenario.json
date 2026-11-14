@@ -1,0 +1,15 @@
+{
+  "scenario_version": 1,
+  "start": "a",
+  "aliases": {"x": "[alias=y]", "y": "[alias=x]", "z": "[alias=nothing]"},
+  "scenes": {
+    "a": {"enter": [
+      "[alias=missing]",
+      "[if=1 == 1]ひらいたまま",
+      {"call_scene": "b", "args": {"zzz": 1}},
+      {"return": 1}
+    ]},
+    "b": {"enter": "b"},
+    "e": {"kind": "ending", "ending": "bad_end", "enter": "おわり"}
+  }
+}

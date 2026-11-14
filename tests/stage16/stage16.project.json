@@ -1,0 +1,21 @@
+{
+  "project_version": 1,
+  "template": "pc98_classic",
+  "templates": ["pc98_classic"],
+  "title": "だんかい16 テスト",
+  "scenarios": ["res://tests/stage16/stage16.scenario.json"],
+  "asset_roots": ["res://tests/stage1/assets"],
+  "entry": "hall",
+  "title_screen": "title",
+  "opening": "op",
+  "endings": [
+    {"id": "good", "label": "かいものの おわり", "hint": "みせで かいものを する"},
+    {"id": "bad", "label": "なにも しない", "hint": "まだ ないしょ"}
+  ],
+  "system_scenes": {
+    "save": "sys_save",
+    "load": "sys_save",
+    "settings": "res://tests/stage16/settings_screen.tscn"
+  },
+  "save": {"dir": "user://test16_saves", "slots": 3}
+}

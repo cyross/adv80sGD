@@ -38,7 +38,8 @@
           "description": "Command methods. select, parser, icon, click, verb_click (pick a verb, then click a target), verb_cursor (cycle the cursor verb, then click), context (verb chosen from the target)"
         },
         "parser_profile": {
-          "type": "string"
+          "type": "string",
+          "description": "How typed commands are read. ja (Japanese, default), en (English), free (free sentences), or a parser script path"
         },
         "command_columns": {
           "type": "integer",
@@ -119,6 +120,844 @@
     "entry": {
       "type": "string",
       "description": "Entry scene (empty = scenario start)"
+    },
+    "title_screen": {
+      "type": "string",
+      "description": "Title screen (6.9): empty = start without a title, \"template\" = template title screen, otherwise a title scene ID"
+    },
+    "title_image": {
+      "type": "string",
+      "description": "Background image ID of the template title screen"
+    },
+    "title_bgm": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "fade": {
+              "type": "number"
+            },
+            "loop": {
+              "type": "boolean"
+            },
+            "volume": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ]
+        }
+      ],
+      "description": "BGM of the template title screen"
+    },
+    "title_bgm_fade": {
+      "type": "number",
+      "description": "Fade seconds when the title BGM stops on new game (default 0.5)"
+    },
+    "title_transition": {
+      "description": "Transition when the template title screen appears and leaves"
+    },
+    "opening": {
+      "type": "string",
+      "description": "Opening scene played first at startup (kind: opening)"
+    },
+    "opening_replay": {
+      "anyOf": [
+        {
+          "enum": [
+            "seen",
+            "always",
+            "never",
+            "any_ending",
+            "all_endings"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "endings": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "seen": {
+              "type": "boolean"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "description": "When the opening can be replayed: seen (default), always, never, any_ending, all_endings, {endings, seen, when}"
+    },
+    "notices": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Use automatic notices (default true; false stops all)"
+        },
+        "item_add": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "Icon image asset ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "Also add to the message log"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "Position of this notice only"
+                }
+              }
+            }
+          ],
+          "description": "On item.add ({name}, {count})"
+        },
+        "item_remove": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "Icon image asset ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "Also add to the message log"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "Position of this notice only"
+                }
+              }
+            }
+          ],
+          "description": "On item.remove ({name}, {count})"
+        },
+        "notebook_add": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "Icon image asset ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "Also add to the message log"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "Position of this notice only"
+                }
+              }
+            }
+          ],
+          "description": "On notebook.add ({title})"
+        },
+        "objective_set": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "Icon image asset ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "Also add to the message log"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "Position of this notice only"
+                }
+              }
+            }
+          ],
+          "description": "On objective.set ({text}; not when cleared)"
+        },
+        "hint_set": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "Icon image asset ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "Also add to the message log"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "Position of this notice only"
+                }
+              }
+            }
+          ],
+          "description": "On hint.set ({topic})"
+        },
+        "autosave": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Text"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "Icon image asset ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "Also add to the message log"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "Position of this notice only"
+                }
+              }
+            }
+          ],
+          "description": "On autosave"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Automatic notices; shown only for entries with text. Scenarios can also use notice.show"
+    },
+    "notice_style": {
+      "$ref": "#/definitions/notice_style"
+    },
+    "debug": {
+      "type": "object",
+      "properties": {
+        "auto_reload": {
+          "type": "boolean",
+          "description": "Reload automatically when files are saved during a debug run (default false)"
+        },
+        "reload_reenter": {
+          "type": "boolean",
+          "description": "Re-enter the current scene after reloading (default false; Shift+F8 always does)"
+        },
+        "notice_files": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Files named in the reload notice (default 2; 0 = none)"
+        },
+        "watch_interval": {
+          "type": "number",
+          "minimum": 0.25,
+          "description": "Seconds between file checks (default 1)"
+        },
+        "pre_set_notice": {
+          "type": "boolean",
+          "description": "Show the values set first by \"set first\" in a notice (default true)"
+        },
+        "pre_set_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Seconds the \"set first\" notice stays (0 = until clicked; default = like other notices)"
+        },
+        "pre_set_position": {
+          "enum": [
+            "top_right",
+            "top_left",
+            "bottom_right",
+            "bottom_left",
+            "top",
+            "bottom",
+            "center"
+          ],
+          "description": "Position of the \"set first\" notice (default = like other notices)"
+        },
+        "run_group_order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Order of preset groups in the run list (unlisted groups follow by name)"
+        },
+        "notices": {
+          "type": "object",
+          "properties": {
+            "run_from": {
+              "type": "boolean",
+              "description": "\"Run from scene\" (default true)"
+            },
+            "pre_set": {
+              "type": "boolean",
+              "description": "\"Set first\" (default true; pre_set_notice also applies)"
+            },
+            "reload": {
+              "type": "boolean",
+              "description": "\"Reloaded\" (default true)"
+            },
+            "editor": {
+              "type": "boolean",
+              "description": "Open-in-editor notices (default true)"
+            },
+            "preset": {
+              "type": "boolean",
+              "description": "Preset notices (default true)"
+            },
+            "auto_reload": {
+              "type": "boolean",
+              "description": "Auto-reload on/off notice (default true)"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Show each kind of debug notice (false = hide)"
+        },
+        "notice_style": {
+          "type": "object",
+          "properties": {
+            "fg": {
+              "type": "integer",
+              "description": "Text color (palette index)"
+            },
+            "bg": {
+              "type": "integer",
+              "description": "Background color"
+            },
+            "border": {
+              "type": "integer",
+              "description": "Border color (-1 = none)"
+            },
+            "se": {
+              "type": "string",
+              "description": "Sound effect (asset ID; \"\" = none)"
+            },
+            "icon": {
+              "type": "string",
+              "description": "Icon (asset ID)"
+            },
+            "position": {
+              "enum": [
+                "top_right",
+                "top_left",
+                "bottom_right",
+                "bottom_left",
+                "top",
+                "bottom",
+                "center"
+              ],
+              "description": "Position"
+            },
+            "seconds": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Seconds shown (0 = until clicked)"
+            },
+            "layer": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "screen",
+                "window"
+              ],
+              "description": "Where to show it (auto: outside the game screen when the visible width is under 320; screen: inside the game screen; window: outside the game screen, below the debug buttons)"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Look of debug notices (only the keys written override the notice style; pre_set_* win for the \"set first\" notice)"
+        },
+        "pre_set_style": {
+          "type": "object",
+          "properties": {
+            "fg": {
+              "type": "integer",
+              "description": "Text color (palette index)"
+            },
+            "bg": {
+              "type": "integer",
+              "description": "Background color"
+            },
+            "border": {
+              "type": "integer",
+              "description": "Border color (-1 = none)"
+            },
+            "se": {
+              "type": "string",
+              "description": "Sound effect (asset ID; \"\" = none)"
+            },
+            "icon": {
+              "type": "string",
+              "description": "Icon (asset ID)"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Look of the \"set first\" notice (only the keys written override the notice style)"
+        },
+        "pre_set_log": {
+          "type": "boolean",
+          "description": "Write the values set first by \"set first\" to the message log (default true)"
+        },
+        "run_presets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "vars": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "Flags and variables (name -> value)"
+              },
+              "items": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "description": "Items (ID -> count; 0 = not held)"
+              }
+            },
+            "additionalProperties": false
+          },
+          "description": "Presets for \"run from this scene\" (name -> {vars, items}); editable with the scenario editor's Presets... button"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Debug run settings (unused in release builds)"
+    },
+    "title_labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Labels of the template title menu (item -> text)"
+    },
+    "extras": {
+      "type": "object",
+      "properties": {
+        "show": {
+          "type": "boolean",
+          "description": "Show it (default true)"
+        },
+        "when": {
+          "$ref": "#/definitions/condition"
+        },
+        "title": {
+          "type": "string"
+        },
+        "gallery_label": {
+          "type": "string"
+        },
+        "music_label": {
+          "type": "string"
+        },
+        "endings_label": {
+          "type": "string"
+        },
+        "opening_label": {
+          "type": "string"
+        },
+        "menu": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "gallery",
+              "music",
+              "endings",
+              "opening"
+            ]
+          },
+          "description": "Items and their order (default [\"gallery\", \"music\"]); endings = ending list, opening = replay the opening"
+        },
+        "thumbnails": {
+          "type": "boolean",
+          "description": "Show thumbnails in the gallery (default true)"
+        },
+        "music_desc": {
+          "type": "boolean",
+          "description": "Show track descriptions (desc) in the music room (default true)"
+        },
+        "bonus": {
+          "type": "boolean",
+          "description": "Use bonus entries (default true)"
+        },
+        "notify": {
+          "type": "boolean",
+          "description": "Show a notice when a bonus entry unlocks (default true)"
+        },
+        "notify_text": {
+          "type": "string",
+          "description": "Notice text"
+        },
+        "notify_icon": {
+          "type": "string",
+          "description": "Notice icon (asset ID)"
+        },
+        "title_count": {
+          "type": "boolean",
+          "description": "Show the opened count on the template title's extras item (default false)"
+        },
+        "music_mode": {
+          "enum": [
+            "one",
+            "next",
+            "all"
+          ],
+          "description": "Initial music room play mode (one: repeat one, next: play on, all: repeat all)"
+        },
+        "gallery": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "when": {
+                "$ref": "#/definitions/condition"
+              },
+              "images": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Images to page through (unlocks when any was seen)"
+              },
+              "thumb": {
+                "type": "string",
+                "description": "Thumbnail image (default: the first seen image)"
+              },
+              "bonus": {
+                "type": "boolean",
+                "description": "Bonus entry (not counted; `when` defaults to sys.gallery_all / sys.music_all; hidden until unlocked)"
+              },
+              "hidden": {
+                "type": "boolean",
+                "description": "Hide the bonus entry until unlocked (default true; false shows ???)"
+              }
+            },
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "required": [
+                  "id"
+                ]
+              },
+              {
+                "required": [
+                  "images"
+                ]
+              }
+            ]
+          }
+        },
+        "music": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "when": {
+                "$ref": "#/definitions/condition"
+              },
+              "desc": {
+                "type": "string",
+                "description": "Description shown while playing (text markup allowed)"
+              },
+              "bonus": {
+                "type": "boolean",
+                "description": "Bonus entry (not counted; `when` defaults to sys.gallery_all / sys.music_all; hidden until unlocked)"
+              },
+              "hidden": {
+                "type": "boolean",
+                "description": "Hide the bonus entry until unlocked (default true; false shows ???)"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "Extras (gallery and music). Opens from the title when `when` (default sys.all_endings) holds; entries unlock when seen/heard unless `when` is given"
+    },
+    "title_variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "when": {
+            "$ref": "#/definitions/condition"
+          },
+          "image": {
+            "type": "string"
+          },
+          "bgm": {},
+          "transition": {},
+          "menu": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Template title overrides (matching entries applied in order; sys.endings_seen, sys.ending_<ID>, sys.all_endings available)"
+    },
+    "fin": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/definitions/fin"
+        }
+      ],
+      "description": "Defaults of the FIN screen (false hides it)"
+    },
+    "opening_hint": {
+      "type": "string",
+      "description": "Hint shown on a skippable opening"
+    },
+    "title_menu": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "new",
+          "continue",
+          "chapters",
+          "endings",
+          "opening",
+          "extras",
+          "settings",
+          "quit"
+        ]
+      },
+      "description": "Menu of the template title screen (in order)"
+    },
+    "endings": {
+      "type": "array",
+      "description": "Endings (in display order). label is shown once seen, hint before",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "hint": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ]
+      }
+    },
+    "system_scenes": {
+      "type": "object",
+      "properties": {
+        "save": {
+          "type": "string"
+        },
+        "load": {
+          "type": "string"
+        },
+        "settings": {
+          "type": "string"
+        },
+        "log": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "System screen replacements (screen -> .tscn path or system scene ID)"
+    },
+    "subscene_max_depth": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Subscene call depth limit (default 10; 0 = unlimited)"
+    },
+    "aliases": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "params": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "text"
+            ]
+          }
+        ]
+      },
+      "description": "Aliases (5.4). [alias=name args...] in text is replaced. Value is text or {params, text} ({arg.param} inside text)"
     },
     "variables": {
       "type": "object",
@@ -784,6 +1623,257 @@
           "additionalProperties": false
         }
       ]
+    },
+    "fin": {
+      "type": "object",
+      "properties": {
+        "show": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "pal": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "fill": {
+          "type": "integer"
+        },
+        "image": {
+          "type": "string"
+        },
+        "text_y": {
+          "type": "number"
+        },
+        "transition": {
+          "description": "Transition in and out"
+        },
+        "advance": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(click|key|key:.+|trigger:.+)$"
+              },
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ]
+          },
+          "description": "Close on: click, key, key:name, seconds, trigger:name (default [\"click\", \"key\"])"
+        },
+        "min_time": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Seconds before it can be closed (default 1)"
+        },
+        "then": {
+          "type": "string",
+          "description": "After closing: title (default), new, quit, stay, or a scene ID"
+        },
+        "reset": {
+          "type": "boolean",
+          "description": "Reset to the initial state before going to the then scene"
+        },
+        "items": {
+          "type": "array",
+          "description": "Rows and images (same as credits items), centered instead of text"
+        },
+        "lines": {
+          "type": "array",
+          "description": "Lines (array of strings)"
+        },
+        "margin": {
+          "type": "number"
+        },
+        "align": {
+          "type": "string"
+        },
+        "line_gap": {
+          "type": "integer"
+        },
+        "save_prompt": {
+          "type": "boolean",
+          "description": "Ask to save clear data after closing (default false)"
+        },
+        "save_prompt_title": {
+          "type": "string"
+        },
+        "save_prompt_text": {
+          "type": "string"
+        },
+        "save_resume": {
+          "type": "string",
+          "description": "Scene to start when clear data is loaded (default: entry)"
+        },
+        "save_carry": {
+          "anyOf": [
+            {
+              "enum": [
+                "all",
+                "none"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "vars": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "items": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "visited": {
+                  "type": "boolean"
+                },
+                "talked": {
+                  "type": "boolean"
+                },
+                "notebook": {
+                  "type": "boolean"
+                },
+                "chosen": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "description": "What clear data carries over: all (default), none, or {vars, items, visited, talked, notebook, chosen} (unlisted parts are not carried)"
+        }
+      },
+      "additionalProperties": false,
+      "description": "FIN screen (6.9)"
+    },
+    "notice_style": {
+      "type": "object",
+      "properties": {
+        "position": {
+          "enum": [
+            "top_right",
+            "top_left",
+            "bottom_right",
+            "bottom_left",
+            "top",
+            "bottom",
+            "center"
+          ],
+          "description": "Position (default top_right)"
+        },
+        "fg": {
+          "type": "integer",
+          "description": "Text color (palette index, default 7)"
+        },
+        "bg": {
+          "type": "integer",
+          "description": "Background color (default 0)"
+        },
+        "border": {
+          "type": "integer",
+          "description": "Border color (default 7; -1 = none)"
+        },
+        "se": {
+          "type": "string",
+          "description": "Sound effect when shown (asset ID)"
+        },
+        "seconds": {
+          "type": "number",
+          "description": "Seconds shown (default 2.5; 0 = until clicked)"
+        },
+        "click_close": {
+          "type": "boolean",
+          "description": "Click to dismiss (default true)"
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Max notices at once (default 5; oldest removed; 0 = no limit)"
+        },
+        "overflow": {
+          "enum": [
+            "instant",
+            "fade"
+          ],
+          "description": "How notices over the limit disappear (instant (default) or fade)"
+        },
+        "log_labels": {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "notice": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Labels of the log screen filter"
+        },
+        "log_filter": {
+          "enum": [
+            "all",
+            "text",
+            "notice"
+          ],
+          "description": "What the log screen shows first"
+        },
+        "log_mark": {
+          "type": "string",
+          "description": "Mark before notices in the message log (default ◆)"
+        },
+        "log_color": {
+          "type": "integer",
+          "description": "Notice color in the message log (palette index)"
+        },
+        "margin": {
+          "type": "number",
+          "description": "Margin from the screen edge (default 12)"
+        },
+        "icon_size": {
+          "type": "number",
+          "description": "Icon size (default 24)"
+        },
+        "log": {
+          "type": "boolean",
+          "description": "Also add notices to the message log (default false)"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Notice appearance"
     }
   }
 }

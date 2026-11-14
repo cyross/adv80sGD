@@ -38,7 +38,8 @@
           "description": "使うコマンド方式。select=コマンド選択、parser=コマンド入力、icon=アイコン、click=絵のクリック、verb_click=動詞を選んで対象をクリック、verb_cursor=カーソルの動詞を切り替えてクリック、context=対象に合わせて自動で決める"
         },
         "parser_profile": {
-          "type": "string"
+          "type": "string",
+          "description": "コマンド入力の読み方。ja=日本式（標準）、en=英語式、free=自由文、またはパーサーのスクリプトのパス"
         },
         "command_columns": {
           "type": "integer",
@@ -119,6 +120,844 @@
     "entry": {
       "type": "string",
       "description": "開始シーン（空ならシナリオの start）"
+    },
+    "title_screen": {
+      "type": "string",
+      "description": "タイトル画面（6.9）。空ならタイトルなしで始める、\"template\" ならテンプレートのタイトル画面、それ以外はタイトルのシーンID"
+    },
+    "title_image": {
+      "type": "string",
+      "description": "テンプレートのタイトル画面の背景の画像ID"
+    },
+    "title_bgm": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "fade": {
+              "type": "number"
+            },
+            "loop": {
+              "type": "boolean"
+            },
+            "volume": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ]
+        }
+      ],
+      "description": "テンプレートのタイトル画面の BGM"
+    },
+    "title_bgm_fade": {
+      "type": "number",
+      "description": "はじめからでタイトルの BGM を止めるフェードの秒数（既定 0.5）"
+    },
+    "title_transition": {
+      "description": "テンプレートのタイトル画面が出るとき・消えるときの切り替え演出"
+    },
+    "opening": {
+      "type": "string",
+      "description": "起動したときに最初に流すオープニングのシーンID（kind: opening）"
+    },
+    "opening_replay": {
+      "anyOf": [
+        {
+          "enum": [
+            "seen",
+            "always",
+            "never",
+            "any_ending",
+            "all_endings"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "endings": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "seen": {
+              "type": "boolean"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "description": "オープニングを見返せる条件：seen（見たことがあれば、既定）、always、never、any_ending、all_endings、{endings, seen, when}"
+    },
+    "notices": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "自動のお知らせを使うか（既定 true。false で全部止める）"
+        },
+        "item_add": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "文言"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "絵の素材ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "メッセージログにも残すか"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "このお知らせだけの位置"
+                }
+              }
+            }
+          ],
+          "description": "持ち物を手に入れたとき（{name}、{count}）"
+        },
+        "item_remove": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "文言"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "絵の素材ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "メッセージログにも残すか"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "このお知らせだけの位置"
+                }
+              }
+            }
+          ],
+          "description": "持ち物を手放したとき（{name}、{count}）"
+        },
+        "notebook_add": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "文言"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "絵の素材ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "メッセージログにも残すか"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "このお知らせだけの位置"
+                }
+              }
+            }
+          ],
+          "description": "手帳に書いたとき（{title}）"
+        },
+        "objective_set": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "文言"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "絵の素材ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "メッセージログにも残すか"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "このお知らせだけの位置"
+                }
+              }
+            }
+          ],
+          "description": "目的が変わったとき（{text}。目的を消したときは出さない）"
+        },
+        "hint_set": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "文言"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "絵の素材ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "メッセージログにも残すか"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "このお知らせだけの位置"
+                }
+              }
+            }
+          ],
+          "description": "ヒントが増えたとき（{topic}）"
+        },
+        "autosave": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "文言"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "絵の素材ID"
+                },
+                "log": {
+                  "type": "boolean",
+                  "description": "メッセージログにも残すか"
+                },
+                "position": {
+                  "enum": [
+                    "top_right",
+                    "top_left",
+                    "bottom_right",
+                    "bottom_left",
+                    "top",
+                    "bottom",
+                    "center"
+                  ],
+                  "description": "このお知らせだけの位置"
+                }
+              }
+            }
+          ],
+          "description": "オートセーブしたとき"
+        }
+      },
+      "additionalProperties": false,
+      "description": "自動のお知らせ。項目に文言を書いた場面だけ出す（書かなければ出さない）。シナリオからは notice.show でも出せる"
+    },
+    "notice_style": {
+      "$ref": "#/definitions/notice_style"
+    },
+    "debug": {
+      "type": "object",
+      "properties": {
+        "auto_reload": {
+          "type": "boolean",
+          "description": "デバッグ実行中、ファイルを保存したら自動で読み直すか（既定 false）"
+        },
+        "reload_reenter": {
+          "type": "boolean",
+          "description": "読み直したあと、いまのシーンに入り直すか（既定 false。Shift+F8 はいつも入り直す）"
+        },
+        "notice_files": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "読み直したときのお知らせに名前を出すファイルの数（既定 2。0 で名前を出さない）"
+        },
+        "watch_interval": {
+          "type": "number",
+          "minimum": 0.25,
+          "description": "ファイルを確かめる間隔（秒。既定 1）"
+        },
+        "pre_set_notice": {
+          "type": "boolean",
+          "description": "「設定を先に」で入った値をお知らせに出すか（既定 true）"
+        },
+        "pre_set_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "「設定を先に」のお知らせを出しておく秒数（0 でクリックするまで。書かなければほかのお知らせと同じ）"
+        },
+        "pre_set_position": {
+          "enum": [
+            "top_right",
+            "top_left",
+            "bottom_right",
+            "bottom_left",
+            "top",
+            "bottom",
+            "center"
+          ],
+          "description": "「設定を先に」のお知らせを出す位置（書かなければほかのお知らせと同じ）"
+        },
+        "run_group_order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "「実行：」の一覧での組の並び（書いていない組はそのあとに名前の順）。シナリオエディタの「組…」の ↑↓ で書ける"
+        },
+        "notices": {
+          "type": "object",
+          "properties": {
+            "run_from": {
+              "type": "boolean",
+              "description": "「シーンから実行」（既定 true）"
+            },
+            "pre_set": {
+              "type": "boolean",
+              "description": "「先に設定」（既定 true。pre_set_notice も見る）"
+            },
+            "reload": {
+              "type": "boolean",
+              "description": "「読み直しました」（既定 true）"
+            },
+            "editor": {
+              "type": "boolean",
+              "description": "「エディタで開きます」「エディタにつながっていません」（既定 true）"
+            },
+            "preset": {
+              "type": "boolean",
+              "description": "「ひな形にしました」など（既定 true）"
+            },
+            "auto_reload": {
+              "type": "boolean",
+              "description": "「保存したら読み直す：入／切」（既定 true）"
+            }
+          },
+          "additionalProperties": false,
+          "description": "デバッグのお知らせを種類ごとに出すか（false にした種類は出さない）"
+        },
+        "notice_style": {
+          "type": "object",
+          "properties": {
+            "fg": {
+              "type": "integer",
+              "description": "文字の色（パレットの番号）"
+            },
+            "bg": {
+              "type": "integer",
+              "description": "地の色"
+            },
+            "border": {
+              "type": "integer",
+              "description": "枠の色（-1 で枠なし）"
+            },
+            "se": {
+              "type": "string",
+              "description": "出すときの効果音（素材ID。\"\" で鳴らさない）"
+            },
+            "icon": {
+              "type": "string",
+              "description": "頭に付ける絵（素材ID）"
+            },
+            "position": {
+              "enum": [
+                "top_right",
+                "top_left",
+                "bottom_right",
+                "bottom_left",
+                "top",
+                "bottom",
+                "center"
+              ],
+              "description": "出す位置"
+            },
+            "seconds": {
+              "type": "number",
+              "minimum": 0,
+              "description": "出しておく秒数（0 でクリックするまで）"
+            },
+            "layer": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "screen",
+                "window"
+              ],
+              "description": "どこに出すか（auto：見える範囲の幅が 320 より狭ければゲームの画面の外、screen：ゲームの画面の中、window：ゲームの画面の外（デバッグのボタンの下））"
+            }
+          },
+          "additionalProperties": false,
+          "description": "デバッグのお知らせ（シーンから実行・先に設定・読み直し・エディタで開く・ひな形にしました など）の見た目。書いたものだけ、ほかのお知らせの見た目から変える。「先に設定」は pre_set_style・pre_set_position・pre_set_seconds が先"
+        },
+        "pre_set_style": {
+          "type": "object",
+          "properties": {
+            "fg": {
+              "type": "integer",
+              "description": "文字の色（パレットの番号）"
+            },
+            "bg": {
+              "type": "integer",
+              "description": "地の色"
+            },
+            "border": {
+              "type": "integer",
+              "description": "枠の色（-1 で枠なし）"
+            },
+            "se": {
+              "type": "string",
+              "description": "出すときの効果音（素材ID。\"\" で鳴らさない）"
+            },
+            "icon": {
+              "type": "string",
+              "description": "頭に付ける絵（素材ID）"
+            }
+          },
+          "additionalProperties": false,
+          "description": "「設定を先に」のお知らせの見た目（書いたものだけ、ほかのお知らせの見た目から変える）"
+        },
+        "pre_set_log": {
+          "type": "boolean",
+          "description": "「設定を先に」で入った値をメッセージログに出すか（既定 true）"
+        },
+        "run_presets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "vars": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "フラグと変数（名前 → 値）"
+              },
+              "items": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "description": "持ち物（ID → 個数。0 なら持たない）"
+              }
+            },
+            "additionalProperties": false
+          },
+          "description": "「このシーンから実行」のひな形（名前 → {vars, items}）。シナリオエディタの「ひな形…」で書ける"
+        }
+      },
+      "additionalProperties": false,
+      "description": "デバッグ実行の設定（配布するゲームでは使わない）"
+    },
+    "title_labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "テンプレートのタイトル画面のメニューの文言（項目 → 文）"
+    },
+    "extras": {
+      "type": "object",
+      "properties": {
+        "show": {
+          "type": "boolean",
+          "description": "出すか（既定 true）"
+        },
+        "when": {
+          "$ref": "#/definitions/condition"
+        },
+        "title": {
+          "type": "string"
+        },
+        "gallery_label": {
+          "type": "string"
+        },
+        "music_label": {
+          "type": "string"
+        },
+        "endings_label": {
+          "type": "string"
+        },
+        "opening_label": {
+          "type": "string"
+        },
+        "menu": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "gallery",
+              "music",
+              "endings",
+              "opening"
+            ]
+          },
+          "description": "並べる項目と順番（既定 [\"gallery\", \"music\"]）。endings はエンディング一覧、opening はオープニングを見返す"
+        },
+        "thumbnails": {
+          "type": "boolean",
+          "description": "ギャラリーに見本の画像を出すか（既定 true）"
+        },
+        "music_desc": {
+          "type": "boolean",
+          "description": "音楽で曲の説明（desc）を出すか（既定 true）"
+        },
+        "bonus": {
+          "type": "boolean",
+          "description": "特典（bonus: true の項目）を使うか（既定 true）"
+        },
+        "notify": {
+          "type": "boolean",
+          "description": "特典が開いたとき、お知らせを出すか（既定 true）"
+        },
+        "notify_text": {
+          "type": "string",
+          "description": "お知らせの文言（既定「おまけが ふえました」）"
+        },
+        "notify_icon": {
+          "type": "string",
+          "description": "お知らせの絵（素材ID）"
+        },
+        "title_count": {
+          "type": "boolean",
+          "description": "テンプレートのタイトル画面の「おまけ」に開いた数を出すか（既定 false）"
+        },
+        "music_mode": {
+          "enum": [
+            "one",
+            "next",
+            "all"
+          ],
+          "description": "音楽の鳴らし方の初め（one：1曲くりかえし、next：つづけて、all：ぜんぶくりかえし）"
+        },
+        "gallery": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "when": {
+                "$ref": "#/definitions/condition"
+              },
+              "images": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "めくれる画像の並び（どれかを見ていれば開く）"
+              },
+              "thumb": {
+                "type": "string",
+                "description": "見本の画像（既定は見た最初の画像）"
+              },
+              "bonus": {
+                "type": "boolean",
+                "description": "特典の項目（数えない。when が既定 sys.gallery_all か sys.music_all、開くまで出さない）"
+              },
+              "hidden": {
+                "type": "boolean",
+                "description": "特典を開くまで出さないか（既定 true。false なら「？？？」で出す）"
+              }
+            },
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "required": [
+                  "id"
+                ]
+              },
+              {
+                "required": [
+                  "images"
+                ]
+              }
+            ]
+          }
+        },
+        "music": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "when": {
+                "$ref": "#/definitions/condition"
+              },
+              "desc": {
+                "type": "string",
+                "description": "曲の説明（鳴らしている間に出す。文字の書き方が使える）"
+              },
+              "bonus": {
+                "type": "boolean",
+                "description": "特典の項目（数えない。when が既定 sys.gallery_all か sys.music_all、開くまで出さない）"
+              },
+              "hidden": {
+                "type": "boolean",
+                "description": "特典を開くまで出さないか（既定 true。false なら「？？？」で出す）"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "おまけ（ギャラリーと音楽）。when（既定 sys.all_endings）に合えばタイトルから開ける。項目は when がなければ、一度でも出した画像・鳴らした曲なら開く"
+    },
+    "title_variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "when": {
+            "$ref": "#/definitions/condition"
+          },
+          "image": {
+            "type": "string"
+          },
+          "bgm": {},
+          "transition": {},
+          "menu": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "テンプレートのタイトル画面の背景・BGM・演出の差し替え（when に合うものを順に重ねる。sys.endings_seen、sys.ending_<ID>、sys.all_endings が使える）"
+    },
+    "fin": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/definitions/fin"
+        }
+      ],
+      "description": "「おわり」の画面の既定（false で出さない）"
+    },
+    "opening_hint": {
+      "type": "string",
+      "description": "2回目からのオープニングに出す案内（既定「Esc：とばす　Ctrl：はやおくり」）"
+    },
+    "title_menu": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "new",
+          "continue",
+          "chapters",
+          "endings",
+          "opening",
+          "extras",
+          "settings",
+          "quit"
+        ]
+      },
+      "description": "テンプレートのタイトル画面のメニュー（並べる順）"
+    },
+    "endings": {
+      "type": "array",
+      "description": "エンディングの一覧（並べる順）。label は見たあとに出す名前、hint は見る前に出すヒント",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "hint": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ]
+      }
+    },
+    "system_scenes": {
+      "type": "object",
+      "properties": {
+        "save": {
+          "type": "string"
+        },
+        "load": {
+          "type": "string"
+        },
+        "settings": {
+          "type": "string"
+        },
+        "log": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "システム画面の差し替え（画面 → .tscn のパスかシステムシーンのID）"
+    },
+    "subscene_max_depth": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "サブシーンの呼び出しの深さの上限（既定 10。0 で無制限）"
+    },
+    "aliases": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "params": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "text"
+            ]
+          }
+        ]
+      },
+      "description": "エイリアス（5.4）。文中の [alias=名前 引数…] を置き換える。値は文か {params, text}（text の中で {arg.引数名} を使う）"
     },
     "variables": {
       "type": "object",
@@ -784,6 +1623,257 @@
           "additionalProperties": false
         }
       ]
+    },
+    "fin": {
+      "type": "object",
+      "properties": {
+        "show": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "pal": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "fill": {
+          "type": "integer"
+        },
+        "image": {
+          "type": "string"
+        },
+        "text_y": {
+          "type": "number"
+        },
+        "transition": {
+          "description": "出るとき・消えるときの切り替え演出"
+        },
+        "advance": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(click|key|key:.+|trigger:.+)$"
+              },
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ]
+          },
+          "description": "閉じる条件：click、key、key:キー名、秒数、trigger:名前（既定 [\"click\", \"key\"]）"
+        },
+        "min_time": {
+          "type": "number",
+          "minimum": 0,
+          "description": "閉じられるようになるまでの秒数（既定 1）"
+        },
+        "then": {
+          "type": "string",
+          "description": "閉じたあと：title（既定）、new、quit、stay、またはシーンID"
+        },
+        "reset": {
+          "type": "boolean",
+          "description": "then がシーンIDのとき、始める前の状態に戻してから移る"
+        },
+        "items": {
+          "type": "array",
+          "description": "複数の行と画像（スタッフロールの items と同じ）。書けば text の代わりに縦の真ん中に並べる"
+        },
+        "lines": {
+          "type": "array",
+          "description": "複数の行（文字列の配列）"
+        },
+        "margin": {
+          "type": "number"
+        },
+        "align": {
+          "type": "string"
+        },
+        "line_gap": {
+          "type": "integer"
+        },
+        "save_prompt": {
+          "type": "boolean",
+          "description": "閉じたあと、クリアデータをセーブするか聞く（既定 false）"
+        },
+        "save_prompt_title": {
+          "type": "string"
+        },
+        "save_prompt_text": {
+          "type": "string"
+        },
+        "save_resume": {
+          "type": "string",
+          "description": "クリアデータをロードしたときに始めるシーン（既定は開始シーン）"
+        },
+        "save_carry": {
+          "anyOf": [
+            {
+              "enum": [
+                "all",
+                "none"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "vars": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "items": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "visited": {
+                  "type": "boolean"
+                },
+                "talked": {
+                  "type": "boolean"
+                },
+                "notebook": {
+                  "type": "boolean"
+                },
+                "chosen": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "description": "クリアデータで引き継ぐもの：all（全部、既定）、none（何も引き継がない）、{vars, items, visited, talked, notebook, chosen}（書かなかったものは引き継がない）"
+        }
+      },
+      "additionalProperties": false,
+      "description": "「おわり」の画面（6.9）"
+    },
+    "notice_style": {
+      "type": "object",
+      "properties": {
+        "position": {
+          "enum": [
+            "top_right",
+            "top_left",
+            "bottom_right",
+            "bottom_left",
+            "top",
+            "bottom",
+            "center"
+          ],
+          "description": "位置（既定 top_right）"
+        },
+        "fg": {
+          "type": "integer",
+          "description": "文字の色（パレットの番号。既定 7）"
+        },
+        "bg": {
+          "type": "integer",
+          "description": "地の色（既定 0）"
+        },
+        "border": {
+          "type": "integer",
+          "description": "枠の色（既定 7。-1 で枠なし）"
+        },
+        "se": {
+          "type": "string",
+          "description": "出すときの効果音（素材ID）"
+        },
+        "seconds": {
+          "type": "number",
+          "description": "出しておく秒数（既定 2.5。0 なら時間では消えない）"
+        },
+        "click_close": {
+          "type": "boolean",
+          "description": "クリックで消せるか（既定 true）"
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "同時に出す数の上限（既定 5。超えたら古いものから消す。0 で上限なし）"
+        },
+        "overflow": {
+          "enum": [
+            "instant",
+            "fade"
+          ],
+          "description": "上限で消すときの消え方（instant：すぐ（既定）、fade：すっと）"
+        },
+        "log_labels": {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "notice": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "ログの画面の切り替えの文言（既定「ひょうじ：すべて」など）"
+        },
+        "log_filter": {
+          "enum": [
+            "all",
+            "text",
+            "notice"
+          ],
+          "description": "ログの画面を開いたときに出すもの（all：すべて、text：お知らせ以外、notice：お知らせだけ）"
+        },
+        "log_mark": {
+          "type": "string",
+          "description": "メッセージログでお知らせの前に付ける印（既定「◆ 」）"
+        },
+        "log_color": {
+          "type": "integer",
+          "description": "メッセージログでのお知らせの色（パレットの番号）"
+        },
+        "margin": {
+          "type": "number",
+          "description": "画面の端からの間（既定 12）"
+        },
+        "icon_size": {
+          "type": "number",
+          "description": "絵の大きさ（既定 24）"
+        },
+        "log": {
+          "type": "boolean",
+          "description": "メッセージログにも残すか（既定 false）"
+        }
+      },
+      "additionalProperties": false,
+      "description": "お知らせの見た目"
     }
   }
 }

@@ -11,10 +11,16 @@ extends Tree
 ## - 説明（description）はマウスを重ねると出る
 
 signal changed
+## 式の項目の「式…」を押したとき（式エディタで書いて、set_value_at で戻す）
+signal expr_requested(path: Array, value: String, mode: String)
+## ▶ を押した（kind は bgm・se・voice。id はいまの値）
+signal play_requested(kind: String, id: String)
 
 const BTN_ADD := 1
 const BTN_REMOVE := 2
 const BTN_SWITCH := 3
+const BTN_EXPR := 4
+const BTN_PLAY := 5
 
 var schema_root: Dictionary = {}
 var data: Variant = {}
@@ -23,11 +29,28 @@ var read_only: bool = false
 var inherited: Variant = null
 ## 文字列の項目の候補を返す関数 func(path: Array) -> Array。候補があれば、その項目は一覧から選ぶ形になる
 var suggest: Callable
+## 値の見本の絵を返す関数 func(path, value) -> Texture2D（なければ null）。画像の ID の項目の横に小さく出す
+var preview: Callable
+## 音の項目の種類を返す関数 func(path) -> String（bgm・se・voice。音でなければ ""）。音の項目には ▶ を付ける
+var audio_kind: Callable
+## 値を確かめる関数 func(path, value) -> String（問題がなければ ""）。問題があれば赤字にして、理由を項目の説明に出す
+var check: Callable
+const WARN_COLOR := Color(1.0, 0.45, 0.45)
+const PREVIEW_WIDTH := 48
+## 式の項目か（"condition"、"let"、式でなければ ""）を返す関数 func(path: Array, schema: Variant) -> String。
+## 式の項目には「式…」のボタンを出す
+var expr_mode: Callable
 
 var _expanded: Dictionary = {}      ## JSON Pointer → 開いているか
 var _key_dialog: ConfirmationDialog
 var _key_edit: LineEdit
 var _key_target: Array = []         ## 名前を聞いて足す先（オブジェクトのパス）
+var _val_dialog: ConfirmationDialog  ## 候補にない値を手で書く
+var _val_edit: LineEdit
+var _val_path: Array = []
+
+## 候補の一覧の最後の「手で入力…」
+const MANUAL := "\u0001manual"
 
 
 func _init() -> void:
@@ -50,6 +73,14 @@ func _init() -> void:
 	_key_dialog.register_text_enter(_key_edit)
 	_key_dialog.confirmed.connect(_on_key_confirmed)
 	add_child(_key_dialog)
+	_val_dialog = ConfirmationDialog.new()
+	_val_dialog.title = "値を手で入力"
+	_val_edit = LineEdit.new()
+	_val_edit.custom_minimum_size = Vector2(240, 0)
+	_val_dialog.add_child(_val_edit)
+	_val_dialog.register_text_enter(_val_edit)
+	_val_dialog.confirmed.connect(func(): set_manual_value(_val_path, _val_edit.text))
+	add_child(_val_dialog)
 
 
 ## スキーマと値を受け取って、フォームを作り直す。
@@ -380,6 +411,8 @@ func _build_item(parent: TreeItem, key: String, value: Variant, s: Variant, path
 					list.push_front(value)
 				if value == null or value == "":
 					list.push_front("")
+				if not read_only:
+					list.append(MANUAL)   # 候補にない値も書けるように
 				var m: Dictionary = it.get_metadata(0)
 				m["kind"] = "choice"
 				m["choices"] = list
@@ -387,16 +420,28 @@ func _build_item(parent: TreeItem, key: String, value: Variant, s: Variant, path
 				var labels := PackedStringArray()
 				for c in list:
 					# 一覧の書き方では「,」と「:」が区切りになるので、全角に置き換えて見せる
-					labels.append("（なし）" if c == "" else String(c).replace(",", "，").replace(":", "："))
+					labels.append("（なし）" if c == "" else "（手で入力…）" if c == MANUAL else String(c).replace(",", "，").replace(":", "："))
 				it.set_cell_mode(1, TreeItem.CELL_MODE_RANGE)
 				it.set_text(1, ",".join(labels))
 				it.set_range(1, max(0, list.find(value if value != null else "")))
 				it.set_editable(1, not read_only)
 				it.set_tooltip_text(1, "一覧から選びます（ほかの値は右の JSON で書けます）")
+				_apply_preview(it, path, value)
+				_add_play(it, path)
+				_apply_check(it, path, value)
 			else:
 				it.set_cell_mode(1, TreeItem.CELL_MODE_STRING)
 				it.set_text(1, str(value))
 				it.set_editable(1, not read_only)
+				_apply_preview(it, path, value)
+				_add_play(it, path)
+				_apply_check(it, path, value)
+				var em: String = expr_mode.call(path, s) if expr_mode.is_valid() else ""
+				if em != "" and not read_only:
+					var m2: Dictionary = it.get_metadata(0)
+					m2["expr"] = em
+					it.set_metadata(0, m2)
+					it.add_button(1, _icon("Edit"), BTN_EXPR, false, "式エディタで書きます")
 		"integer", "number":
 			it.set_cell_mode(1, TreeItem.CELL_MODE_RANGE)
 			var mn := float(b.get("minimum", -1000000))
@@ -503,6 +548,15 @@ func _on_edited() -> void:
 			v = b["enum"][int(it.get_range(1))]
 		"choice":
 			v = m["choices"][int(it.get_range(1))]
+			if v == MANUAL:
+				# 手で書く（いまの値から始める）
+				var cur = get_at(m["path"])
+				it.set_range(1, max(0, m["choices"].find(cur if cur != null else "")))
+				_val_path = m["path"]
+				_val_edit.text = "" if cur == null else str(cur)
+				_val_dialog.popup_centered()
+				_val_edit.call_deferred("grab_focus")
+				return
 			if v == "":
 				for br in branches(m["schema"]):
 					if kind_of(br) == "null":
@@ -515,7 +569,85 @@ func _on_edited() -> void:
 				return
 			v = normalize(j.data)
 	set_at(m["path"], v)
+	if String(m["kind"]) in ["string", "choice"]:
+		_apply_preview(it, m["path"], v)
+		_apply_check(it, m["path"], v)
 	changed.emit()
+
+
+## 画像の ID の項目に、見本の絵を出す（preview がなければ何もしない）。
+func _apply_preview(it: TreeItem, path: Array, value: Variant) -> void:
+	if not preview.is_valid():
+		return
+	var tex = preview.call(path, value) if value is String and value != "" else null
+	# 値の列が一覧（範囲）のときは絵が出ないので、項目名の列に出す
+	it.set_icon(0, tex if tex is Texture2D else null)
+	it.set_icon_max_width(0, PREVIEW_WIDTH)
+
+
+## 値を確かめて、問題があれば赤字と理由を出す（なければ元に戻す）。
+func _apply_check(it: TreeItem, path: Array, value: Variant) -> void:
+	if not check.is_valid():
+		return
+	var msg := String(check.call(path, value)) if value is String and value != "" else ""
+	var m: Dictionary = it.get_metadata(0)
+	if not m.has("tip"):
+		m["tip"] = it.get_tooltip_text(0)
+	if msg != "":
+		it.set_custom_color(0, WARN_COLOR)
+		it.set_custom_color(1, WARN_COLOR)
+		it.set_tooltip_text(0, "⚠ " + msg + ("\n" + String(m["tip"]) if String(m["tip"]) != "" else ""))
+		m["warning"] = msg
+	else:
+		it.clear_custom_color(0)
+		it.clear_custom_color(1)
+		it.set_tooltip_text(0, String(m["tip"]))
+		m.erase("warning")
+	it.set_metadata(0, m)
+
+
+## 項目の注意（テスト用。なければ ""）。
+func warning_of(path: Array) -> String:
+	var it := _find_item(get_root(), path)
+	return String(it.get_metadata(0).get("warning", "")) if it != null else ""
+
+
+## 音の項目に ▶（試しに鳴らす）を付ける。
+func _add_play(it: TreeItem, path: Array) -> void:
+	if not audio_kind.is_valid():
+		return
+	var k := String(audio_kind.call(path))
+	if k == "":
+		return
+	var m: Dictionary = it.get_metadata(0)
+	m["audio"] = k
+	it.set_metadata(0, m)
+	it.add_button(1, _icon("Play"), BTN_PLAY, false, "試しに鳴らします（もう一度押すと止めます）")
+
+
+## 項目に ▶ があるか（テスト用）。
+func has_play(path: Array) -> bool:
+	var it := _find_item(get_root(), path)
+	return it != null and it.get_button_by_id(1, BTN_PLAY) >= 0
+
+
+## 項目の見本の絵（テスト用）。
+func preview_of(path: Array) -> Texture2D:
+	var it := _find_item(get_root(), path)
+	return it.get_icon(0) if it != null else null
+
+
+func _find_item(parent: TreeItem, path: Array) -> TreeItem:
+	if parent == null:
+		return null
+	for it in parent.get_children():
+		var m = it.get_metadata(0)
+		if m is Dictionary and m.get("path") == path:
+			return it
+		var f := _find_item(it, path)
+		if f != null:
+			return f
+	return null
 
 
 func _on_button(it: TreeItem, _col: int, id: int, _mouse: int) -> void:
@@ -545,6 +677,14 @@ func _on_button(it: TreeItem, _col: int, id: int, _mouse: int) -> void:
 				return
 		BTN_REMOVE:
 			remove_at(m["path"])
+		BTN_EXPR:
+			expr_requested.emit(m["path"], str(get_at(m["path"])), String(m.get("expr", "condition")))
+			return
+		BTN_PLAY:
+			var v = get_at(m["path"])
+			if v is String and v != "":
+				play_requested.emit(String(m.get("audio", "")), v)
+			return
 		BTN_SWITCH:
 			var bs := branches(m["schema"])
 			var cur: Dictionary = m["branch"]
@@ -556,6 +696,21 @@ func _on_button(it: TreeItem, _col: int, id: int, _mouse: int) -> void:
 			set_at(m["path"], default_for(next))
 		_:
 			return
+	changed.emit()
+	rebuild()
+
+
+## 値を書いて作り直す（式エディタから戻すときなど）。
+func set_value_at(path: Array, value: Variant) -> void:
+	set_at(path, value)
+	changed.emit()
+	rebuild()
+
+
+## 手で書いた値を入れる（空なら消す）。テストからも呼ぶ。
+func set_manual_value(path: Array, text: String) -> void:
+	var t := text.strip_edges()
+	set_at(path, t if t != "" else "")
 	changed.emit()
 	rebuild()
 

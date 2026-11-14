@@ -2,7 +2,7 @@
 
 80年代風アドベンチャーゲームを作るための Godot 4 アドオン。仕様はリポジトリ直下の `SPEC.md` を参照。
 
-## 現在の段階：段階14「シナリオエディタ」まで
+## 現在の段階：段階67「ふつうの設定画面の見直し、メニューが選んだ項目に付いて流れる、見直しの一覧」まで
 
 | 範囲 | 内容 |
 | --- | --- |
@@ -104,7 +104,7 @@
 5. 表示設定は、基本の大きさ 640x400、ストレッチモード `canvas_items`、アスペクト `keep`、拡大方式 `integer` を推奨。
    フィルターは実際の画面の解像度で描くので、`canvas_items` にすると走査線などがきれいに出る。
 
-サンプルは `res://tests/stage1/` にある。
+サンプルは `res://tests/stage1/` にある（シナリオは `tests/stage1/scenario/stage1/`）。
 
 ## テスト
 
@@ -116,6 +116,14 @@ godot --headless --path . --script res://tests/run_editor_tests.gd
 
 `run_editor_tests.gd` は画面ありで動かすと、シナリオエディタの画面を `tests/_shots/editor_*.png` に書き出す。
 
+全部のテンプレート（26 個）でゲームの中の画面を見直すときは、画面のテストの `--` の後ろに写真の置き場所と `--review` を付ける（数分かかる。うまくいかない画面は `review_68_*`、見本は `review_69_*` の写真）。
+
+```
+godot --path . --script res://tests/run_ui_tests.gd -- /tmp/shots --review
+```
+
+見直しが終わると、写真の置き場所に `index.html` ができる（行がテンプレート、列が画面。問題のある写真は赤い枠と、その中身の文）。ブラウザで開くと全部をひと目で見られる。
+
 ## マニフェストのコマンドライン
 
 ```
@@ -125,6 +133,373 @@ godot --headless --path . --script res://addons/adv80s/tools/manifest_cli.gd -- 
 
 - 一度も読み込んでいないプロジェクト（CI で取り出した直後など）では、先に自動でインポートしてから実行する。
 - 仕様の引数に加えて `--project <ファイル>` でプロジェクト設定のファイルを指定できる。
+
+## 段階67の決めごと（設定画面、メニューの流れ、見直しの一覧）
+
+- **設定画面の見直し**：`REVIEW_SCREENS` に settings。テストのゲームは設定を作者の画面（system_scenes.settings）にしているので、`_review_built()` が `modern._panel()`＋`_fill_settings()` でふつうの設定画面を組み立て、見える範囲に置いて確かめる（はみ出しと見分けにくい文字）。
+- **メニューの流れ**：AdvMenuPanel の ScrollContainer を `follow_focus`。`add_button()` のボタンは `clip_text`＋「…」、説明に全文（GB・GBC の設定で長い項目が窓からはみ出さない）。
+- **見直しの一覧**：`--review` では全部の画面の写真 `review_t_<テンプレート>_<画面>.png` を撮り（段階64〜66の review_68・69 はやめた）、`_review_results` に問題の文を覚え、`_write_review_index()` が写真の置き場所に index.html を書く。
+- 見直しの結果：26 個のテンプレート × 14 の画面（364 枚）とも問題なし。
+
+## 段階66の決めごと（▲・▼、クリック、Ctrl+Enter）
+
+- **タイトルの ▲・▼**：`AdvTitleScreen._fit()` の終わりで `_more_up`・`_more_down`（題名の色の Label）をメニューの右上・右下（見える範囲の中）に置き、`_update_more()`（縦の棒の value・max_value・page から、上・下に流せる余りがあるときだけ出す）を棒の value_changed・changed で呼ぶ。
+- **クリック**：ウィンドウの層のお知らせも `notice_at()`（global rect）でクリックを受ける。テストで確かめた。
+- **Ctrl+Enter**：`_ok_key(window, e)`（OK ボタンを押す）を「組を変える」「書き出す」の窓に `_add_keys()` で。「ひな形の組」の窓は閉じるだけなので付けない。
+
+## 段階65の決めごと（見直しを分ける、ほかの画面）
+
+- **見直しを分ける**：`_review_all_templates()` は `--review`（`OS.get_cmdline_user_args()`）を付けたときだけ。ふだんは「info: 全部のテンプレートの見直しは --review を付けたときだけ」と出す。
+- **見直す画面**：`REVIEW_SCREENS`（menu・log・save・hints・notebook・flowchart・chapters・endings・extras は開いて、title・fin・credits・image は `_review_built()` が組み立ててゲームの画面に入れる。クレジットは下から流れるので横だけ）。開かないものも問題として数える。
+- **直したもの**：
+  - フローチャート・チャプター：データのないゲームで開くと止まっていた（`AdvFlowView.setup()` に null）。いまは「フローチャートは ありません。」「チャプターは ありません。」と出す。
+  - タイトル画面：項目を `_menu_scroll`（ScrollContainer。流せるが棒は出さず、選ぶと付いて流れる）に入れ、画面に入ってから `_fit()`：題名は見える範囲の幅に入るまで文字を 2 ずつ小さく（8 まで）、メニューは幅を項目に合わせ（見える範囲の幅 - 8 まで）、下がはみ出すなら題名の下まで上へ寄せ、それでも入らなければ見える範囲の下までの高さにして流す。多くのテンプレートで、タイトルのメニューが画面の下へはみ出していた。
+- 見直しの結果：26 個のテンプレートで 13 の画面とも、はみ出し・見分けにくい文字なし。
+
+## 段階64の決めごと（デバッグのお知らせの層、全部のテンプレート、見える範囲）
+
+- **デバッグのお知らせの層**：debug.notice_style の `layer`（`NOTICE_LAYERS`：auto・screen・window。`DEBUG_NOTICE_STYLE_KEYS` とスキーマにも）。`show_debug_notice()` が `st["layer"]`（なければ auto）を `show_notice()` に渡し、`_notice_on_window(layer)`（デバッグの層がなければいつも画面。auto は `visible_rect().size.x < NOTICE_WINDOW_AUTO_WIDTH`＝320）なら `_debug_layer` に入れ、メタ "window"。折り返しの幅は `min(ウィンドウの層の幅, NOTICE_WINDOW_MAX_WIDTH＝480) - margin×2`。`_relayout_notices()` は層ごとに並べ、ウィンドウの層は上を `NOTICE_WINDOW_TOP`（36。デバッグのボタンの下）から。`_window_layer_size()`（大きさが 0 ならビューポート）。ふつうのお知らせはいつもゲームの画面。
+- **全部のテンプレートの見直し**：画面のテストの `_review_all_templates()` が 26 個すべてで、ゲームを窓いっぱいにしてメニュー・ログ・セーブを開き、`_overflowing()`（はみ出し）と `_low_contrast()`（Label・Button（自分の地があればそれと）・RichTextLabel の文字と地の明るさの差が 0.3 より小さい）を調べる。うまくいかないものだけ `review_68_*`、見本として gbc・win・mx・4k は `review_69_*` の写真。段階63で直したあとは 26 個とも問題なし。
+- **見える範囲**：`_relayout_notices()` はゲームの画面のお知らせを `visible_rect()` の中に並べ、折り返しの幅も見える範囲の幅で。AdvImageViewer の絵・見出し・枚数を見える範囲に。題名・おわり・クレジットは、テンプレートの設定で置くか真ん中寄せなので変えていない。
+
+## 段階63の決めごと（小さい画面のゲームの中の窓、キー）
+
+- **見直しのしかた**：画面のテストの GB・FC の見直しで、プレイヤーを窓いっぱい（FULL_RECT）にして（ふつうのゲームと同じ拡大と真ん中寄せ）、ログ・セーブ・メニュー・設定を開き、`_overflowing(node, area)`（clip_contents の窓で切ったうえで、見える範囲の外へ出た Label・Button・RichTextLabel）と写真（`review_66`・`review_67_*`）で確かめる。作者が自分で作った AdvSystemScreen（テストの設定画面）は作者の受け持ちなので写真だけ。
+- **直したもの**：
+  - `AdvTemplate.window_fill_color()`：window_skin の fill（なければ 0）。文字の色との明るさの差が `WINDOW_FILL_MIN_CONTRAST`（0.3）より小さければ、いちばん差の大きいパレットの色（パレットがなければ黒か白）。AdvMenuPanel・AdvSaveMenu・AdvLogView の地の色に。GB ではメニューの文字が地と同じ色で見えなかった。
+  - AdvLogView：見出し・「ひょうじ」・文の色を text.color に（`_ready()`）。入力・お知らせの色は 6 色以下のパレットなら text.color（7 番はパレットの外で白になっていた）。「ひょうじ」の幅は `min(172, 画面の幅 - 8)` で「…」。
+  - `AdvTemplate.visible_rect()`：プリセットの visible。メニュー・セーブ・ログはこの大きさで作り、`show_overlay()` が見える範囲に置く（FC では上の 8 が隠れて見出しが切れていた）。
+  - AdvCommandSelect：ボタンの文字を `clip_text`＋「…」、説明に全文（GB のセーブの一覧が窓からはみ出していた）。
+- **キー**：`_add_keys(window, handler)`・`_is_ctrl_key(e, keys)`。片付け `_on_tidy_key`（Ctrl+Z で `undo()`、Ctrl+Y・Ctrl+Shift+Z で `redo()`。戻せるものがなければ通す）、読み込む `_on_import_key`（Ctrl+Enter）、見た目 `_on_style_key`（Ctrl+Z で `restore_erased_style_set()`。フォーカスのある LineEdit に取り消しがあればそちら）。
+- **小さい画面のお知らせの読みやすさ**：GB の写真では、お知らせの文字はゲームの文と同じ大きさのドット字で、これより小さくすると読めない。文字を小さくするかわりに、デバッグのお知らせをゲームの画面の外（ウィンドウの大きさの層）に出す設定を次の段階で考える。
+
+## 段階62の決めごと（小さい画面、一覧が伸びる、キー）
+
+- **小さい画面**：画面のテストで GB（160×144）・FC（256×240）に切りかえて、お知らせと選ぶ窓の写真（`review_64`・`review_65`）を撮り、画面に収まること・重ならないことを確かめる。選ぶ窓はデバッグの層（ウィンドウの大きさ）に出るのでテンプレートの大きさによらない。直したもの：`show_notice()` の折り返しの幅を `template.screen_size.x - margin × 2`（下限 48）に（段階61は画面の Control の大きさで、下限 160 だったので GB では折り返さなかった）。お知らせの `resized` で `_relayout_notices()`（折り返した高さが後から決まっても重ならない）。テストの中ではプレイヤーの大きさが 0 なので小さい画面は左上に等倍で出るが、ふつうのゲームでは窓いっぱいに拡大される。
+- **一覧が伸びる**：片付け・組・書き出す・読み込むの一覧の ScrollContainer を縦に EXPAND_FILL。
+- **キー**：`AdvKeyCatcher`（adv_key_catcher.gd。窓の中で `_input` を受け、handler が true なら止める）をひな形の窓に入れ、`_on_preset_key(e)`：Ctrl（mac は Cmd）+Enter で OK ボタン、Ctrl+Z で `undo_preset_edit()`（フォーカスのある TextEdit に `has_undo()` があればそちらに渡す）。Esc は ConfirmationDialog のもとからの動き。保存ボタンと「写す前に戻す」の説明にキーを書く。
+
+## 段階61の決めごと（ゲームの中の見直し、読み込む窓の中身、違いの欄）
+
+- **ゲームの中の見直し**：画面のテスト（run_ui_tests.gd）の終わりで、長い変数名・長い値・長い組名の「ひな形にするものを選ぶ」窓、長いデバッグのお知らせ、長い出力のコンソールの写真（`review_61〜63`）を撮る。直したもの：選ぶ窓の行の印は `clip_text`＋「…」＋説明に全文、変数は印と値の欄を 1:1、持ち物は 3:1。一覧は横に広げない。`show_notice()` は `reset_size()` のあと、画面の幅から左右の margin を除いた幅を超えるなら Label を `AUTOWRAP_WORD_SMART` にして幅を決め、もう一度 `reset_size()`（短い文は折り返さない）。コンソールは前から折り返していた。
+- **読み込む窓の中身**：`static preset_value_summary(v)`（`preset_summary(name)` もこれを使う）。`import_row_tip(n)`（「ファイル：…」、同じ名前があれば「いま　　：…」）を行の説明に。
+- **違いの欄が伸びる**：`_preset_diff` を縦に EXPAND_FILL、stretch_ratio 4（変数の欄より多めに伸びる）。
+
+## 段階60の決めごと（ひな形の窓を並べ直す、読み込む組を覚える、見直し）
+
+- **ひな形の窓を並べ直す**：`_on_files_changed()` でひな形の窓が見えていれば `refresh_preset_dialog_keep()`（`_fill_preset_cmp()` し直して前の比べる相手を選び直す。日時と「そこから動かす」も付け直す。欄の中身は触らない）。
+- **読み込む組を覚える**：RUN_UI_FILE の `import_group`（"#file"・""・組の名前）。読み込めたときに `_remember_import_group(import_group_choice())`。`_fill_import_group_pick()` で選び直す（ない組の名前は「新しい組…」に入れる）。
+- **見直し**：テストの終わりの `_review_windows()` が、ひな形の窓（比べる・いつもの始まり）・片付け・組・組を変える・書き出す・読み込む・見た目（比べる）・右クリックのメニューを長い名前で開いて `editor_review_*` の写真を撮る。直したもの：`static fit_check(cb, extra)`（「…」で切り、全文と extra を説明に）と `fit_list_scroll(sc)`（横に広げない）を片付け・組・書き出す・読み込むの一覧に。ひな形の窓を 600×600、違いの欄を 150 の高さに。「組を変える」の新しい組の欄は "#new" のときだけ出す。右クリックの「いまのシーンから実行」は `page >= Page.SCENE` のときだけ。ゲームを選ぶ窓（plugin.gd）は見直しに入れていない。
+
+## 段階59の決めごと（並べ直す、全部写す、読み込む組）
+
+- **片付けを並べ直す**：`_on_files_changed()`（モデルの `files_changed`）で片付けの窓が見えていれば `refresh_tidy_keep()`（印を覚えて `_refresh_tidy()` し、残っている名前の印を戻す。新しく出たものは初めの形）。
+- **全部写す**：`tidy_diff_text()` の終わりの行に `[url=tidyall:L|R]` と薄い説明。`tidy_copy_all(to_left)`。一つずつも全部も `tidy_copy_values(from, to, [[kind, key], …], label)`（ひとまとまりで保存）を通る。
+- **読み込む組**：`_import_group_pick`（メタデータ "#file"・""・組の名前・"#new"＋`_import_group_new`）。`import_group_choice()`（null＝ファイルのまま。新しい組の名前が空なら null）・`set_import_group(m)`・`_import_with_group(v)`（一覧の説明用）。`import_run_presets(path, names, overwrite, group_to := null)`（null 以外なら組を書きかえる。並びに足すのはその組だけ）。窓を開くたびに「ファイルの組のまま」に戻す。
+
+## 段階58の決めごと（写す前に戻す、読み込む窓に組、片付けで写す）
+
+- **写す前に戻す**：`preset_edit_undo`（{vars, items, what}。一つだけ）を `_remember_preset_edit(what)` で覚える（`add_start_var_to_dialog`・`add_all_start_vars_to_dialog`・`take_preset_value(kind, key, remember := true)`・`take_all_preset_values`。全部写すは一度だけ覚え、中の一つずつは remember=false）。`undo_preset_edit()`。`open_preset_dialog()` で忘れる。ボタン `_preset_undo_btn`「写す前に戻す」。
+- **読み込む窓に組**：`static import_group_text(ps, v)`（「　［組：G］」、ない組は「（新しい組）」、組なしは ""）を名前と説明のあいだに。
+- **片付けで写す**：`tidy_preview_text()` の比べは `tidy_diff_text()`（行ごとに `[url=tidy:L|R:kind:キー]`。L は右の値を左へ、R は左の値を右へ。左右は名前の順）。`tidy_copy_value(from, to, kind, key)`（保存して元に戻せる。from になければ消し、空になった vars・items は消す。同じ値・同じひな形・どちらにもないなら false）。片付けの窓を 560×540、中身の欄を 120 の高さに。
+
+## 段階57の決めごと（組の並びを運ぶ、違いを写す、全部写す）
+
+- **組の並びを運ぶ**：組（group）と作った日時（created）は前から書き出し・読み込みで運んでいた（`read_preset_file()`）。`export_run_presets()` は書き出すひな形の組を `preset_group_order()` の順に `group_order` として書く。`read_preset_file_group_order(path)`。`import_run_presets()` は、読み込む前になかった組で、足したひな形が使うものを、いまの並び（`preset_group_order()`）の終わりへファイルの順に足して `debug.run_group_order` に書く（同じひとまとまりで元に戻せる）。group_order がなければ並びは書かない。
+- **違いを写す**：`diff_text(…, links := true)` で行を `[url=take:vars|items:キー]`、終わりに薄い説明と `[url=takeall]［全部写す］[/url]`（窓の違いと、いつもの始まりの違いで使う。片付けの比べはリンクなし）。`_preset_cmp_target()`（いつもの始まりなら `start_base()`）・`take_preset_value(kind, key)`（同じ値なら false。持ち物は整数）・`take_all_preset_values()`・`static set_assign_line(text, key, value)`（同じキーの行を一つにして書きかえ、null で消す。なければ終わりに足す。「#」の行・空の行はそのまま）。保存はしない。
+- **見た目を全部写す**：`style_diff_text()` の説明の終わりに `[url=copyall]［全部写す］[/url]`。`copy_all_style_keys()`（左を右と同じ中身に。違ったキーの数。`style_last_erased` の kind "copy"、key "全部" で一度に戻せる）。
+
+## 段階56の決めごと（知らせを消す、全部足す、キーを写す）
+
+- **知らせを消す**：`_update_style_show()` の頭で `_style_msg` を空に。書く・消す・写すなどは、そのあとで知らせを出す（`_after_style_change()` は並べ直してから知らせる）。
+- **全部足す**：`start_others_text()` の終わりに `[url=addall]［全部足す］[/url]`。`add_all_start_vars_to_dialog()`（`_start_vals` のうち窓にないものを名前の順に全部。並べた 20 を超えても足す。足した数）。
+- **キーを写す**：`style_diff_text(…, links := true)` で違う行を `[url=copy:キー]`、終わりに薄い説明。`_style_show.meta_clicked` → `copy_style_key(key)`（同じ値・どちらにもないなら false。左が空になるなら写さない）。戻すのは `style_last_erased` を「最後の一つ」として使う（`kind`："erase" か "copy"。copy は同じ名前に書き戻す。名前を変えたら戻す先も変える）。ボタンは「一つ戻す」。
+
+## 段階55の決めごと（押して足す、組を変える、見た目を比べる）
+
+- **押して足す**：`start_others_text()` の一つずつが `[url=add:名前（uri_encode）]`。`_preset_diff.meta_clicked` → `add_start_var_to_dialog(name)`（`_start_vals` にあり、窓にまだないものだけ。欄の終わりに「名前 = 値」を足して並べ直す。保存はしない）。
+- **組を変える**：`PresetCtx.GROUP`（「組を変える…（いまは 組）」）→ `open_move_group_dialog(name)`（`_move_group_pick`：メタデータ "" は組なし、組の名前、"#new" は新しい組で `_move_group_new` に書く）。`select_move_group(g)`・`move_group_choice()`・`set_preset_group(name, g)`（元に戻せる。同じ組なら false）。組の並びを動かす `move_preset_group(g, delta)` とは別。
+- **見た目を比べる**：「見た目…」の `_style_cmp`（選んでいる見た目は除く）。`compare_style_with(name)`・`style_cmp_name`。`style_diff_text(a名, a, b名, b)`（値は `value_text` で比べる）。比べている方を選ぶと `_style_last_pick` と入れかえる。
+
+## 段階54の決めごと（ひな形にない変数、右クリック、いまの見た目）
+
+- **ひな形にない変数**：`start_others_text(preset, start_vars)`（`[color=#9ca3af]` で薄く。名前の順に `START_OTHERS_MAX`＝20 まで、あとは「…ほか n」）。`start_diff_text()` が違いの下に足す。
+- **右クリック**：`run_preset_pick` の `gui_input`（閉じたまま＝`selected_preset`）と、その一覧（`get_popup()`）の `window_input`（`get_focused_item()` の行。組の見出しは除く）から `open_preset_context(name, at)`。中身は `preset_context_items(name)`（`[id, 文字, 押せるか]`、id は `PresetCtx`：RUN_LAST・RUN_HERE・OPEN・DUP）、押すと `preset_context_pressed(id, play)`。
+- **いまの見た目を取っておく**：`keep_project_style(game, name)`（プロジェクト設定の notice_style か debug.notice_style を `AdvPlayer.put_notice_style_set()` で。空の名前は「いまの設定」、同じ名前があれば「名前 2」…。書いていなければ ""）。名前の欄は見た目がなくても書ける。
+
+## 段階53の決めごと（見た目の名前・消す、いつもの始まり、そこから動かす）
+
+- **見た目の名前・消す**：`AdvPlayer.rename_notice_style_set(game, old, new)`（できれば ""、できなければ理由。並びは保つ）・`erase_notice_style_set(game, name)`・`put_notice_style_set(game, name, values)`（static。コンソールの `drop` も erase を使う）。エディタは `rename_style_set()`・`erase_style_set()`（`style_last_erased` に {game, name, values} を一つだけ覚える）・`restore_erased_style_set()`（同じ名前があれば「（戻す）」を付ける）。user:// のファイルなので「元に戻す」ではなく「消したのを戻す」。
+- **いつもの始まり**：「比べる：」の 2 番目（メタデータ `PRESET_CMP_START`）。`start_values()` は `AdvVariableIndex.collect()` の変数の default（Ink は JSON として読む）を窓を開いたときに読む（`_start_vals`）。`start_base(preset, start_vars)` はひな形にあるキーだけ（宣言のないものは入れない＝「なし」、持ち物は 0）。`start_diff_text()` は頭に「始めるシーン：いつもは entry　このひな形は最後に …」。
+- **そこから動かす**：`run_from()` が `last_where[name].req`（頼みからひな形の名前と値を除いたもの）も書く。`preset_last_request(name)`（JSON の数を整数に戻す。req のない古い記録は {scene}）・`run_preset_from_last(name, play)`。ひな形の窓の `_preset_run_last`（使った場所がなければ押せない）。ひな形を消しても記録は消さない（元に戻せるので）。
+
+## 段階52の決めごと（見た目をエディタから、二つを比べる、場所）
+
+- **見た目をエディタから**：上の「見た目…」→ `open_style_sets_dialog(game)`（`AdvPlayer.notice_style_sets()` を読む。ゲームとエディタは同じ user:// を使う）。`apply_style_set(game, name)` が書いたキーだけを notice_style（ふつう）か debug.notice_style（デバッグ）に書く（fg などは整数に。元に戻せる）。窓はいまの値と違うキーに「（いま …）」を添える。
+- **二つを比べる**：片付けの窓の `_tidy_compare`。印が二つなら `diff_text()`、ほかは「印を二つ付けてください（いま n）」。
+- **場所**：`run_from()` がひな形を使うと `RUN_UI_FILE` の `last_where`（名前 → {scene, place}。place は `run_place_text()` から「から」を除いたもの）に書く。`preset_last_where(name)`（「hall ／ 会話 talk の 2 番目」）。ひな形の窓の日時の下に「最後に使った場所：…」。
+
+## 段階51の決めごと（日時、見た目を取っておく、中身をのぞく）
+
+- **日時**：ひな形の窓の `_preset_dates`（`preset_dates_text(name)`：「作った日時：…（今日）　最後に使った日時：…」。作った時刻がなければ「不明」、使っていなければ「未使用」、新しいひな形なら「（新しいひな形）」）。
+- **見た目を取っておく**：`AdvPlayer.NOTICE_STYLE_SETS_FILE`（`user://adv80s_notice_styles.json`、`{debug: {名前: {…}}, game: {…}}`。パソコンごと）。`keep_notice_style(game, name)`・`use_notice_style(game, name)`・`next_notice_style(game)`（名前の順に一つずつ。終わりまで行くと頭へ）・`drop_notice_style(game, name)`・`notice_style_sets(game)`。コンソール `noticestyle [game] keep・use・next・list・drop`。
+- **中身をのぞく**：`preset_summary(name)`（「a = 1、b = "x" ／ 持ち物 key × 2」、なければ「（中身なし）」）。片付けの窓の `_tidy_preview`（`tidy_preview_text()`、印を付けたものを名前の順に）と、それぞれの行のツールチップ。
+
+## 段階50の決めごと（組で絞る、ふつうのお知らせ、作った順）
+
+- **組で絞る**：`stale_presets(days, include_unused, now, group)`（group が "*" で全部、"" で組なし、ほかはその組）。片付けの窓の「探す組」（`open_tidy_dialog(group)`・`set_tidy_group(g)`・`tidy_group()`）。
+- **ふつうのお知らせ**：`AdvPlayer.notice_style_override`（`notice_style()` のいちばん上に重なる。動かしている間だけ）、`set_game_notice_style(key, value)`（`GAME_NOTICE_STYLE_KEYS`。値の確かめは `_try_style()` でデバッグのお知らせと共通）、`save_game_notice_style_to_editor()`（`GAME_SETTINGS_FILE` の game_notice_style）。エディタの `import_game_settings()` はプロジェクト設定のいちばん上の notice_style に書く（返す辞書のキーは game_notice_style。debug に書くものがなければ debug は足さない）。コンソール `noticestyle game …`。
+- **作った順**：ひな形の `created`（Unix 秒。`save_run_preset` は書きかえなら前の時刻のまま、ゲームからの取り込みは送った時刻、ファイルの読み込みはファイルの時刻かいま）。`preset_created(name)`。並べ方は `RUN_UI_FILE` の sort（"name"・"used"・"created"。`run_sort()`・`set_run_sort(mode)`、「実行：」の選ぶ欄 `_sort_pick`）。違い（`diff_presets`）には入れない。
+
+## 段階49の決めごと（使った順、片付け、見た目を試す）
+
+- **使った順**：`RUN_UI_FILE` の `sort`（"used"・"name"。パソコンごと）。`run_sort_by_used()`・`set_run_sort_by_used(on)`、「実行：」の「使った順」。`preset_pick_layout(…, used)` が組の中を最後に使った順（同じなら名前の順、使っていないものは下）に並べる。組の並びは変えない。
+- **片付け**：`stale_presets(days, include_unused, now)`（最後に使ってから days 日以上。未使用は include_unused のときだけ）。`delete_run_presets(names)`・`set_presets_group(names, g)`（どちらもひとまとまりで元に戻せる）。「片付け…」の窓（`open_tidy_dialog()`・`set_tidy_check()`・`tidy_to_group()`・`tidy_delete()`。消すときは確かめる）。
+- **見た目を試す**：`AdvPlayer.debug_notice_style_override`（動かしている間だけ。debug.notice_style の上、pre_set_style などの下に重なる）、`set_debug_notice_style(key, value)`（値を確かめる。だめなら理由の文）、`debug_notice_style_now()`、`save_debug_notice_style_to_editor()`。設定の書きかえは `_write_game_settings(section, values)` で `GAME_SETTINGS_FILE` の notices・notice_style に書き足す。エディタの `import_game_settings()` は `{notices?, notice_style?}` を返す（fg・bg・border は整数に）。コンソール `noticestyle`（表示）・`noticestyle キー 値`・`noticestyle test`・`noticestyle reset [キー]`・`noticestyle save`。
+
+## 段階48の決めごと（組の窓から実行、設定に書く、最後に使った時）
+
+- **組の窓から実行**：`run_with_preset(name, play)`（そのひな形を選んで、`run_scene_for_dialogue()` のシーンから `run_from`）。組の窓の「この組のひな形で：」（`_group_run_pick`）と「▶ 実行」（`run_group_pick()`。動かしたら窓を閉じる）。
+- **設定に書く**：コンソール `notice save` → `AdvPlayer.save_debug_notices_to_editor()` が `GAME_SETTINGS_FILE`（`user://adv80s_game_settings.json`、`{notices: {種類: bool}}`）に書き足し、デバッガに `adv80s:settings_saved`。エディタは `import_game_settings()`（デバッガの知らせ → plugin → 画面、または窓に戻ったとき）で debug.notices に書き（知らない種類は飛ばす。元に戻せる）、ファイルを消す。
+- **最後に使った時**：`run_from()` でひな形を使うと `RUN_UI_FILE` の `last_used`（名前 → Unix 秒）に書く（パソコンごと。たたんだ組 `folded` と同じファイル。`_run_ui()`・`_save_run_ui()`）。`preset_last_used(name)`・`used_label(t, now)`（今日・昨日・n日前・n週前・nか月前・未使用。その土地の日付で数える）・`used_datetime(t)`。「実行：」の一覧の名前のあとに「〔…〕」、ツールチップに日時。組の窓の一覧にも出す。
+
+## 段階47の決めごと（並び順、出し入れ、コンソール）
+
+- **並び順**：プロジェクト設定 `debug.run_group_order`（並べたい組の名前の配列）。`preset_group_order()` がいまある組だけを書いた順に、書いていない組を名前の順に足す（`run_preset_groups()` も同じ順）。`move_preset_group(g, delta)`（元に戻せる）。`preset_pick_layout(…, order)`。組の名前を変えると並びの中の名前も変わる。並びはプロジェクトに入る（たたむはパソコンごと）。
+- **出し入れ**：`apply_group_members(g, names)`（names を g に、ほかで g のものは組から外す。ひとまとまりで元に戻せる）。組の窓の下の一覧（`_group_member_checks`、ほかの組のものは「（組：名前）」を添える）→「この中身にする」（`confirm_group_members()`）。
+- **コンソール**：`notice`・`notice 種類|all on/off`・`notice on/off`・`notice reset [種類]`。`AdvPlayer.debug_notice_override`（動かしている間だけ。設定より先）、`set_debug_notice(kind, on)`（on が null なら設定に戻す）、`debug_notice_report()`、`DEBUG_NOTICE_KINDS`。
+
+## 段階46の決めごと（組ごとの操作、たたむ、種類ごと）
+
+- **組ごとの操作**：`run_preset_groups()`・`preset_names_in_group(g)`・`rename_preset_group(old, new)`（new が "" なら組を外す。たたんでいればたたんだまま新しい名前に）・`delete_preset_group(g)`・`export_group(g, path)`。どれもひとまとまりで元に戻せる。「組…」の窓（`open_group_dialog(g)`・`picked_group()`。消すときは確かめる）。
+- **たたむ**：「実行：」の一覧の組の見出し（メタデータ `#group:名前`）を選ぶと `set_group_folded(g)`（選んでいたひな形はそのまま）。たたんだ組は `RUN_UI_FILE`（`user://adv80s_run_ui.json`、`folded_groups()`）に覚える。元に戻すでは戻らない（見た目のため）。
+- **種類ごと**：プロジェクト設定 `debug.notices`（run_from・pre_set・reload・editor・preset・auto_reload）。`show_debug_notice(…, kind)` が `debug_notice_on(kind)` を見る。「先に設定」は `pre_set_notice` も見る。
+
+## 段階45の決めごと（デバッグのお知らせ、組、絞り込み）
+
+- **デバッグのお知らせ**：`show_debug_notice(text, kind_style, seconds, at, log)` がプロジェクト設定 `debug.notice_style`（fg・bg・border・se・icon・position・seconds）に kind_style を重ねて `show_notice()` に渡す。シーンから実行・先に設定（kind_style は pre_set_style）・読み直し・エディタにつながっていません・エディタで開く・ひな形にしました／書けません／選んでください・保存したら読み直す が使う。
+- **組**：ひな形の `group`（"" は組なし）。`save_run_preset(name, vars, items, group)`、`preset_group(v)`。「実行：」は `preset_pick_layout(ps, filter, keep)` の順（組なし → 組の名前の順。見出しは `add_separator("組：…")`）。窓の「組」。複製・`read_preset_file`・ゲームからの取り込みで付いたまま。違い（`diff_presets`）には入れない。ゲームの選ぶ一覧の「組」の欄（`_picker_group`）。「送っても閉じない」に印を付けたとき空ならいまの名前を入れる。
+- **絞り込み**：「実行：」の横の LineEdit（`set_preset_filter(text)`・`run_preset_filter`）。名前か組の一部（大文字・小文字は区別しない）。選んでいるものは合わなくても出す。
+- **テスト**：UI テストの終わりに「ここまで来たか」を確かめる（途中のスクリプトのエラーで止まると失敗にする）。
+
+## 段階44の決めごと（違いを見る、見た目、続けて送る）
+
+- **違いを見る**：読み込む窓の下の `_import_preview`。`import_overwrite_preview()` が、上書きにして印を付けたものについて「名前 を上書き（いま → 読み込み）」と変数・持ち物の違いを並べる（なければ ""、窓では隠す）。印を変えるたびに付け直す。値の出し方は `AdvPlayer.value_text()`（`diff_text()` も同じ）。
+- **見た目**：プロジェクト設定 `debug.pre_set_style`（fg・bg・border・se・icon）。`show_notice(text, seconds, icon, log, at, style)` の style で、fg・bg・border・se だけそのお知らせで変える。
+- **続けて送る**：選ぶ一覧の「送っても閉じない（続けて送る）」（`picker_keep_open`）。送ったら `next_preset_name(name)`（末尾が「 数」ならその次、ほかは「 2」）を名前の欄に入れる。
+
+## 段階43の決めごと（上書き、位置、戻す）
+
+- **上書き**：`import_status(ps, name, v, overwrite)`（overwrite のときはその名前の中身とだけ比べ、違えば "overwrite"）。`import_run_presets(path, names, overwrite)`。読み込む窓の「中身が違うものは上書きする」（`set_import_overwrite(on)`・`import_overwrite`。切り替えると `_refresh_import_pick()` が説明と押せるかを付け直す）。元に戻せる。
+- **位置**：プロジェクト設定 `debug.pre_set_position`（お知らせの位置と同じ値。書かなければお知らせの決まり）。
+- **戻す**：`picker_remove()` が外したときの値と印を `_picker_removed` に残し、「外したものを戻す」（`picker_restore_removed()`、戻した数を返す）でまとめて戻す。同じ名前が一覧にあればそれはそのまま。外したものがなければボタンは押せない。
+
+## 段階42の決めごと（選んで読み込む、秒数、外す）
+
+- **選んで読み込む**：「読み込む…」でファイルを選ぶと `open_import_pick(path)`（`read_preset_file(path)` で読み、`import_status(ps, name, v)` が "new"・"same"・"rename"。"same" は印なしで押せない。"rename" は `import_rename_target(ps, name)` の名前を出す）→ `confirm_import_pick()`（`set_import_all()`・`set_import_check()`。一つも選ばなければ []）→ `import_run_presets(path, names)`。
+- **秒数**：プロジェクト設定 `debug.pre_set_seconds`（0 でクリックするまで。書かなければお知らせの決まりの秒数）。
+- **外す**：選ぶ一覧の行の「×」→ `picker_remove(key)`（足した行も、もとからの行も。外したものはまた `picker_add` で足せる）。
+
+## 段階41の決めごと（選んで書き出す、切り替え、足す）
+
+- **選んで書き出す**：「書き出す…」は `open_export_pick()`（ひな形の一覧。初めは全部に印。`set_export_all()`・`set_export_check()`）→ `confirm_export_pick()`（一つも選ばなければ false。全部に印なら `export_names = []`、ほかは選んだ名前）→ ファイルを選ぶ窓 → `export_run_presets(path, export_names)`。
+- **切り替え**：プロジェクト設定 `debug.pre_set_notice`（お知らせ）・`debug.pre_set_log`（メッセージログ）。どちらも既定 true。
+- **足す**：選ぶ一覧の下の行（種類・名前・値・「足す」）。`picker_add(kind, name, value)`（kind は "v"・"i"。印を付けて足す。あれば値を書きかえる。名前が空なら false。持ち物の個数は空なら 1、数でなければ 1）。
+
+## 段階40の決めごと（先に設定した値、書き出し・読み込み、値の書きかえ）
+
+- **先に設定した値**：アダプタが先に動かす手順の前後に `{"_pre_sets": "begin"}`・`{"_pre_sets": "end"}` を積み、その間の set・let で入った値を `pre_set_log`（入った順）に残す。問い合わせ `"pre_set_log"`（なければ null）。ゲームは `_boot()` で `pre_set_text(log, 4)` をお知らせに（ログには出さない）、`pre_set_text(log, 0)` をメッセージログ（`add_notice`）に。
+- **書き出し・読み込み**：`export_run_presets(path, names := [])`・`import_run_presets(path)`（`PRESET_FILE_FORMAT`。同じ名前で同じ中身は飛ばす。前に読み込んだ「（読み込み）」の名前に同じ中身があっても飛ばす。違えば「（読み込み）」「（読み込み 2）」…。ひとまとまりで元に戻せる）。窓の「書き出す…」「読み込む…」は FileDialog（ファイルシステム）。
+- **値の書きかえ**：選ぶ一覧の行は印・名前・値（変数は LineEdit、持ち物は SpinBox）。`picker_preset()` が印の付いたものを欄の値で `{vars, items}` に（`parse_value_text`：JSON として読めればその値、読めなければ文字。`value_text` は整数の小数を整数で）。`set_picker_value(key, value)`。送るのは `send_preset_data(name, data)`。絞り込みは行ごと隠す（`_picker_row_visible`）。
+
+## 段階39の決めごと（条件も、複製、絞り込み）
+
+- **条件も**：頼みの `pre_sets` は `true`（設定するだけ）か `"cond"`（もしも見る）。エディタは `run_pre_cond`（「条件も」。「設定を先に」がないと押せない）、`pre_sets_mode(v)` が `""`・`"plain"`・`"cond"`。アダプタは `sets_before(arr, idx, with_ifs)` → `sets_only(steps, with_ifs)` で「もし」を中の set・let・もしだけに絞って積む（中が空の「もし」は入れない）。条件は積んだものを動かすときに見るので、それまでの設定が効く。履歴では別の実行として「（設定を先に・条件も）」。
+- **複製**：`duplicate_run_preset(src, new_name := "")`（保存してあるものを写す）、窓の「複製」は `duplicate_preset_in_dialog()`（書いている中身を保存し、写しを開いてもとと比べる）。名前は `unique_preset_name(base)`。
+- **絞り込み**：`filter_picker(text)`（名前の一部、大文字・小文字は区別しない。見えている数を返す）。`set_picker_all()` は見えているものだけ。`picker_selection()` は隠れたものも含む。
+
+## 段階38の決めごと（比べる、設定を先に、選んでひな形に）
+
+- **比べる**：`AdvScenarioEditor.diff_presets(a, b)` が `[{kind: "vars"|"items", key, a, b}]`（ない方は null。数は 3 と 3.0 を同じと見る。種類・名前の順）、`diff_text()` が窓に出す文。窓の「比べる：」（`_preset_cmp`、書いているひな形のほか）で選び、窓に書いている中身（`_preset_in_dialog()`）と比べる。`compare_preset_with(name)`。
+- **設定を先に**：頼みの `pre_sets: true`（会話の画面の「設定を先に」、`run_pre_sets`）。アダプタの `_enter_path(path, pre_sets)` が通り道のそれぞれの段で始める場所より前の set・let（`sets_before(arr, idx)`、「もし」の中までは見ない）を集め、いちばん上に積んで先に動かす。Ink のノットからは使わない。履歴では別の実行として数え、「（設定を先に）」と出す。
+- **選んでひな形に**：ゲームの「ひな形に」は `open_preset_picker()`（変数・持ち物の一覧。初めは全部に印）。`set_picker_check("v:名前" / "i:ID", on)`・`set_picker_all()`・`picker_selection()`・`confirm_preset_picker()`（何も選ばなければ送らない）・`close_preset_picker()`（Esc）。`send_preset_to_editor(name, only)`・`preset_from_state(st, only)` の only は `{vars: [名前], items: [ID]}`（null で全部）。コンソールの `preset` は全部。
+
+## 段階37の決めごと（ゲームからひな形、入れ子から、お気に入り）
+
+- **ゲームからひな形**：`AdvPlayer.send_preset_to_editor(name)`（デバッグの「ひな形に」、コンソール `preset [名前]`。名前を省くと「シーン 時:分:秒」）が `GAME_PRESETS_FILE`（`user://adv80s_game_presets.json`、`[{name, vars, items, time}]`）に書き足し、デバッガにつながっていれば `adv80s:preset_saved`。中身は `preset_from_state()`（書かれた変数のうち定数でないもの、持ち物）。エディタは `import_game_presets()`（デバッガの知らせ → plugin → 画面、または `NOTIFICATION_APPLICATION_FOCUS_IN`）でひとまとまりに書き（元に戻せる）、ファイルを消す。
+- **入れ子から**：頼みの `path`（`get_steps()` の形での道筋。数は手順の番目、文字はキー。選択肢の項目の番目は `"0"` のように文字）。エディタは `AdvStepEditor.selected_path()`・`path_of()`（「そうなら」の行・項目の行そのものは、その中の最初）。アダプタの `_enter_path()` は通った手順の次を外の枠の続きにし、中の配列を積む（条件は見ない。枝がなければ外の続き）。道筋が1つなら `line` にする。`AdvPlayer.take_run_from()` は番目を整数にそろえる。表示は `path_text()`（「2 › そうなら › 1」）・`run_place_text()`。
+- **お気に入り**：履歴の記録の `fav: true`。`_write_history()` がお気に入りを上に並べ、ほかだけ 10 件まで。`toggle_favorite(i)`、「履歴を消す」は `clear_history_keep_favorites()`。もう一度動かすときも印は残る。
+
+## 段階36の決めごと（ひな形、途中から、履歴）
+
+- **ひな形**：プロジェクト設定 `debug.run_presets`（名前 → `{vars, items}`）。エディタは `run_presets()`・`save_run_preset()`・`delete_run_preset()`（元に戻せる）、窓は「名前 = 値」の行（`parse_assign_lines`。値は JSON として読めればその値、読めなければ文字列）。実行の頼みにはそのときの値を入れ、ゲームは `apply_run_values()` で始める前に `set_var`・持ち物の個数を入れる（0 以下は持たない）。
+- **途中から**：頼みの `dialogue`・`line`（いちばん上の段の何番目か。0 から）か `knot`（「ノット.ステッチ」も）。`AdvCore.start_at(entry, at)` → 主のアダプタの `start_at`（JSON：シーンに入ってから入ったときの手順を捨て、会話を呼んでその番目から。ノットは `adapter.enter`）。`start_at` のないアダプタはふつうに始める。
+- **履歴**：`user://adv80s_run_history.json`（新しい順に 10 件。同じシーン・会話・行・ノット・ひな形は先頭へ）。ひな形の値は入れず、もう一度動かすときに読み直す（消えたひな形は「なし」で動かす）。
+- **頼みのファイル**：`AdvPlayer.take_run_from()` が頼みをまるごと返す（`take_run_from_request()` はシーンだけ）。`run_from` に残し、お知らせは `run_from_text()`。
+
+## 段階35の決めごと（このシーンから実行、会話・ノットを開く、大きさ）
+
+- **このシーンから実行**：`AdvScenarioEditor.run_from_scene(id)` が `AdvPlayer.RUN_FROM_FILE`（`user://adv80s_run_from.json`、`{scene, time}`）を書き、エディタの中なら `EditorInterface.play_main_scene()`。ゲームはデバッグビルドの `_boot()` で `take_run_from_request()`（読んで消す。30秒より古いものは使わない）があれば、タイトルを通らずそのシーンから始める（`run_from_scene`、お知らせ「シーンから実行：…」）。
+- **会話・ノットを開く**：アダプターの問い合わせ `"location"`（JSON は `{scene, dialogue}`、Ink は `{knot}`）を `current_location()` でまとめ、`adv80s:open_scene` で `[id, loc]` を送る。エディタは `open_location(scene, loc)`：会話はチャプターを探して開き、ノットは Ink のソースから `== 名前` の行を探してその行に移る。
+- **大きさ**：`AdvPlayer.file_stamp(path)` が `"更新時刻:大きさ"`。プロジェクト設定・シナリオのファイルの見張り（`watch_snapshot`）とエディタの `files_snapshot` で使う（素材フォルダは更新時刻だけ）。
+
+## 段階34の決めごと（外の書き換え、ファイルの数、エディタで開く）
+
+- **外の書き換え**：`AdvScenarioEditor.files_snapshot()`（プロジェクト設定・シナリオのファイル・Ink のソース → 更新時刻）を、読み直したときとエディタで書いたとき（`files_changed`）に取っておき、`NOTIFICATION_APPLICATION_FOCUS_IN` で `check_external_changes()`。更新時刻は秒の単位なので、1秒の中の二度目の書き換えは気づかないことがある。
+- **ファイルの数**：`changes_text(changes, limit)` の limit に `debug.notice_files`。
+- **エディタで開く**：ゲームの `request_open_in_editor(scene_id)` が `EngineDebugger.send_message("adv80s:open_scene", [id])`。エディタは `editor/adv_debugger_plugin.gd`（EditorDebuggerPlugin、`open_scene_requested`）を `plugin.gd` で足し、`open_scene_in_editor` → `adv_editor_screen.open_scenario_scene` → `AdvScenarioEditor.open_scene_by_id`。
+
+## 段階33の決めごと（エディタからの入・切、変わったファイル、自動の確かめ直し）
+
+- **エディタからの入・切**：シナリオエディタの `auto_reload_toggle`（`set_auto_reload_setting(on)` がプロジェクト設定 `debug.auto_reload` を書く。元に戻せる）。ゲームはデバッグビルドで `DebugPoll`（2秒ごと、`poll_debug_settings()`）がプロジェクト設定のファイルの更新時刻を見て、`debug.auto_reload` が前と変わっていれば `set_auto_reload` で合わせる（コンソールで入・切したものは、設定が変わらなければそのまま）。
+- **変わったファイル**：見張りは `watch_snapshot()`（ファイル → 更新時刻）と `watch_changes(now)`。`debug_reload` のあと `last_reload_changes`、`changes_text()` でお知らせ、`print`、コンソール。
+- **自動の確かめ直し**：`AdvScenarioModel.files_changed`（ひとまとまりの書き換え・元に戻す・やり直すのあと）を、エディタが `_on_files_changed` で受け、ID の確認の一覧を出していれば次のフレームで `refresh_check`。
+
+## 段階32の決めごと（自動の読み直し、入り直し、書き出し）
+
+- **自動の読み直し**：`set_auto_reload(on)`（Timer `ReloadWatch`）、`check_watch()`（`_watch_signature()` が変われば読み直す。忙しいときは `_watch_pending` で次へ）。見張るのはプロジェクト設定・シナリオのファイルと、素材フォルダの中のファイル（.import・.uid を除く。アドオンの標準は除く）の更新時刻。起動時に `debug.auto_reload` なら入れる。
+- **入り直し**：`debug_reload(reenter)`（null ならプロジェクト設定 `debug.reload_reenter`）。入り直しは `core.start(いまのシーン)`（変数などはそのまま。`first` は初めてのときだけなので動かない）。Shift+F8、`reload enter`。
+- **書き出し**：`AdvScenarioEditor.export_check(path)`（`check_view` の行。.csv は BOM つきの CSV、ほかはテキスト）と `export_dialog`。
+
+## 段階31の決めごと（絞り込み、確かめ、読み直し）
+
+- **絞り込み**：`check_kind_pick`・`check_file_pick`、`set_check_filter(kind, file)`。一覧の行は `check_view` で `check_results` の番号に対応させる。
+- **確かめ**：`fix_selected(same_id, confirm = true)`。まとめて直すときは `fix_confirm`（ConfirmationDialog）に書き換える場所を出し、OK で `_do_fix`。
+- **読み直し**：`AdvPlayer.debug_reload()`（デバッグビルド。F8、デバッグのボタン、コンソールの `reload`）。`_make_save_data` で取っておき、プロジェクト設定を読み直し、素材はいまの素材フォルダを `AdvManifestGenerator.scan` で読み直した新しい `AdvAssets` に替え、主のアダプタを作り直してシナリオを読み、確かめ（`missing_ids`）をし直してから `_apply_save_data` で戻す。シグナル `reloaded`。
+
+## 段階30の決めごと（Ink の確認、まとめて直す、デバッグ実行の一覧）
+
+- **Ink**：`AdvScenarioEditor.all_ink_sources()`（シナリオのフォルダの ink/*.ink）と `_scan_ink`（タグ `INK_TAG_KINDS`、JSON のタグは `arg_id_kind`、`call_scene`・`goto_scene` の文字列）。結果は行番号 `line` を持つ。
+- **直す**：結果に `kind`・`id`・`fix_path`（JSON の中の道筋）か `line`（Ink）。`fix_selected(same_id)` → `apply_fixes(targets, new_id)`（ファイルごとに `model.begin/end` でまとめて書く。Ink は `_replace_ink_ref` で `tag:ID` と `"ID"` だけを置き換える）。
+- **共通の確かめ**：`core/adv_id_check.gd`（`AdvIdCheck.asset_kind_of`、`check_project`）。エディタの `asset_kind_of` はこれを使う。
+- **デバッグ実行**：`AdvPlayer.missing_ids`（起動時の診断のうち `ASSET_NOT_FOUND`・`MISSING_TARGET`・`SUBSCENE_KIND` と、`AdvIdCheck.check_project` の結果）。デバッグコンソールの `ids`。
+
+## 段階29の決めごと（ID の確認の一覧、お知らせの消え方と位置、ログの文言）
+
+- **ID の確認**：`AdvScenarioEditor.scan_missing_ids()`（プロジェクト設定とシナリオのファイルをたどる。シーンの中はシーンからの道筋で `form_check`、手順の出力イベントは `ARG_ID_KINDS` の引数を `missing_message`）。候補は確かめる間 `_cand_cache` に取っておく（持ち物は全シナリオの持ち物）。一覧は `check_panel`・`check_list`、`show_check_panel(on)`、`open_check_result(i)`。
+- **消え方と位置**：`notice_style.overflow`、`show_notice` の最後の引数 `at`（位置）、`notice.show`・`notices` の項目の `position`。
+- **文言**：`notice_style.log_labels` を `AdvLogView.set_filter` が重ねる。
+
+## 段階28の決めごと（見つからない ID、お知らせの上限、ログの出し分け）
+
+- **注意**：`AdvSchemaForm.check`（func(path, value) -> String）と `_apply_check`（赤字 `WARN_COLOR`、項目名の説明の先頭に「⚠ 理由」、`warning_of`）。シナリオエディタの `form_check` と `missing_message(kind, id, known)`（画像は「ID@違い」の ID で確かめる）。おわりの画面の then の title・new・quit・stay、システム画面の .tscn は注意しない。
+- **上限**：`notice_style.max`（既定 5）。超えたら `_dismiss_now` で古いものから消す。`_relayout_notices` が位置ごとに出した順に並べ直す（出したとき、消えたとき）。
+- **ログ**：`AdvLogView.set_filter`（`all`・`text`・`notice`）、`filter_button`（お知らせがあるときだけ）、Tab キー。開いたときは `notice_style.log_filter`。
+
+## 段階27の決めごと（お知らせの消し方とログ、音の試し鳴らし）
+
+- **消し方**：お知らせのクリックは `AdvPlayer._input` の最初で受け取る（`notice_at(pos)` → `dismiss_notice`。文字送りの前に止める）。`seconds` が 0 なら時間のトゥイーンを作らない。
+- **ログ**：`AdvMessageLog.add_notice`（種類 `notice`）。`AdvLogView.open` の最後の引数にお知らせの見た目（`log_mark`・`log_color`）。
+- **試し鳴らし**：`AdvSchemaForm.audio_kind` と `play_requested`（▶ のボタン `BTN_PLAY`）。シナリオエディタの `play_audio(kind, id)`（同じ音ならもう一度で止める、`playing_audio`）、`form_audio_kind`、`AdvScenarioModel.asset_path`。手順のエディタは `audio_player`。
+
+## 段階26の決めごと（お知らせの絵とログ、画像の見本）
+
+- **絵**：`show_notice(text, seconds, icon, log)`。中身は HBox（`Icon` の TextureRect と `Text` の Label）。持ち物の絵はシナリオの `items.<ID>.icon`、JSON アダプタの問い合わせ `item_info`（手放したあとでも名前と絵を返す）。`notice_entry(key)` は `notices` の項目を `{text, icon, log}` にそろえる。
+- **ログ**：`notice_style.log`（既定 false）か、`notice.show`・`notices` の項目の `log`。残すときは `message_log.add_text`。
+- **見本**：`AdvSchemaForm.preview`（func(path, value) -> Texture2D）。絵は項目名の列に出す（値の列が一覧のときは絵が描かれないため）。シナリオエディタは `form_preview`（`asset_kind_of` が image の項目）、手順のエディタは `image_source`（`arg_id_kind` が image の引数）。
+
+## 段階25の決めごと（お知らせの見た目・場面、ID の一覧と手入力）
+
+- **見た目**：`AdvPlayer.notice_style()`（既定 → テンプレートの `notice` → プロジェクト設定 `notice_style`）。`show_notice` の seconds が負なら見た目の秒数。`_notice_position` は同じ位置のお知らせと重ならないようにずらす（下の位置は上へ）。スキーマは `definitions.notice_style`（テンプレートとプロジェクトで共通）。
+- **場面**：`AUTO_NOTICES`（item.add・item.remove・notebook.add・objective.set・hint.set）と `notice_text(key)`（`notices.enabled` が false なら ""）。オートセーブは `autosave()` のあと。
+- **ID**：`AdvStepEditor.ARG_ID_KINDS` と `arg_id_kind(event, path)`、`id_source`（シナリオエディタの `id_candidates(kind)`：素材・シーン・持ち物）。`AdvSchemaForm` の候補の一覧の最後に `MANUAL`（「（手で入力…）」）を足し、選ぶと値を聞く（`set_manual_value`）。image.show・sprite.hide の id は「文字列か配列」。
+
+## 段階24の決めごと（引数のフォーム、お知らせ、デバッグ）
+
+- **引数のフォーム**：`tools/build_schemas.py` の `EVENT_ARGS` を、シナリオのスキーマの `definitions.event_args` に書き出す（fin.show は `#/definitions/fin`）。`AdvStepEditor.event_args_schema(name)` で読み、`args_form`（AdvSchemaForm）で書く。定義のないイベント（`x.*`）は JSON の欄。項目のないイベントは「引数はありません」。
+- **お知らせ**：出力イベント `notice.show`。プロジェクト設定 `notices`（item_add・notebook_add）は `_auto_notice` が `_play` で見る（システムシーンの中を除く）。`show_notice` は出ているお知らせの下に並べる。
+- **デバッグ**：`AdvProgress.clear_read()`・`clear_flow()`・`clear_openings()`。コンソールに `progress`・`read clear`・`flow clear`（`chapters clear`）・`openings clear`・`progress clear`。
+
+## 段階23の決めごと（特典のお知らせ、タイトルの開いた数、デバッグ、シナリオエディタ）
+
+- **お知らせ**：`AdvPlayer.check_bonus_unlocks()`（新しく開いた特典の名前を返す。`progress.seen["bonus"]` に「一覧:名前」で残す）と `show_notice(text)`・`notices()`。`_play` の image.show・bgm.play で初めて見た・聞いたとき（`AdvProgress.mark_seen` が true を返す）と ending.reach のあとに呼ぶ。
+- **開いた数**：`fill_extras_sys` が `sys.extras_opened`・`sys.extras_total` も入れる。`AdvTitleScreen` は `extras.title_count` なら「おまけ」に数を足す。
+- **デバッグ**：`AdvProgress.clear_extras()`・`clear_endings()`。デバッグコンソールに `player`（AdvPlayer）を渡し、`extras`・`extras clear`・`extras unlock`・`endings clear` を足した。
+- **シナリオエディタ**：`GAME_TABS` にタイトル・おわり・おまけ・システム。`_suggest` が `asset_kind_of(keys)` で素材の ID（`AdvScenarioModel.asset_ids(kind)`）を、オープニング・システム画面・next・fin.then でシーンの ID を出す。`AdvStepEditor` に種類 event（`DOTLESS_EVENTS` と点のある名前の1キーの手順。名前の一覧は `event_names()` でシナリオのスキーマから読む）。`AdvScenarioModel.scenes()` が kind も返し、カードに種類を出す。
+
+## 段階22の決めごと（おまけの見本の画像、曲の説明、特典）
+
+- **見本の画像**：`AdvModernUI.gallery_thumb(entry)` と `_set_thumb`（Button.icon、`icon_max_width` 64）。`extras.thumbnails`。
+- **曲の説明**：`_music_desc`（name_color の色の行）。`extras.music_desc`。
+- **特典**：`AdvPlayer.fill_extras_sys()`（特典を除いて sys.gallery_* と sys.music_* を数える。can_open_extras、open_gallery、open_music から呼ぶ）、`extra_listed(entry, kind)`（一覧に出すか）、`extras_bonus_on()`。`extra_unlocked` は特典なら when（既定 sys.<一覧>_all）。`extra_pages` は特典なら全部の画像。
+- スキーマの `title_menu` に `opening`、`extras` を足した（段階17・20で使えるようにしていたが、スキーマに入れ忘れていた）。
+
+## 段階21の決めごと（おまけの拡張）
+
+- **並べる項目**：`AdvPlayer.extras_menu()` が `extras.menu`（既定 gallery、music）のうち出せるものを返す。`can_open_extras` はこれが空なら出さない。`AdvModernUI.open_extras` は endings なら `open_endings`、opening はタイトルから開いたときだけ `replay_opening`。
+- **めくれる画像**：`extra_ids(entry)`（images か id）、`extra_pages(entry)`（when があれば全部、なければ見たものだけ）。`AdvImageViewer.setup` は Texture2D かその並びを受け取り、`next_page`・`prev_page`・`page_count` を持つ。
+- **音楽の鳴らし方**：`AdvAudio.bgm_finished`（ループしない BGM が鳴り終わった）と `set_bgm_loop(loop)`（鳴らしている曲のくりかえしを変える）。`AdvModernUI.music_mode()`・`music_play(i)`、鳴り終わると `_on_music_finished` が次の開いている曲へ。プレイヤー設定 `music_mode`。
+
+## 段階20の決めごと（クリアデータの引き継ぎ、タイトルのメニューの差し替え、おまけ）
+
+- **引き継ぎ**：`save_carry` はクリアデータの meta の `carry` に入る。`load_game` は meta.clear なら `_carry_over(carry)`：`"all"` は何もしない、それ以外は `duplicate_state` で取っておき、`_initial_data` に戻してから選んだもの（vars・items は全部か名前の配列、visited・talked・notebook・chosen は丸ごと）を写す。
+- **メニューの差し替え**：JSON アダプタの `_with_variants` が `menu` も重ね、`_push_menu` も variants を通す。テンプレートのタイトル画面は `title_variant()` の `menu`・`labels` と、プロジェクト設定 `title_labels`。
+- **おまけ**：`AdvPlayer.can_open_extras`（show、when）と `extra_unlocked`、`AdvModernUI.open_extras`・`open_gallery`・`open_music`、`presentation/adv_image_viewer.gd`（`AdvImageViewer`）。`AdvProgress.seen`（image・bgm）は `_play` の image.show（重ねる絵は要素ごと）と bgm.play で記録する（システムシーンの中を除く）。`_fill_title_sys` に `sys.extras` を足し、ほかの値は `_fill_title_sys_basic` に分けた（can_open_extras から呼ぶため）。
+
+## 段階19の決めごと（クリアデータのセーブ、見たエンディングでタイトルを変える、おわりの画面の複数行）
+
+- **クリアデータ**：`AdvPlayer.offer_clear_save(settings)`（`show_fin` が `save_prompt` のとき、閉じたあとに呼ぶ）。はいなら `_clear_meta`（clear、ending、resume）を立てて `open_save_menu("save")`。`_make_save_data` は meta に `_clear_meta` を重ねる（JSON のシステムシーンの取っておいた状態にも入る）。`list_saves` は「クリア」を付ける。`load_game` は meta.clear なら、ログを消して `core.start(resume か開始シーン)`。
+- **JSON のシステムシーンも閉じるまで待つ**：`_open_custom_system` は JSON のシステムシーンを開いたら `system_scene_closed` を待つ（`open_save_menu` などの「閉じるまで待つ」をそろえた）。`close_system_scene(notify)` が出す。`system.load` は、閉じてロードしたあとに出す。`_reset_state` で閉じたときも出す。
+- **見たエンディングでタイトルを変える**：`_fill_title_sys` が `sys.endings_seen`・`sys.endings_total`・`sys.all_endings`・`sys.ending_<ID>` を入れる（起動時、タイトルを始めるとき、システムシーンを閉じたとき）。JSON アダプタの `_with_variants` がシーンの `variants`（image、bgm、bgm_fade）を `_enter_scene` で重ねる。テンプレートのタイトル画面は `AdvPlayer.title_variant()`（プロジェクト設定 `title_variants`）。validate は variants の条件と素材を確かめる。
+- **おわりの画面の複数行**：`AdvCredits.build_items`（スタッフロールの行の組み立てを static にしたもの）を `AdvFinScreen` でも使い、出したあと（call_deferred）に縦の真ん中へ寄せる。
+
+## 段階18の決めごと（おわりの画面、オープニングを見返す、Ink のサブシーンの確認と候補）
+
+- **「おわり」の画面**：`presentation/adv_fin_screen.gd`（`AdvFinScreen`）。設定は `AdvFinScreen.merge_settings`（`DEFAULTS` → プロジェクト設定 `fin` → シーンの `fin` → `fin.show` の引数。bool は show）。AdvPlayer の `_run` の終わりで、kind `ending` のシーンに選択肢がなく、そのシーンでまだ出していなければ（`_fin_scene`。シーンが変わると消す）`show_fin` する。`fin.show` は `_pending_action`。閉じる条件は `_input`（click・key・key:名前）、`_process`（秒数）、`trigger(名前)`（`AdvPlayer.fire_trigger`）。`min_time` まではキーで閉じない。閉じたら `then`（title・new・quit・stay・シーンID と reset）。出し入れは `AdvScreen.transition_group`。
+- **オープニングを見返す**：`AdvPlayer.can_replay_opening`（プロジェクト設定 `opening_replay`）と `replay_opening`（`_reset_state` してから `_opening_replay` を立てて流す）。`_track_opening` は見返し中なら飛ばせる印にし、終わる・飛ばす・ほかのシーンへ進むと `go_title`。テンプレートのタイトル画面の項目 `opening`、エンディング一覧のボタン（タイトルから開いたときだけ）、出力イベント `opening.play`。タイトルのシーン向けに `_fill_title_sys` が `sys.opening_replay`・`sys.endings_seen` を入れる（タイトルを始めるとき、システムシーンを閉じたとき）。
+- **Ink のサブシーンの確認**：`AdvInkAdapter.subscene_calls(story)` が、外部関数 `call_scene` の呼び出しの直前の `"str" 文字列 "/str"` の組から行き先を読む（引数がすべて文字列そのままのときだけ）。validate は `ctx.query("scene_info")` で JSON のシーンを確かめる。
+- **Ink のエディタの候補**：`AdvScenarioEditor.ink_completion_items(行の頭からカーソルまで)`。CodeEdit の候補の仕組み（`code_completion_requested`）を使い、`call_scene("` か `goto_scene("` のあとで文字を打つと出す。
+- **確かめ用**：`tests/stage16/ink/bad_sub.ink`（行き先の誤り）、シナリオのエンディング `end_bad`（fin の設定）と `end_quiet`（fin: false）、タイトルのメニューの「オープニング」。
+
+## 段階17の決めごと（オープニングの流し方、スタッフロールの画像、Ink のサブシーン、タイトルの BGM と演出）
+
+- **オープニング**：プロジェクト設定 `opening`（起動時に流すシーン）と、シーンの `replay`（`always`・`once`・`skippable`）・`next`。AdvPlayer は scene.goto・scene.call でオープニングに入ると `_track_opening` で `_opening` を作り、抜けたとき（ほかのシーンへ移る、飛ばす、はじめから・タイトルへ）に `_end_opening` で `AdvProgress.openings` に記録する。手順を最後まで進めて選択肢もなければ `_after_opening(next)`（next、なければ `_start_title_or_entry`）。`once` で見たことがあれば、起動時は流さずに進み、途中で入ったときは `_pending_action` で飛ばす。`skippable` で見たことがあれば、案内の Label を出し、Esc・右クリック・B で `skip_opening`（実行中なら `_pending_action` に入れ、`_skip_held` が true を返すので待ちが飛ぶ）。JSON アダプタの問い合わせ `scene_info`（kind、replay、next、bgm など）を足した。
+- **流れを切る操作の待ち**：`_pending_action` があるあいだは `_skip_held()` が true を返す（クリック待ちや文字送りで止まらない）。
+- **シーンの BGM と切り替え演出**：JSON アダプタが、シーンの `bgm` を入ったとき（`_scene_bgm`、サブシーンから戻ったときは呼び出し元のもの）に bgm.play・bgm.stop にし、`transition` を scene.goto・scene.call の引数に入れる。validate は `bgm` の素材と `next` の行き先を確かめる。kind `opening` のシーンは UNREACHABLE にしない。
+- **テンプレートのタイトル画面**：中身を CanvasGroup（`AdvTitleScreen.group`）にまとめ、`AdvScreen.transition_group(g, tr, hiding)`（画像の切り替えと同じ `_transition` を、重ねた画面全体の範囲でかける）で出し入れする。`reveal()` は出したあと（call_deferred）に呼ぶ。BGM は `open_title_screen` が `title_bgm` で鳴らす。
+- **スタッフロール**：`AdvCredits` を VBoxContainer に行（RichTextLabel、TextureRect、空き）を並べる形にした。画像は AdvPlayer の `_layer_texture`（カラーキー、機種別の差し替えも効く）で読む。`bgm` は流す前に bgm.play として実行する。
+- **Ink からサブシーン**：AdvInkStory に `stop_requested`（立つと `_run_until_stop` がいまの命令のあとで止まる）。外部関数 `call_scene` が立て、AdvInkAdapter が `_run` の最後で内部イベント `adapter.call {adapter: "main", step}` を出す。Core は `_switch_adapter` で主のアダプタを上にもう一度積み、`call_step(step)` を呼ぶ（積み方はセーブの `active` に名前で残るので、同じアダプタが2回あってもよい）。JSON アダプタは `_scene_calls` の記録に `from_adapter` と、Ink を待っていた `_suspended` を残し、`return` でそれを見つけたら `_suspended` を戻して `adapter.exit` を出す。Core が上の JSON を外し、Ink の `resume` が Core の値を写して（`_sync_in`）続きを進める。
+- **画面に入ったときの入力UI**：scene.goto などで `_apply_input_modes` を呼ぶ（タイトルやオープニングでは、入ったときからコマンドを隠す）。
+- **確かめ用**：`tests/stage16/ink/sub.ink`（`.ink.json` は inklecate で作ったもの）、シナリオのオープニング `op`。
+
+## 段階16の決めごと（特殊シーン、システムシーン、サブシーン、エイリアス）
+
+- **シーンの種類**：シーンの `kind`（`normal`・`title`・`opening`・`ending`・`sub`・`system`）。JSON アダプタの問い合わせ `scene_kind`。タイトル・オープニング・エンディング・システムのシーンでは、AdvPlayer の `_input_modes()` が選択肢を出しているときだけ `["select"]`、ほかは `[]` を返す（入力UIの設定より優先）。
+- **タイトル**：プロジェクト設定 `title_screen`（`""`・`"template"`・シーンID）。AdvPlayer は起動の流れを `_boot()` にまとめ、始める前の状態（`_initial_data`、`_make_save_data()` の形）を取っておく。`new_game(scene)`・`go_title()` はその状態に戻してから始める（巻き戻しの記録も消す）。
+  - テンプレートのタイトル画面は `presentation/adv_title_screen.gd`（`AdvTitleScreen`）。重ねる画面として出し、選んだ項目（`action`）で AdvPlayer の `open_title_screen()` が続きを行う。ロードやチャプターで始まらなければ、またタイトルを出す。テンプレートの `title` の項（`image`、`fill`、`title_y`、`title_pal`、`title_size`、`show_title`、`menu_y`、`menu`、`labels`）で見た目を変えられる。
+  - タイトルのシーンの `menu` は、選択肢（`style: "menu"`）として出す。項目の `do` の後ろに内部の手順 `{"_menu": シーンID}` を足し、手順が終わるとまたメニューを出す。
+  - 流れを切るイベント（`game.new`・`game.title`・`game.continue`・`game.quit`・`endings.open`・`chapters.open`・`settings.open`・`system.load`・`system.close`）は、AdvPlayer の `_pending_action` に入れて `_run` の繰り返しを抜け、実行中（busy）でなくなってから行う。
+- **エンディング**：kind `ending` のシーンに入ると、JSON アダプタが `ending.reach {id}` を出し、AdvPlayer が `AdvProgress.mark_ending`（`endings`：ID → {time, count}）で記録する。一覧は `AdvModernUI.open_endings()`。プロジェクト設定 `endings` が Core の設定にも入り、validate が `ENDING_UNKNOWN` を確かめる。
+- **スタッフロール**：`presentation/adv_credits.gd`（`AdvCredits`）。RichTextLabel を Tween で下から上へ動かす。クリック（`_click_pending`）とスキップで飛ばす。
+- **システムシーン**：プロジェクト設定 `system_scenes`。`open_save_menu`・`open_log`・`AdvModernUI.open_settings` の最初に `_open_custom_system(mode)` を呼ぶ。
+  - `.tscn`：`presentation/adv_system_screen.gd`（`AdvSystemScreen`）を継いだもの。`closed` シグナルを持つ Control なら使える（`open(player, mode)` があれば呼ぶ）。
+  - JSON：`open_system_scene(id, mode)`。開く前の状態を `_sys.snapshot` に取っておき、`core.start(id)` で始める。閉じる（`close_system_scene`）と、その状態を `_apply_save_data` で戻す。中で `save_game` すると、`_make_save_data()` が取っておいた状態を返すので、開く前の状態がセーブされる。`sys.` の値は `AdvState.sys`（セーブしない。`duplicate_state` でも同じ辞書を共有する）に `_fill_sys_vars()` が入れる。実行中は開けない（標準の画面を出す）。
+  - 設定の変更は `AdvPlayer.apply_setting(key, value)` にまとめた（`settings.set`、AdvSystemScreen の `set_setting`）。
+- **サブシーン**：JSON アダプタの手順 `call_scene`（`args`、`into`）と `return`。呼び出し元の手順の続き（`_stack`）と背景を `_scene_calls` に積み、セーブにも入れる。Core の状態には状態イベント `scene.call`・`scene.return` で `frames`（`{from, scene, args, into}`）を積む。`arg.名前` は `AdvState.get_var` が一番上の `frames` から読む。引数の数は整数の値なら整数にそろえる（JSON の数は小数で読むため）。深さの上限は Core の設定 `subscene_max_depth`（既定 10）。`goto`（`_goto_scene`）は `_scene_calls` と `frames` を空にする。
+- **エイリアスと文中の条件**：`presentation/adv_text_markup.gd`。`AdvTextMarkup.expand(body, state)` が、エイリアス（`_expand_aliases`）→ 条件（`_expand_ifs`）の順に置き換え、`to_bbcode_stops`・`to_plain`・`to_speech` の最初に呼ばれる。定義は `AdvTextMarkup.set_aliases(core.aliases())`（プロジェクト設定 → シナリオの順に重ねる）。条件の評価は `cond_evaluator`（AdvPlayer が `core.ctx.eval` を入れる。なければ `AdvCondition.evaluate`）。循環は呼び出しの鎖で見つけ、`push_error` で `ALIAS_CYCLE` を出して置き換えをやめる。validate は `AdvTextMarkup.check_aliases`（定義どうしの循環を深さ優先でたどる）と、本文の参照（JSON アダプタの問い合わせ `alias_refs`）を確かめる。Ink の本文も表示のときに置き換わる。
+- **選択肢の文**：AdvPlayer は選択肢を出すとき、文を `AdvTextMarkup.to_plain` に通す（変数・エイリアス・条件が使える）。
+- **シナリオエディタ**：手順の種類に「サブシーンの呼び出し」（専用の欄 `args`（JSON）・`into`）と「サブシーンから戻る」を足した。式エディタの候補に、サブシーンの引数（`arg.名前`）とシステムの値（`sys.名前`）を足し、`.` を含む名前も補えるようにした。シーンの設定のフォームには `kind`、`params`、`menu`、`ending` が出る（スキーマから）。
+- **確かめ用**：`tests/stage16/`（シナリオ、プロジェクト設定、自作の設定画面 `settings_screen.tscn`、検証の誤りを集めた `bad.scenario.json`）。
+
+## 段階15の決めごと（Ink の LIST、自由文のパーサー、シナリオエディタの拡張）
+
+- **Ink の LIST**：`adapters/ink/adv_ink_list.gd`（`AdvInkList`）。C# 版の InkList と同じに、項目は「リスト名.項目名」→ 値で持ち、並び順は C# の Dictionary と同じにする（消した場所は空きになり、次に足したものがそこに入る。`LIST_RANDOM` と、値が同じ項目の扱いがこの順に従う）。元のリスト（origins）は評価用の値を積むとき（`_push_eval`、C# 版の PushEvaluationStack）に決める。変数の名前として書いたリストの項目（`~ inv += red`）は、変数がなければ1つだけ入ったリストとして読む。空のリストを入れたときは、元のリストの名前を引き継ぐ（RetainListOriginsForAssignment）。セーブは C# 版と同じ `{"list": {…}, "origins": […]}`。確かめ用の物語は `tests/ink/src/lists.ink`（期待する出力は `tests/ink/lists.expected.txt`、inklecate -p の出力）。validate の `INK_LIST` はなくした。
+- **LIST と Core**：LIST の変数が変わると、Core には「項目名, 項目名」の文字列で渡す（`state.set`）。Core の状態から Ink に戻すときは、その文字列から作り直す（同じ文字列なら作り直さない）。
+- **自由文のパーサー**：`input/adv_parser_free.gd`（`AdvParserFree`、`AdvParserJa` を継いだもの）。`inputs.parser_profile: "free"`。文の終わりの言い回し（`ENDINGS`）を取り、文の終わりから動詞を探し（言い換え、言い換えの最後の1文字の活用、語幹＋活用の終わり `CONJ`）、残りから名詞を長い順に拾う。スロットの振り分けは日本式と同じ（`_tokens_to_intent` に分けた）。
+- **シナリオエディタ**
+  - **元に戻す**：`AdvScenarioModel` がファイルを書き換える前の中身を、操作ごと（`begin`〜`end`）にまとめて覚える（`undo`・`redo`、最大100）。ごみ箱へ移すものも中身を覚えるので、戻せる。エディタの書き込みはすべてモデルを通す（`write_json`、`write_text`、`remove_path`）。
+  - **整数**：Godot の JSON は数をすべて小数で読むので、モデルは読むときと書くときに `AdvSchemaForm.normalize` で整数に戻す（段階14では `1.0` のように書いてしまうことがあった）。
+  - **新規作成**：名前と ID を聞くダイアログ（`ask_new`）。ID の候補は `suggest_id`、確かめるのは `is_valid_id` と `taken_ids`。
+  - **ID の変更**：`change_id`。シーンと会話は、すべての JSON シナリオのファイル（`all_files`）を複写と同じ `_remap` で書き換え、プロジェクト設定の `entry` も変える。
+  - **開始シナリオ**：`set_start_scenario`（`entry` をそのシナリオの `start` に）、`start_scenario`。
+  - **並べ替え**：`AdvCardGrid` のドラッグ（`set_drag_forwarding`、`reordered`、`move_ids`）と `AdvScenarioModel.set_order`。
+  - **サムネイル**：`image_path`（プロジェクトとシナリオの素材フォルダのマニフェストを読む）と `load_texture`（取り込み前でも PNG などと MAG を読む）。
+  - **範囲のエディタ**：`editor/scenario/adv_region_editor.gd`（`AdvRegionEditor`）。背景を整数倍（入らなければ縮小）で出し、ドラッグで `[x, y, 幅, 高さ]` を決める。
+  - **フォームの式**：`AdvSchemaForm.expr_mode`（式の項目か）と `expr_requested`、`set_value_at`。`$ref` が `#/definitions/condition` の項目と `let` に「式…」を出す。
+  - **自前の候補**：`AdvExprEditor` は CodeEdit の候補の仕組みを使わず、CodeEdit の上に ItemList を出す（`completion_items`、`request_completion`、`accept_completion`）。キーは CodeEdit の `gui_input` で先に受ける。
+  - **手順の専用の欄**：`AdvStepEditor.DETAILS`。台詞の `id`・`voice`、選択肢の `id`、選択肢の項目の `id`・`once`。
+  - **古い形のファイルを移す**：`migrate_loose`。`MAIN_KEYS` をシナリオ共通の設定に、ほかをチャプターに入れる。
+- **段階1のサンプル**：`tests/stage1/scenario/stage1.scenario.json` を、シナリオのフォルダの形（`tests/stage1/scenario/stage1/`）に移した。
 
 ## 段階14の決めごと（シナリオエディタ）
 
@@ -231,16 +606,16 @@ godot --headless --path . --script res://addons/adv80s/tools/manifest_cli.gd -- 
 ## 段階7の決めごと（Ink アダプタ）
 
 - Ink の実行部分は GDScript で一から書いた（`adapters/ink/adv_ink_story.gd`、inkle 社の C# 版の動きにそろえた）。inklecate は制作時だけ使い、ゲームには含めない。対応する inkVersion は 19〜21。
-- 未対応：`LIST`（使うと validate が `INK_LIST` を出す）。`RANDOM` とシャッフルは段階13で C# 版と同じ結果にした。
+- `LIST` は段階15で対応した。`RANDOM` とシャッフルは段階13で C# 版と同じ結果にした。
 - シナリオの一覧の `.ink.json` は Ink のアダプタが読む。`.ink.json` だけなら Ink が主のアダプタになる。複数の `.ink.json` を並べると、ノットを持つ最初のファイルを使う。
 - 受け渡し：JSON の `{"ink": "ノット"}` は出力イベント `adapter.enter` を出して止まる。Core が Ink を積んで `start`、Ink が選択肢なしで止まる（DONE、END、終わり）と `adapter.exit` を出し、Core が Ink を外して JSON の `resume` を呼ぶ。この2つのイベントは表示側へは渡さない。アダプタの基底クラスに `resume(result)` を足した。
 - セーブは、すべてのアダプタの状態と積み上げの順番を持つ（`adapters`、`active`）。段階6までの形（`adapter`）も読める。
 - 変数：Ink に入るとき、Ink のグローバル変数と同じ名前の Core の変数の値を Ink に写す。Ink の中で変わったグローバル変数は `state.set` で返す（プロジェクト設定 `ink.sync_variables: false` で止める）。
 - 行：1行ごとに `text.show`。`@話者ID 文章` か `# speaker:ID` で台詞。行IDは `# id:…`、省略すると `ink:ノット#本文のハッシュ`。タグ `# voice:`、`# bg:`、`# bgm:`、`# se:`、`# {"image.show": {…}}`（JSONの手順と同じ書き方）で出力イベントを出す。そのほかのタグは `ext.tags`。
 - 選択肢：項目の ID は `c0`、`c1`…。タグ `# intent:動詞[:対象[:with]]`（`*` は何でも）をつけると、コマンド入力の意図でも選べる。`# hidden` は一覧に出さない（全部 hidden なら選択肢の一覧を出さず、コマンド入力だけで進む会話になる）。intent タグがあるときは、選択肢を出していてもコマンド入力を受け付ける（`pending_choice` の `accepts_intents`）。合う選択肢がない意図には、辞書の既定の返事を出して待ち続ける。
-- 外部関数：`has_item`、`item_count`、`item_add`、`item_remove`、`get_var`、`set_var`、`visited`、`talked`、`cond`（条件式）、`event`（種類, 引数のJSON）、`goto_scene`。これ以外は Ink 側に同じ名前の関数があればそれを使い、なければ validate が `INK_EXTERNAL` を出す。
+- 外部関数：`has_item`、`item_count`、`item_add`、`item_remove`、`get_var`、`set_var`、`visited`、`talked`、`cond`（条件式）、`event`（種類, 引数のJSON）、`goto_scene`、`call_scene`（段階17）。これ以外は Ink 側に同じ名前の関数があればそれを使い、なければ validate が `INK_EXTERNAL` を出す。
 - Ink に入るとき `state.mark`（talked、`ink:ノット`）を出す。選んだ選択肢は `chosen` に `ink:ノット#c…/c番号` で残す。
-- validate のコード：`INK_LOAD`、`INK_VERSION`、`INK_UNSUPPORTED`、`INK_LIST`、`INK_EXTERNAL`、`INK_MISSING_KNOT`（JSON の `{"ink"}` の行き先）、タグの素材は `ASSET_NOT_FOUND`。
+- validate のコード：`INK_LOAD`、`INK_VERSION`、`INK_UNSUPPORTED`、`INK_EXTERNAL`、`INK_MISSING_KNOT`（JSON の `{"ink"}` の行き先）、タグの素材は `ASSET_NOT_FOUND`。
 - タグだけの行は本文が空の行になる（C# 版と同じ）。アダプタは、その行の出力イベント以外のタグを次の行の `ext.tags` に回す。
 - 確かめ方：`tests/ink/src/*.ink` を inklecate で変換したものを `tests/ink/` に置いている。`conformance.ink` は、inklecate の再生モード（`-p`）で選択肢を 1 2 1 2 1 1 2 と選んだ出力（`conformance.expected.txt`）と一字一句同じになることをテストで確かめる。`.ink` を直したら次のように作り直す。
 
@@ -254,7 +629,7 @@ printf '1\n2\n1\n2\n1\n1\n2\n' | inklecate -p tests/ink/src/conformance.ink > te
 
 - 必須のスロットが足りない意図には、文章の返事ではなく `input.request` を返す（引数に `verb`、`type`、足りないスロットまでを埋めた `intent` を足した）。
 - 英語式パーサーは、前置詞をスロットの振り分けには使わず、意図スキーマのスロットの順に型で入れる。英語の辞書の `particles` は前置詞の一覧として使う。
-- パーサープロファイルは、テンプレートの `inputs.parser_profile`（`ja`、`en`、またはスクリプトのパス）。
+- パーサープロファイルは、テンプレートの `inputs.parser_profile`（`ja`、`en`、`free`、またはスクリプトのパス）。
 - `palette_cycle` は減色フィルターのパレットの番号で回す。パレットのないプリセット（ビット数で減色するもの）では使えない。
 - BGM の `volume` は、イベントの `volume` とマニフェストの `volume` をかけ合わせる。
 

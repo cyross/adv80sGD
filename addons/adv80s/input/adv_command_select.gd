@@ -192,6 +192,10 @@ func _add(label: String, cb: Callable, tried: bool = false, icon: Texture2D = nu
 		b.add_theme_color_override("font_focus_color", dim_color)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# 窓より長い文字は「…」で切る（小さい画面で一覧が窓からはみ出さないように。段階63）。全文は説明に
+	b.clip_text = true
+	b.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	b.tooltip_text = label
 	b.focus_mode = Control.FOCUS_ALL
 	b.disabled = not _enabled
 	b.pressed.connect(cb)
@@ -205,6 +209,8 @@ func _show_verbs() -> void:
 	_clear()
 	_grid.columns = columns
 	_inv.columns = columns
+	if _core == null:
+		return
 	var verbs = _core.query("verbs")
 	if not verbs is Array:
 		return

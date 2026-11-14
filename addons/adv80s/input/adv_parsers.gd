@@ -1,6 +1,6 @@
 class_name AdvParsers
 extends RefCounted
-## パーサープロファイルを名前で選ぶ（4.2）。"ja"（日本式、標準）、"en"（英語式）、
+## パーサープロファイルを名前で選ぶ（4.2）。"ja"（日本式、標準）、"en"（英語式）、"free"（自由文）、
 ## またはスクリプトのパス（static func parse(text: String, core: AdvCore) -> Dictionary を持つもの）。
 ## 結果の形は AdvParserJa.parse と同じ（{"intent": …} か {"reply": …, "code": …}）。
 
@@ -11,6 +11,8 @@ static func parse(profile: String, text: String, core: AdvCore) -> Dictionary:
 			return AdvParserJa.parse(text, core)
 		"en":
 			return AdvParserEn.parse(text, core)
+		"free":
+			return AdvParserFree.parse(text, core)
 	var s = load(profile)
 	if s != null and s.has_method("parse"):
 		return s.parse(text, core)

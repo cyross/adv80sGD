@@ -2,7 +2,8 @@
 class_name AdvExprEditor
 extends ConfirmationDialog
 ## 式エディタ（6.8）。条件式（if・when）や let 文を、複数行のテキストで書く。
-## 打つと、変数・定数・アイテム・シーン・会話・組み込みの名前を候補に出す（Ctrl+Space でも出る）。
+## 打つと、変数・定数・アイテム・シーン・会話・組み込みの名前を候補に出す（自前の一覧。Ctrl+Space でも出る）。
+## 関数の括弧の中では、その関数に合うもの（visited( ならシーン）だけを出す。↑↓で選び、Enter・Tab で入れる。
 ## 書いた式はその場で確かめ、誤りがあれば下に理由を出す。
 ##
 ##   var ed := AdvExprEditor.new()
@@ -20,6 +21,7 @@ var expr_mode: String = MODE_CONDITION
 ## 候補：[{name, kind, note}]（kind は「変数」「定数」「アイテム」「シーン」「会話」「組み込み」など）
 var candidates: Array = []
 var _done: Callable
+var _list: ItemList
 
 
 func _init() -> void:
@@ -31,12 +33,22 @@ func _init() -> void:
 	code = CodeEdit.new()
 	code.custom_minimum_size = Vector2(540, 200)
 	code.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	code.code_completion_enabled = true
-	code.auto_brace_completion_enabled = true
+	code.auto_brace_completion_enabled = false
 	code.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	code.code_completion_requested.connect(_on_completion)
 	code.text_changed.connect(_on_text_changed)
+	code.gui_input.connect(_on_code_input)
+	code.caret_changed.connect(func():
+		if is_completion_visible() and completion_items().is_empty():
+			hide_completion())
 	box.add_child(code)
+	# 候補の一覧（自前。括弧を開いた直後でも出せる）
+	_list = ItemList.new()
+	_list.visible = false
+	_list.focus_mode = Control.FOCUS_NONE
+	_list.auto_height = false
+	_list.item_activated.connect(func(i): accept_completion(i))
+	_list.item_clicked.connect(func(i, _p, _b): accept_completion(i))
+	code.add_child(_list)
 	message = Label.new()
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	message.custom_minimum_size = Vector2(540, 0)
@@ -44,6 +56,7 @@ func _init() -> void:
 	confirmed.connect(func():
 		if _done.is_valid():
 			_done.call(text()))
+
 
 
 ## 開く。done は決定したときに、書いた式（改行は空白にする）で呼ぶ。
@@ -116,44 +129,170 @@ func _unknown_names() -> Array:
 
 func _on_text_changed() -> void:
 	_check()
-	# 名前を打っている途中なら候補を出す
+	# 名前を打っている途中か、関数の括弧を開いたところなら候補を出す
 	var line := code.get_line(code.get_caret_line())
 	var col := code.get_caret_column()
 	if col > 0:
 		var ch := line[col - 1]
-		if (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z") or ch == "_" or ch == "(":
-			code.request_code_completion()
+		if (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z") or (ch >= "0" and ch <= "9") or ch == "_" or ch == "(":
+			request_completion()
+			return
+	hide_completion()
 
 
-func _on_completion() -> void:
+## 候補の一覧を出す（打った途中の名前と、いま書いている関数の引数に合うもの）。
+func request_completion() -> void:
+	var items := completion_items()
+	_list.clear()
+	if items.is_empty():
+		hide_completion()
+		return
+	for c in items:
+		_list.add_item(String(c["label"]))
+		_list.set_item_metadata(_list.item_count - 1, c["insert"])
+		_list.set_item_tooltip(_list.item_count - 1, String(c.get("note", "")))
+	_list.select(0)
+	var pos := code.get_caret_draw_pos()
+	var h := mini(items.size(), 8) * 22 + 8
+	_list.size = Vector2(320, h)
+	var y := pos.y + code.get_line_height() * 0.5 + 4
+	if y + h > code.size.y:
+		y = maxf(0, pos.y - code.get_line_height() * 1.5 - h)
+	_list.position = Vector2(clampf(pos.x, 0, maxf(0, code.size.x - 320)), y)
+	_list.visible = true
+
+
+func hide_completion() -> void:
+	if _list != null:
+		_list.visible = false
+
+
+func is_completion_visible() -> bool:
+	return _list != null and _list.visible
+
+
+## いまの位置の候補 [{label, insert, note}]（insert は打った途中の名前と置き換える文字）。
+func completion_items() -> Array:
 	var line := code.get_line(code.get_caret_line()).substr(0, code.get_caret_column())
+	var pm := RegEx.create_from_string("([A-Za-z_][A-Za-z0-9_.]*)$").search(line)
+	var prefix := pm.get_string(1) if pm != null else ""
+	var before := line.substr(0, line.length() - prefix.length())
 	# いま、関数の引数を書いているなら、その関数に合う候補だけ
 	var fn := ""
-	var open_at := line.rfind("(")
-	if open_at > 0 and line.rfind(")") < open_at:
-		var re := RegEx.create_from_string("([A-Za-z_]+)\\s*$")
-		var m := re.search(line.substr(0, open_at))
+	var open_at := before.rfind("(")
+	if open_at > 0 and before.rfind(")") < open_at:
+		var m := RegEx.create_from_string("([A-Za-z_]+)\\s*$").search(before.substr(0, open_at))
 		if m != null:
 			fn = m.get_string(1)
-	var want := {"has": ["アイテム"], "count": ["アイテム"], "visited": ["シーン"], "talked": ["会話"],
+	var in_arg := fn != "" and before.substr(open_at + 1).strip_edges() == ""
+	var want := {"has": ["アイテム"], "count": ["アイテム"], "visited": ["シーン"], "talked": ["会話"], "read": ["会話"],
 		"chosen": ["選択肢"], "feature": ["機能"]}
-	for c in candidates:
+	var lp := prefix.to_lower()
+	var starts := []
+	var contains := []
+	var pool := candidates.duplicate()
+	if not in_arg:
+		for k in KEYWORDS:
+			pool.append({"name": k, "kind": "ことば"})
+	for c in pool:
 		var kind := String(c["kind"])
-		if fn != "" and want.has(fn) and not kind in want[fn]:
+		if in_arg and want.has(fn) and not kind in want[fn]:
 			continue
-		if fn == "" and kind in ["シーン", "会話", "選択肢", "機能"]:
+		if not in_arg and kind in ["シーン", "会話", "選択肢", "機能"]:
 			continue
 		var name := String(c["name"])
-		var insert := name.get_slice("(", 0) + ("(" if name.contains("(") else "")
-		var t := CodeEdit.KIND_FUNCTION if name.contains("(") else (CodeEdit.KIND_CONSTANT if kind == "定数" else CodeEdit.KIND_VARIABLE)
-		code.add_code_completion_option(t, "%s  — %s" % [name, kind] if String(c.get("note", "")) == "" else "%s  — %s：%s" % [name, kind, c["note"]], insert)
-	if fn == "":
-		for k in KEYWORDS:
-			code.add_code_completion_option(CodeEdit.KIND_PLAIN_TEXT, k, k)
-	code.update_code_completion_options(false)
+		var bare := name.get_slice("(", 0)
+		var e := {"label": "%s  — %s" % [name, kind], "insert": bare + ("(" if name.contains("(") else ""),
+			"note": String(c.get("note", ""))}
+		if lp == "" or bare.to_lower().begins_with(lp):
+			starts.append(e)
+		elif bare.to_lower().contains(lp):
+			contains.append(e)
+	if prefix == "" and not in_arg:
+		return []   # 何も打っていなければ出さない（Ctrl+Space なら全部出す）
+	return starts + contains
+
+
+## 選んだ候補を入れる（打った途中の名前と置き換える）。
+func accept_completion(index: int = -1) -> void:
+	if not is_completion_visible():
+		return
+	if index < 0:
+		var sel := _list.get_selected_items()
+		index = sel[0] if not sel.is_empty() else 0
+	var insert := String(_list.get_item_metadata(index))
+	var line_no := code.get_caret_line()
+	var col := code.get_caret_column()
+	var line := code.get_line(line_no)
+	var pm := RegEx.create_from_string("([A-Za-z_][A-Za-z0-9_]*)$").search(line.substr(0, col))
+	var start := col - (pm.get_string(1).length() if pm != null else 0)
+	code.set_line(line_no, line.substr(0, start) + insert + line.substr(col))
+	code.set_caret_column(start + insert.length())
+	hide_completion()
+	_check()
+	if insert.ends_with("("):
+		request_completion()
+
+
+func _on_code_input(event: InputEvent) -> void:
+	if not event is InputEventKey or not event.pressed:
+		return
+	var k: InputEventKey = event
+	if k.keycode == KEY_SPACE and k.is_command_or_control_pressed():
+		var items := completion_items()
+		if items.is_empty():
+			# 何も打っていないときは、すべて
+			_list.clear()
+			for c in candidates:
+				_list.add_item("%s  — %s" % [c["name"], c["kind"]])
+				var nm := String(c["name"])
+				_list.set_item_metadata(_list.item_count - 1, nm.get_slice("(", 0) + ("(" if nm.contains("(") else ""))
+			if _list.item_count > 0:
+				_list.select(0)
+				_list.position = code.get_caret_draw_pos() + Vector2(0, code.get_line_height() * 0.5 + 4)
+				_list.size = Vector2(320, 8 * 22 + 8)
+				_list.visible = true
+		else:
+			request_completion()
+		code.get_viewport().set_input_as_handled()
+		return
+	if not is_completion_visible():
+		return
+	match k.keycode:
+		KEY_UP, KEY_DOWN:
+			var sel := _list.get_selected_items()
+			var i: int = sel[0] if not sel.is_empty() else 0
+			i = clampi(i + (1 if k.keycode == KEY_DOWN else -1), 0, _list.item_count - 1)
+			_list.select(i)
+			_list.ensure_current_is_visible()
+			code.get_viewport().set_input_as_handled()
+		KEY_ENTER, KEY_KP_ENTER, KEY_TAB:
+			accept_completion()
+			code.get_viewport().set_input_as_handled()
+		KEY_ESCAPE:
+			hide_completion()
+			code.get_viewport().set_input_as_handled()
 
 
 ## プロジェクトとシナリオのモデルから候補を作る。
+## システムシーンで読める値（6.9）。
+const SYS_NAMES := [["mode", "save・load・settings・log"], ["slot_count", "セーブ枠の数"], ["slot_01", "枠の説明（日時とシーン名）"],
+	["slot_01_exists", "枠にセーブがあるか"], ["slot_01_label", "枠の名前"], ["text_speed", "文字の速さ"], ["bgm_volume", "おんがくの大きさ"],
+	["se_volume", "効果音の大きさ"], ["voice_volume", "声の大きさ"], ["auto_delay", "オートの待ち時間"]]
+
+
+## サブシーンの引数（arg.名前）を候補に足す。
+static func _add_params(data: Dictionary, add: Callable) -> void:
+	var scs = data.get("scenes", {})
+	if not scs is Dictionary:
+		return
+	for sid in scs:
+		var sc = scs[sid]
+		if sc is Dictionary and sc.get("params") is Dictionary:
+			for p in sc["params"]:
+				add.call("arg." + String(p), "引数", "サブシーン %s" % sid)
+
+
 static func collect_candidates(model: AdvScenarioModel = null) -> Array:
 	var out := []
 	var seen := {}
@@ -181,9 +320,14 @@ static func collect_candidates(model: AdvScenarioModel = null) -> Array:
 			var d := model.load_scenario_data(s["id"])
 			for id in d.get("items", {}):
 				add.call(String(id), "アイテム")
+			_add_params(d, add)
 			for c in model.chapters(s["id"]):
-				for id in model.load_chapter_data(s["id"], c["id"]).get("items", {}):
+				var cd := model.load_chapter_data(s["id"], c["id"])
+				for id in cd.get("items", {}):
 					add.call(String(id), "アイテム")
+				_add_params(cd, add)
+	for n in SYS_NAMES:
+		add.call("sys." + String(n[0]), "システム", String(n[1]))
 	for f in AdvFeatures.TABLE:
 		add.call(String(f), "機能")
 	return out
