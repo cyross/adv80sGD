@@ -237,7 +237,11 @@
 | 写真・録画を配布アプリでは使わせない | 書かなければ使えない（禁止するなら `"screenshot": {"allow": false}`） |
 | 録画を軽くする | `"options": {"source": "screen", "fps": 20}`（元の解像度の画面だけを録る） |
 | 写真を元の解像度の 2 倍で撮る | `"screenshot": {"default": true, "options": {"source": "screen", "scale": 2}}` |
-| 録画を mp4 にする | `ffmpeg -i 録画.avi -c:v libx264 -pix_fmt yuv420p -c:a aac 録画.mp4` |
+| 録画を MP4 で残す（パソコン） | `"recording": {"default": true, "options": {"format": "mp4"}}`（ffmpeg が PATH にあるか、ゲームの実行ファイルの隣にあるとき。なければ AVI） |
+| ffmpeg の場所を決める | `"options": {"format": "mp4", "ffmpeg": "tools/ffmpeg.exe"}`（実行ファイルのフォルダから） |
+| MP4 にしたあとも AVI を残す | `"options": {"format": "mp4", "keep_avi": true}` |
+| ffmpeg の映像の設定を自分で決める | `"options": {"format": "mp4", "ffmpeg_args": ["-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p"]}` |
+| 録った AVI をあとから MP4 にする | `ffmpeg -i 録画.avi -vf scale=out_range=tv -c:v libx264 -pix_fmt yuv420p -c:a aac 録画.mp4` |
 | 動詞の一覧を入れ替える | `{"verbs.update": {"verbs": ["THINK"], "mode": "add"}}` |
 | 物を一覧から隠す | `{"hotspots.update": {"objects": ["plant"], "mode": "remove"}}` |
 
@@ -285,7 +289,7 @@
 | ゲームを止めずにシナリオ・素材を読み直す | デバッグ実行中に F8（デバッグの「読み直す」ボタン、コンソールの `reload` でも） |
 | 読み直したあと、いまのシーンに入り直す | Shift+F8（コンソールなら `reload enter`。いつもなら `"debug": {"reload_reenter": true}`） |
 | 保存したら自動で読み直す | シナリオエディタの右上の「保存で読み直す」（`"debug": {"auto_reload": true}` と同じ。実行中のゲームにも伝わる。コンソールの `autoreload on` / `off` でも） |
-| 不具合の様子を写真・動画で残す | デバッグ実行中に F7（写真）、F10（録画）。コンソールなら `shot`・`rec`、保存先は `capture`、フォルダを開くなら `capture open shot` |
+| 不具合の様子を写真・動画で残す | デバッグ実行中に F7（写真）、F10（録画）。コンソールなら `shot`・`rec`、保存先と録画の形式（MP4 にできるか）は `capture`、フォルダを開くなら `capture open shot` |
 | デバッグ実行中も写真・録画を配布アプリと同じにする | プロジェクト設定の debug に `"capture": false` |
 | 遊んでいるシーンをエディタで開く | デバッグ実行中にデバッグの「エディタで開く」（コンソールなら `edit`）。エディタから実行したときだけ |
 | いま書いているシーンから試す | シナリオエディタの「▶ このシーンから実行」（タイトル・オープニングを飛ばす。デバッグビルドだけ） |

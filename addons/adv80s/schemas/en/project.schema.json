@@ -1528,6 +1528,25 @@
                     "none"
                   ],
                   "description": "Recording indicator. title: add \"● REC\" to the window title (default); none: no indicator"
+                },
+                "format": {
+                  "type": "string",
+                  "description": "Output format (default \"avi\"). \"mp4\" uses a registered encoder (plug-in) if any; otherwise, on desktop, records AVI and converts it to MP4 when ffmpeg is found. Falls back to AVI"
+                },
+                "ffmpeg": {
+                  "type": "string",
+                  "description": "Path to ffmpeg for MP4 conversion (default \"\": next to the game executable, then PATH; relative paths start from the executable folder)"
+                },
+                "ffmpeg_args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Custom ffmpeg video arguments (e.g. [\"-c:v\", \"libx264\", \"-crf\", \"18\", \"-pix_fmt\", \"yuv420p\"]; by default an available H.264 encoder is chosen)"
+                },
+                "keep_avi": {
+                  "type": "boolean",
+                  "description": "Keep the AVI after converting to MP4 (default false)"
                 }
               },
               "additionalProperties": false

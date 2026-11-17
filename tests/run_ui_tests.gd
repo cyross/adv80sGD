@@ -2248,6 +2248,7 @@ func _test_stage16() -> void:
 	con61.queue_free()
 	await _settle_frames(2)
 	await _test_capture()
+	await _test_convert()
 	_stage16_done = true   # ここまで来たしるし（途中のスクリプトのエラーで止まると false のまま）
 
 
@@ -2611,3 +2612,104 @@ func _test_capture() -> void:
 	player._notices.clear()
 	_rmdir("user://s68_shots")
 	_rmdir("user://s68_rec")
+
+
+class _CountEncoder extends AdvVideoEncoder:
+	var frames := 0
+	var audio := 0
+	var opened := ""
+	var closed := false
+	func extension() -> String:
+		return "cnt"
+	func open(path: String, _w: int, _h: int, _fps: int, _rate: int) -> Error:
+		opened = path
+		FileAccess.open(path, FileAccess.WRITE).close()
+		return OK
+	func add_video(_img: Image) -> void:
+		frames += 1
+	func repeat_video() -> void:
+		frames += 1
+	func add_audio(s: PackedVector2Array) -> void:
+		audio += s.size()
+	func close() -> Dictionary:
+		closed = true
+		return {"path": opened, "frames": frames}
+
+
+## 段階69：登録した書き出しで録る。ffmpeg で MP4 に変える（環境変数 ADV80S_TEST_FFMPEG に ffmpeg のパスがあるときだけ）。
+func _test_convert() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var vs: Vector2i = player.display.viewport.size
+	var old_opt: Dictionary = player.features.options.duplicate()
+	_rmdir("user://s69_rec")
+	var enc := _CountEncoder.new()
+	AdvCapture.register_encoder("cnt", func(): return enc)
+	player.features.options["recording"] = {"folder": "user://s69_rec", "fps": 10, "source": "screen", "format": "cnt"}
+	var p := player.start_recording()
+	await create_timer(0.5).timeout
+	player.stop_recording()
+	check(p.ends_with(".cnt") and enc.opened == p and enc.closed and enc.frames >= 4, "s69: registered encoder records: %s %d" % [p, enc.frames])
+	check(int(player.capture.last_info.get("frames", 0)) == enc.frames, "s69: close result is last_info")
+	AdvCapture.register_encoder("cnt", Callable())
+	var ff := OS.get_environment("ADV80S_TEST_FFMPEG")
+	if ff == "" or not FileAccess.file_exists(ff):
+		print("s69: ADV80S_TEST_FFMPEG がないので、ffmpeg の変換は試しません")
+		player.features.options = old_opt
+		_rmdir("user://s69_rec")
+		return
+	# MP4 に変える
+	AdvFfmpeg.forget()
+	player.features.options["recording"] = {"folder": "user://s69_rec", "fps": 10, "source": "screen", "format": "mp4", "ffmpeg": ff}
+	check(AdvCapture.plan(player.capture_options("recording")).get("convert") == "mp4", "s69: plan converts with ffmpeg")
+	var got := []
+	var on_conv := func(path: String, ok: bool): got.append([path, ok])
+	player.capture.converted.connect(on_conv)
+	var avi := player.start_recording()
+	await create_timer(0.6).timeout
+	player.stop_recording()
+	check(avi.ends_with(".avi") and player.capture.is_converting(avi), "s69: converting after stop")
+	await _settle()
+	check(player.notices().any(func(t): return String(t).begins_with("ろくがを MP4 に して います")), "s69: converting notice: %s" % str(player.notices()))
+	var t0 := Time.get_ticks_msec()
+	while got.is_empty() and Time.get_ticks_msec() - t0 < 30000:
+		await process_frame
+	var mp4 := String(got[0][0]) if not got.is_empty() else ""
+	check(not got.is_empty() and got[0][1] and mp4.ends_with(".mp4") and FileAccess.file_exists(mp4) and FileAccess.get_size(mp4) > 1000, "s69: converted to mp4: %s %s" % [str(got), player.capture.last_error])
+	check(not FileAccess.file_exists(avi), "s69: avi removed after converting")
+	if mp4 != "":
+		var probe: Array = []
+		OS.execute(ff, ["-hide_banner", "-i", ProjectSettings.globalize_path(mp4)], probe, true)
+		var info := "\n".join(probe)
+		check(info.contains("h264") and info.contains("yuv420p(tv") and info.contains("aac") and info.contains("%dx%d" % [vs.x, vs.y]), "s69: mp4 has h264 and aac: %s" % info.substr(info.find("Stream"), 300))
+	await _settle()
+	check(player.notices().any(func(t): return String(t) == "ろくがを ほぞんしました（%s）" % mp4.get_file()), "s69: saved notice names the mp4: %s" % str(player.notices()))
+	# 変えられないとき（使えないエンコーダー）は AVI を残す
+	got.clear()
+	player.features.options["recording"] = {"folder": "user://s69_rec", "fps": 10, "source": "screen", "format": "mp4", "ffmpeg": ff, "ffmpeg_args": ["-c:v", "no_such_codec"], "audio": false}
+	var avi2 := player.start_recording()
+	await create_timer(0.4).timeout
+	player.stop_recording()
+	t0 = Time.get_ticks_msec()
+	while got.is_empty() and Time.get_ticks_msec() - t0 < 30000:
+		await process_frame
+	check(not got.is_empty() and not got[0][1] and got[0][0] == avi2 and FileAccess.file_exists(avi2) and not FileAccess.file_exists(avi2.get_basename() + ".mp4"), "s69: failed conversion keeps the avi: %s" % str(got))
+	await _settle()
+	check(player.notices().any(func(t): return String(t).begins_with("MP4 に できなかったので")), "s69: failure notice")
+	# keep_avi
+	got.clear()
+	player.features.options["recording"] = {"folder": "user://s69_rec", "fps": 10, "source": "screen", "format": "mp4", "ffmpeg": ff, "keep_avi": true}
+	var avi3 := player.start_recording()
+	await create_timer(0.3).timeout
+	player.stop_recording()
+	t0 = Time.get_ticks_msec()
+	while got.is_empty() and Time.get_ticks_msec() - t0 < 30000:
+		await process_frame
+	check(not got.is_empty() and got[0][1] and FileAccess.file_exists(avi3), "s69: keep_avi keeps both")
+	player.capture.converted.disconnect(on_conv)
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+	player.features.options = old_opt
+	_rmdir("user://s69_rec")

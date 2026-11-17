@@ -1278,6 +1278,17 @@ func _cmd_capture(cmd: String, sub: String, arg: String) -> void:
 			_append_log("写真：%s（%s キー、%s）保存先 %s" % ["使える" if player.capture_on("screenshot") else "使えない", so.get("key"), so.get("source"), ProjectSettings.globalize_path(String(so.get("folder")))])
 			_append_log("録画：%s（%s キー、%s、%s fps、音 %s、最長 %s 秒）保存先 %s" % ["使える" if player.capture_on("recording") else "使えない", ro.get("key"), ro.get("source"), ro.get("fps"),
 				"あり" if bool(ro.get("audio")) else "なし", ro.get("max_seconds"), ProjectSettings.globalize_path(String(ro.get("folder")))])
+			var pl: Dictionary = AdvCapture.plan(ro)
+			var how := "AVI"
+			if String(pl["convert"]) != "":
+				how = "AVI で録って MP4 に変える（ffmpeg：%s）" % pl["ffmpeg"]
+			elif String(pl["encoder"]) != "avi":
+				how = "%s（登録した書き出し）" % String(pl["encoder"]).to_upper()
+			elif String(ro.get("format", "avi")) != "avi":
+				how = "AVI（%s にはできません：%s）" % [ro.get("format"), pl["note"]]
+			_append_log("録画の形式：%s" % how)
+			if player.capture.is_converting():
+				_append_log("MP4 に変えています…")
 			if player.is_recording():
 				_append_log("[color=#f87171]● 録画中[/color]：%s（%.1f 秒）" % [player.capture.recording_path(), player.capture.recording_seconds()])
 			_append_log("フォルダを開く：capture open shot / capture open rec")

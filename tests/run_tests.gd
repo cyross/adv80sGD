@@ -37,6 +37,7 @@ func _initialize() -> void:
 	_test_stage16()
 	_test_stage36()
 	_test_stage68()
+	_test_stage69()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -1521,3 +1522,64 @@ func _rm_files(path: String) -> void:
 	for file in d.get_files():
 		d.remove(file)
 	DirAccess.remove_absolute(path)
+
+
+class _FakeEncoder extends AdvVideoEncoder:
+	var ok := true
+	func extension() -> String:
+		return "fake"
+	func is_available() -> bool:
+		return ok
+
+
+func _unavailable_encoder() -> AdvVideoEncoder:
+	var e := _FakeEncoder.new()
+	e.ok = false
+	return e
+
+
+## 段階69：録画の書き出しの受け口と、ffmpeg で MP4 に変えるときの決め方。
+func _test_stage69() -> void:
+	# 書き出しの登録
+	check(AdvCapture.make_encoder("avi") is AdvAviEncoder and AdvCapture.make_encoder("") is AdvAviEncoder, "s69: avi is built in")
+	check(AdvCapture.make_encoder("fake") == null, "s69: unknown format has no encoder")
+	AdvCapture.register_encoder("Fake", func(): return _FakeEncoder.new())
+	check(AdvCapture.make_encoder("fake") is _FakeEncoder and AdvCapture.encoder_formats().has("fake"), "s69: registered encoder")
+	eq(AdvCapture.plan({"format": "fake"}).get("encoder"), "fake", "s69: plan uses the registered encoder")
+	AdvCapture.register_encoder("fake", _unavailable_encoder)
+	eq([AdvCapture.plan({"format": "fake"}).get("encoder"), AdvCapture.plan({"format": "fake"}).get("note")], ["avi", "NO_ENCODER"], "s69: unavailable encoder falls back to avi")
+	AdvCapture.register_encoder("fake", Callable())
+	check(not AdvCapture.encoder_formats().has("fake"), "s69: unregister")
+	eq(AdvCapture.plan({}).get("format"), "avi", "s69: avi by default")
+	eq(AdvCapture.plan({"format": "webm"}).get("note"), "NO_ENCODER", "s69: other formats need an encoder")
+	var nope := OS.get_executable_path().get_base_dir().path_join("no_such_dir/ffmpeg_nope.exe")
+	eq([AdvCapture.plan({"format": "mp4", "ffmpeg": nope}).get("format"), AdvCapture.plan({"format": "mp4", "ffmpeg": nope}).get("note")], ["avi", "NO_MP4"], "s69: mp4 without ffmpeg falls back to avi")
+	# ffmpeg の探す場所
+	var exe_dir := OS.get_executable_path().get_base_dir()
+	eq(AdvFfmpeg.candidates("tools/ffmpeg.exe"), PackedStringArray([exe_dir.path_join("tools/ffmpeg.exe")]), "s69: relative path from the executable folder")
+	eq(AdvFfmpeg.candidates("ffmpeg"), PackedStringArray(["ffmpeg"]), "s69: a bare name is looked up in PATH")
+	eq(AdvFfmpeg.candidates("").size(), 2, "s69: next to the executable, then PATH")
+	eq(AdvFfmpeg.find(nope), "", "s69: missing ffmpeg")
+	# H.264 の選び方
+	var enc_text := " V..... = Video\n ------\n V....D libx264              libx264 H.264\n V....D h264_mf              H264 via MediaFoundation\n A....D aac                  AAC\n"
+	eq(AdvFfmpeg.pick_h264(enc_text), "libx264", "s69: libx264 first")
+	eq(AdvFfmpeg.pick_h264(" V....D h264_mf   H264 via MediaFoundation\n V....D libopenh264  OpenH264\n"), "h264_mf", "s69: OS encoder in an LGPL ffmpeg")
+	eq(AdvFfmpeg.pick_h264(" V....D mpeg4   MPEG-4\n A....D aac  AAC\n"), "", "s69: no H.264")
+	eq(AdvFfmpeg.video_args("libx264", 0.85), PackedStringArray(["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-vf", "scale=out_range=tv", "-pix_fmt", "yuv420p"]), "s69: libx264 args")
+	eq(AdvFfmpeg.video_args("h264_mf", 0.5), PackedStringArray(["-c:v", "h264_mf", "-b:v", "7000k", "-vf", "scale=out_range=tv", "-pix_fmt", "nv12"]), "s69: h264_mf args")
+	var a := AdvFfmpeg.mp4_args("in.avi", "out.mp4", PackedStringArray(["-c:v", "x"]), false)
+	check(a[a.size() - 1] == "out.mp4" and a.has("-an") and not a.has("aac") and a.has("+faststart") and a[a.find("-i") + 1] == "in.avi", "s69: mp4 args: %s" % str(a))
+	check(AdvFfmpeg.mp4_args("i", "o", PackedStringArray(), true).has("aac"), "s69: aac when audio")
+	# AVI の書き出しを受け口から使う
+	var dir := "user://s69_unit"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var e := AdvAviEncoder.new()
+	e.options = {"quality": 0.5}
+	eq(e.open(dir + "/e.avi", 8, 4, 10, 0), OK, "s69: avi encoder open")
+	var img := Image.create(8, 4, false, Image.FORMAT_RGB8)
+	e.add_video(img)
+	e.repeat_video()
+	e.add_audio(PackedVector2Array([Vector2.ZERO]))
+	var r := e.close()
+	eq([r.get("frames"), e.extension(), AdvAviWriter.read_info(dir + "/e.avi").get("streams")], [2, "avi", 1], "s69: avi encoder writes frames")
+	_rm_files(dir)

@@ -1794,7 +1794,7 @@ func is_available() -> bool                     # 鍵を用意できるか
 ```
 
 
-### 10.2 画面の写真と録画（段階68）
+### 10.2 画面の写真と録画（段階68・69）
 
 デバッグのため（不具合の様子を残す）と、配信や SNS に載せるための機能。ゲームを作る人が、配布アプリに残すかどうかを決められる。
 
@@ -1809,10 +1809,18 @@ func is_available() -> bool                     # 鍵を用意できるか
 - **お知らせ**：デバッグ実行中はデバッグのお知らせ（種類 `capture`。`debug.notices.capture: false` で出さない）、配布アプリではふつうのお知らせ。`options.notice: false` でどちらも出さない。
 - **デバッグコンソール**：`shot`（コンソールを閉じてから撮る）、`rec [start|stop]`、`capture`（保存先と録画の様子）、`capture open shot|rec`（フォルダを開く）。
 
+- **MP4（段階69）**：`options.format: "mp4"` で、次の順に決める。
+  1. **登録した書き出し**：差し込み部品が `AdvCapture.register_encoder("mp4", 作る関数)` で登録した `AdvVideoEncoder` があり、その環境で使えるなら、それで直接書く。OS のエンコーダー（Windows の Media Foundation、Mac・iOS の AVFoundation、Android の MediaCodec）を使う部品を想定する。本体は依存を持たないため、この部品は `addons/adv80s` の外に置く。
+  2. **ffmpeg で変える**：パソコン（Windows・Mac・Linux）で ffmpeg が見つかれば、AVI で録ってから、止めたあと ffmpeg で MP4（H.264＋AAC）に変える。ゲームは止めずに別のプロセスで変え、終わったら「ろくがを ほぞんしました」を出して AVI を消す（`keep_avi: true` で残す）。変えられなければ AVI を残して知らせる。ゲームを閉じても ffmpeg は最後まで続く（そのときは AVI も残る）。
+  3. **どちらもない**：AVI のまま録る（Web、スマートフォン、ゲーム機、ffmpeg のないパソコン）。
+- **ffmpeg を探す場所**：`options.ffmpeg` を書けばそこだけ（相対パスはゲームの実行ファイルのフォルダから、名前だけなら PATH から）。書かなければ、実行ファイルの隣の `ffmpeg(.exe)`、次に PATH。ffmpeg は同梱しない。同梱するときは、作る人が ffmpeg のライセンスを確かめる（libx264 を含むものは GPL）。
+- **H.264 の選び方**：その ffmpeg の `-encoders` を見て、`libx264`・`h264_mf`・`h264_videotoolbox`・`libopenh264` の順で、あるものを使う（LGPL の ffmpeg でも OS のエンコーダーで書ける）。`quality` は libx264 なら crf（28〜16）、ほかはビットレート（2〜12 Mbps）にする。JPEG の色はフルレンジなので、ふつうの動画の範囲（tv）の yuv420p に直す。`ffmpeg_args` を書けば、映像の引数はそれを使う。
+- **書き出しの受け口**：`AdvVideoEncoder` の `extension`・`is_available`・`open(パス, 幅, 高さ, fps, 音のサンプル数)`・`add_video(Image)`・`repeat_video`・`add_audio(PackedVector2Array)`・`size`・`close`。open から close まで、どれも録画のスレッドから順に呼ぶ。本体の AVI も `AdvAviEncoder` としてこの形で書く。
+
 ```json
 "features": {
   "screenshot": { "allow": true, "default": true, "options": { "key": "F7", "source": "window" } },
-  "recording":  { "allow": true, "default": false, "options": { "fps": 30, "max_seconds": 300, "source": "screen", "scale": 2 } }
+  "recording":  { "allow": true, "default": false, "options": { "fps": 30, "max_seconds": 300, "source": "screen", "scale": 2, "format": "mp4" } }
 }
 ```
 

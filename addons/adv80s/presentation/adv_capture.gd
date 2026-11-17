@@ -1,12 +1,16 @@
 class_name AdvCapture
 extends Node
-## 画面の写真（スクリーンショット）と録画（段階68）。
+## 画面の写真（スクリーンショット）と録画（段階68・69）。
 ## 写すのは grab（source → Image）が返す画像。プレイヤーが「窓の全体」か「元の解像度の画面」を渡す。
-## 録画は、決まった速さ（fps）でコマを取り、JPEG にして AVI（AdvAviWriter）に書く。
-## JPEG にしてファイルに書くのは別のスレッドで行い、ゲームの動きを止めないようにする。
+## 録画は、決まった速さ（fps）でコマを取り、書き出し（AdvVideoEncoder）に渡す。
+## 書き出しは別のスレッドで行い、ゲームの動きを止めないようにする。
 ## 音はマスターのバスに AudioEffectCapture を足して取る（録画しているあいだだけ）。
+## 書き出しは options.format で選ぶ。本体は AVI だけを持つ。"mp4" は、登録した書き出し（register_encoder）があればそれ、
+## なければパソコンで ffmpeg が見つかれば、AVI で録ってから MP4 に変える（AdvFfmpeg）。どちらもだめなら AVI のまま。
 
 signal recording_stopped(path: String, reason: String)
+## MP4 などに変え終えた。ok なら path は変えたファイル、だめなら残した AVI。
+signal converted(path: String, ok: bool)
 
 ## モダン機能 screenshot の options の既定値
 const SHOT_DEFAULTS := {
@@ -17,26 +21,37 @@ const SHOT_DEFAULTS := {
 const REC_DEFAULTS := {
 	"key": "F10", "source": "window", "scale": 1.0, "folder": "user://recordings", "prefix": "recording",
 	"notice": true, "menu": true, "fps": 30, "quality": 0.85, "audio": true, "max_seconds": 600, "indicator": "title",
+	"format": "avi", "ffmpeg": "", "ffmpeg_args": [], "keep_avi": false,
 }
 const MAX_BYTES := 1900 * 1024 * 1024   ## 1 つのファイルの上限（AVI は 4 GB まで。手前で止める）
-const MAX_BACKLOG_SECONDS := 1.0         ## JPEG にするのが追いつかないとき、これより溜まったらコマを前のコマで代える
+const MAX_BACKLOG_SECONDS := 1.0         ## 書き出しが追いつかないとき、これより溜まったらコマを前のコマで代える
+
+## 登録した書き出し（形式 → 作る Callable。AdvVideoEncoder を返す）
+static var _encoders: Dictionary = {}
 
 var last_error := ""          ## 撮れなかった・始められなかった理由
-var last_info: Dictionary = {}   ## 最後に止めた録画の {path, frames, seconds, bytes}
+var last_note := ""           ## 録画を始めたときの知らせ（NO_MP4：MP4 にできないので AVI、NO_ENCODER：その形式がないので AVI）
+var last_info: Dictionary = {}   ## 最後に止めた録画の {path, frames, seconds, bytes, format}
 
 var _grab: Callable
 var _conf: Dictionary = {}
-var _writer: AdvAviWriter = null
+var _enc: AdvVideoEncoder = null
+var _path := ""
 var _thread: Thread = null
 var _mutex := Mutex.new()
 var _sem := Semaphore.new()
+var _opened := Semaphore.new()
+var _open_err: Error = OK
 var _queue: Array = []
 var _pending_video := 0
+var _bytes := 0
 var _t0 := 0
 var _queued_frames := 0
 var _cap: AudioEffectCapture = null
 var _w := 0
 var _h := 0
+var _convert: Dictionary = {}      ## 録り終えたら変えるもの {ffmpeg, encoder}
+var _converts: Array = []          ## 変えている途中 [{pid, src, dst, keep}]
 
 
 func _init() -> void:
@@ -96,6 +111,48 @@ static func scaled(img: Image, scale: float, even: bool = false) -> Image:
 	return img
 
 
+# ---------------------------------------------------------------- 書き出しの受け口
+
+## 録画の書き出しを登録する（差し込み部品から呼ぶ）。factory は AdvVideoEncoder を返す Callable。
+## 空の Callable を渡すと登録を外す。
+static func register_encoder(format: String, factory: Callable) -> void:
+	if factory.is_valid():
+		_encoders[format.to_lower()] = factory
+	else:
+		_encoders.erase(format.to_lower())
+
+
+## 登録した書き出しの形式の一覧。
+static func encoder_formats() -> Array:
+	return _encoders.keys()
+
+
+## その形式の書き出しを作る（登録がない、この環境で使えないなら null）。"avi" はいつも本体のもの。
+static func make_encoder(format: String) -> AdvVideoEncoder:
+	var f := format.to_lower()
+	if f == "avi" or f == "":
+		return AdvAviEncoder.new()
+	if not _encoders.has(f):
+		return null
+	var e = (_encoders[f] as Callable).call()
+	return e if e is AdvVideoEncoder and (e as AdvVideoEncoder).is_available() else null
+
+
+## options の format で録ると、どうなるか。{format: 書き出す形式, encoder: "avi" か登録した形式, convert: 変える形式 or "", ffmpeg: パス, note}
+static func plan(opts: Dictionary) -> Dictionary:
+	var fmt := String(opts.get("format", "avi")).to_lower()
+	if fmt == "" or fmt == "avi":
+		return {"format": "avi", "encoder": "avi", "convert": "", "ffmpeg": "", "note": ""}
+	if make_encoder(fmt) != null:
+		return {"format": fmt, "encoder": fmt, "convert": "", "ffmpeg": "", "note": ""}
+	if fmt == "mp4":
+		var ff := AdvFfmpeg.find(String(opts.get("ffmpeg", "")))
+		if ff != "":
+			return {"format": "mp4", "encoder": "avi", "convert": "mp4", "ffmpeg": ff, "note": ""}
+		return {"format": "avi", "encoder": "avi", "convert": "", "ffmpeg": "", "note": "NO_MP4"}
+	return {"format": "avi", "encoder": "avi", "convert": "", "ffmpeg": "", "note": "NO_ENCODER"}
+
+
 # ---------------------------------------------------------------- 写真
 
 ## 画像を PNG で保存する。保存したパス（だめなら "" で、理由は last_error）。
@@ -118,23 +175,24 @@ func save_screenshot(img: Image, opts: Dictionary) -> String:
 # ---------------------------------------------------------------- 録画
 
 func is_recording() -> bool:
-	return _writer != null
+	return _enc != null
 
 
 ## 録画しているパス（していなければ ""）。
 func recording_path() -> String:
-	return _writer.path if _writer != null else ""
+	return _path if _enc != null else ""
 
 
 ## 録画を始めてからの秒数。
 func recording_seconds() -> float:
-	return (Time.get_ticks_usec() - _t0) / 1000000.0 if _writer != null else 0.0
+	return (Time.get_ticks_usec() - _t0) / 1000000.0 if _enc != null else 0.0
 
 
 ## 録画を始める。grab は source（"window"・"screen"）を受けて Image を返す。始めたファイルのパス（だめなら ""）。
 func start_recording(opts: Dictionary, grab: Callable) -> String:
 	last_error = ""
-	if _writer != null:
+	last_note = ""
+	if _enc != null:
 		last_error = "ALREADY"
 		return ""
 	_conf = opts.duplicate()
@@ -147,23 +205,36 @@ func start_recording(opts: Dictionary, grab: Callable) -> String:
 	_h = first.get_height()
 	var fps := clampi(int(_conf.get("fps", 30)), 1, 60)
 	_conf["fps"] = fps
+	var pl := plan(_conf)
+	last_note = String(pl["note"])
+	var enc := make_encoder(String(pl["encoder"]))
+	enc.options = _conf
+	_convert = {"ffmpeg": pl["ffmpeg"], "format": pl["convert"]} if String(pl["convert"]) != "" else {}
 	var rate := int(AudioServer.get_mix_rate()) if bool(_conf.get("audio", true)) else 0
-	var p := make_path(String(_conf.get("folder", REC_DEFAULTS["folder"])), String(_conf.get("prefix", "recording")), "avi")
-	var w := AdvAviWriter.new()
-	var err := w.open(p, _w, _h, fps, rate)
-	if err != OK:
-		last_error = "WRITE:%s" % error_string(err)
-		return ""
-	_writer = w
+	var ext := enc.extension() if enc.extension() != "" else String(pl["encoder"])
+	var p := make_path(String(_conf.get("folder", REC_DEFAULTS["folder"])), String(_conf.get("prefix", "recording")), ext)
+	# 書き出しは開くところから録画のスレッドで行う
 	_queue.clear()
 	_pending_video = 0
+	_bytes = 0
+	_enc = enc
+	_path = p
+	_open_err = OK
+	_thread = Thread.new()
+	_thread.start(_work.bind(p, rate))
+	_opened.wait()
+	if _open_err != OK:
+		_thread.wait_to_finish()
+		_thread = null
+		_enc = null
+		_path = ""
+		last_error = "WRITE:%s" % error_string(_open_err)
+		return ""
 	if rate > 0:
 		_cap = AudioEffectCapture.new()
 		_cap.buffer_length = 1.0
 		AudioServer.add_bus_effect(0, _cap)
 		_cap.clear_buffer()
-	_thread = Thread.new()
-	_thread.start(_work)
 	_t0 = Time.get_ticks_usec()
 	_queued_frames = 0
 	_push_video(first)
@@ -171,8 +242,9 @@ func start_recording(opts: Dictionary, grab: Callable) -> String:
 
 
 ## 録画を止めてファイルを閉じる。閉じたパス（録画していなければ ""）。reason は recording_stopped に渡す。
+## MP4 に変えるときは、変え始めてから recording_stopped を出す（変え終えたら converted）。
 func stop_recording(reason: String = "stop") -> String:
-	if _writer == null:
+	if _enc == null:
 		return ""
 	if _cap != null:
 		_take_audio()
@@ -184,16 +256,77 @@ func stop_recording(reason: String = "stop") -> String:
 	_push({"end": true})
 	_thread.wait_to_finish()
 	_thread = null
-	last_info = _writer.close()
-	var p := _writer.path
-	_writer = null
+	var p := _path
+	last_info["format"] = _enc.extension()
+	_enc = null
+	_path = ""
 	_grab = Callable()
+	if not _convert.is_empty() and FileAccess.file_exists(p):
+		start_convert(p, String(_convert["ffmpeg"]), _conf)
+	_convert = {}
 	recording_stopped.emit(p, reason)
 	return p
 
 
+# ---------------------------------------------------------------- MP4 に変える（ffmpeg）
+
+## 変えている途中か（src を渡せば、そのファイルを変えているか）。
+func is_converting(src: String = "") -> bool:
+	return _converts.any(func(c): return src == "" or c["src"] == src)
+
+
+## AVI を ffmpeg で MP4 に変え始める（終わりは _process で見て converted を出す）。始めたら変えた先のパス、だめなら ""。
+## ゲームを閉じても ffmpeg は終わるまで続く（そのときは AVI も残る）。
+func start_convert(src: String, ffmpeg: String, opts: Dictionary) -> String:
+	var dst := src.get_basename() + ".mp4"
+	var n := 2
+	while FileAccess.file_exists(dst):
+		dst = "%s_%d.mp4" % [src.get_basename(), n]
+		n += 1
+	var video := PackedStringArray()
+	var extra = opts.get("ffmpeg_args", [])
+	if extra is Array and not extra.is_empty():
+		for a in extra:
+			video.append(String(a))
+	else:
+		var h264 := AdvFfmpeg.h264_of(ffmpeg)
+		if h264 == "":
+			last_error = "NO_H264"
+			converted.emit(src, false)
+			return ""
+		video = AdvFfmpeg.video_args(h264, float(opts.get("quality", 0.85)))
+	var args := AdvFfmpeg.mp4_args(ProjectSettings.globalize_path(src), ProjectSettings.globalize_path(dst), video, bool(opts.get("audio", true)))
+	var pid := OS.create_process(ffmpeg, args)
+	if pid <= 0:
+		last_error = "FFMPEG_START"
+		converted.emit(src, false)
+		return ""
+	_converts.append({"pid": pid, "src": src, "dst": dst, "keep": bool(opts.get("keep_avi", false))})
+	return dst
+
+
+func _poll_converts() -> void:
+	for c in _converts.duplicate():
+		if OS.is_process_running(int(c["pid"])):
+			continue
+		_converts.erase(c)
+		var dst := String(c["dst"])
+		var ok := OS.get_process_exit_code(int(c["pid"])) == 0 and FileAccess.file_exists(dst) \
+			and FileAccess.get_size(dst) > 0
+		if ok:
+			if not bool(c["keep"]):
+				DirAccess.remove_absolute(String(c["src"]))
+		else:
+			last_error = "FFMPEG_FAILED"
+			if FileAccess.file_exists(dst):
+				DirAccess.remove_absolute(dst)
+		converted.emit(dst if ok else String(c["src"]), ok)
+
+
 func _process(_delta: float) -> void:
-	if _writer == null:
+	if not _converts.is_empty():
+		_poll_converts()
+	if _enc == null:
 		return
 	var fps := int(_conf["fps"])
 	var elapsed := recording_seconds()
@@ -202,7 +335,7 @@ func _process(_delta: float) -> void:
 		stop_recording("max_seconds")
 		return
 	_mutex.lock()
-	var bytes := _writer.size()
+	var bytes := _bytes
 	_mutex.unlock()
 	if bytes >= MAX_BYTES:
 		stop_recording("max_size")
@@ -258,9 +391,13 @@ func _push(item: Dictionary) -> void:
 	_sem.post()
 
 
-## 別のスレッド：JPEG にして書く。
-func _work() -> void:
-	var q := float(_conf.get("quality", 0.85))
+## 録画のスレッド：書き出しを開き、届いた順に渡し、最後に閉じる。
+func _work(path: String, rate: int) -> void:
+	var enc := _enc
+	_open_err = enc.open(path, _w, _h, int(_conf["fps"]), rate)
+	_opened.post()
+	if _open_err != OK:
+		return
 	while true:
 		_sem.wait()
 		_mutex.lock()
@@ -274,17 +411,19 @@ func _work() -> void:
 				img.resize(_w, _h, Image.INTERPOLATE_BILINEAR)   # 録画中に窓の大きさが変わったとき
 			if img.get_format() != Image.FORMAT_RGB8:
 				img.convert(Image.FORMAT_RGB8)
-			var jpg := img.save_jpg_to_buffer(clampf(q, 0.05, 1.0))
+			enc.add_video(img)
 			_mutex.lock()
-			_writer.add_video(jpg)
 			_pending_video -= 1
 			_mutex.unlock()
 		elif item.has("repeat"):
-			_mutex.lock()
-			_writer.repeat_video()
-			_mutex.unlock()
+			enc.repeat_video()
 		elif item.has("audio"):
-			var pcm := AdvAviWriter.pcm16(item["audio"])
-			_mutex.lock()
-			_writer.add_audio(pcm)
-			_mutex.unlock()
+			enc.add_audio(item["audio"])
+		var sz := enc.size()
+		_mutex.lock()
+		_bytes = sz
+		_mutex.unlock()
+	var info := enc.close()
+	_mutex.lock()
+	last_info = info
+	_mutex.unlock()

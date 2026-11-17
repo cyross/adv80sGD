@@ -159,6 +159,7 @@ func _ready() -> void:
 	capture.name = "Capture"
 	add_child(capture)
 	capture.recording_stopped.connect(_on_recording_stopped)
+	capture.converted.connect(_on_recording_converted)
 	if OS.is_debug_build():
 		_setup_debug_ui()
 		_watch_snap = watch_snapshot()
@@ -3362,6 +3363,8 @@ func start_recording() -> String:
 		print("[adv80s] 録画を始められません（%s）" % capture.last_error)
 		return ""
 	print("[adv80s] 録画を始めました：%s" % ProjectSettings.globalize_path(p))
+	if capture.last_note != "":
+		print("[adv80s] 形式 %s では書き出せないので AVI で録ります（%s）" % [opts.get("format"), capture.last_note])
 	var bar := _debug_layer.get_node_or_null("DebugButtonBar") if _debug_layer != null else null
 	if bar != null:
 		bar.visible = false
@@ -3387,8 +3390,21 @@ func _on_recording_stopped(path: String, reason: String) -> void:
 		return
 	print("[adv80s] 録画を保存しました：%s（%s）" % [ProjectSettings.globalize_path(path), reason])
 	var why := {"max_seconds": "（ながさの じょうげんで とめました）", "max_size": "（おおきさの じょうげんで とめました）"}.get(reason, "")
-	if bool(capture_options("recording").get("notice", true)):
+	if not bool(capture_options("recording").get("notice", true)):
+		return
+	if capture.is_converting(path):
+		_capture_notice("ろくがを MP4 に して います%s" % why)
+	else:
 		_capture_notice("ろくがを ほぞんしました%s（%s）" % [why, path.get_file()])
+
+
+## ffmpeg で MP4 に変え終えた（ok でなければ AVI を残した）。
+func _on_recording_converted(path: String, ok: bool) -> void:
+	if not is_inside_tree():
+		return
+	print("[adv80s] %s：%s" % ["MP4 にしました" if ok else "MP4 にできません（%s）。AVI を残しました" % capture.last_error, ProjectSettings.globalize_path(path)])
+	if bool(capture_options("recording").get("notice", true)):
+		_capture_notice(("ろくがを ほぞんしました（%s）" if ok else "MP4 に できなかったので AVI で のこしました（%s）") % path.get_file())
 
 
 ## 写真・録画のお知らせ。デバッグ実行中はデバッグのお知らせ（種類 capture）、配布アプリではふつうのお知らせ。

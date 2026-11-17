@@ -1528,6 +1528,25 @@
                     "none"
                   ],
                   "description": "録画中のしるし。title：窓の名前に「● REC」を付ける（既定）、none：出さない"
+                },
+                "format": {
+                  "type": "string",
+                  "description": "書き出す形式（既定 \"avi\"）。\"mp4\" は、登録した書き出し（差し込み部品）があればそれを、なければパソコンで ffmpeg が見つかれば AVI で録ってから MP4 に変える。どちらもなければ AVI のまま"
+                },
+                "ffmpeg": {
+                  "type": "string",
+                  "description": "MP4 に変えるときの ffmpeg の場所（既定 \"\"：ゲームの実行ファイルの隣、なければ PATH から探す。相対パスは実行ファイルのフォルダから）"
+                },
+                "ffmpeg_args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "ffmpeg の映像の引数を自分で決める（例 [\"-c:v\", \"libx264\", \"-crf\", \"18\", \"-pix_fmt\", \"yuv420p\"]。書かなければ、ある H.264 から選ぶ）"
+                },
+                "keep_avi": {
+                  "type": "boolean",
+                  "description": "MP4 に変えたあとも AVI を残すか（既定 false）"
                 }
               },
               "additionalProperties": false

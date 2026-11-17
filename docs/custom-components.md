@@ -203,6 +203,47 @@ static func parse(text: String, core: AdvCore) -> Dictionary:
 
 デバッグの通知は `debug.notice_style.layer` で描く場所を選べます。screen（ゲームの画面の中に描く）・window（ゲームの画面の外、ウィンドウの大きさの層に、デバッグのボタンの下から並べる。幅は 480 まで）・auto（書かなければこれ。見える範囲の幅が 320 より狭いと window、それ以外は screen）の三つです。GB のような小さい画面では window になり、ゲームの画面を覆わずに読めます。
 
+## 録画の書き出しを足す
+
+録画は、本体では AVI（MJPEG）だけを書きます。MP4 などを OS のエンコーダーで直接書きたいときは、`AdvVideoEncoder` を継いだ書き出しを作って登録します。C++ の GDExtension で OS の機能を呼ぶものを、`addons/adv80s` の外（たとえば `addons/my_mp4/`）に置きます。
+
+```gdscript
+# res://game/capture/my_mp4_encoder.gd
+class_name MyMp4Encoder
+extends AdvVideoEncoder
+
+func extension() -> String:
+	return "mp4"
+
+func is_available() -> bool:
+	return OS.get_name() in ["Windows", "macOS"]   # 使えない環境では false（AVI になる）
+
+func open(path: String, width: int, height: int, fps: int, audio_rate: int) -> Error:
+	return OK   # ここでファイルを開く
+
+func add_video(img: Image) -> void:
+	pass        # RGB8 の 1 コマ
+
+func repeat_video() -> void:
+	pass        # 前のコマをもう一度
+
+func add_audio(samples: PackedVector2Array) -> void:
+	pass        # 左右の組（-1〜1）
+
+func close() -> Dictionary:
+	return {"path": "", "frames": 0}
+```
+
+ゲームの始めに登録し、プロジェクト設定で `"recording": {"options": {"format": "mp4"}}` にします。
+
+```gdscript
+AdvCapture.register_encoder("mp4", func(): return MyMp4Encoder.new())
+```
+
+- open から close まで、どれも録画のスレッドから順に呼ばれます。画面の部品にはさわらないでください。
+- `options`（モダン機能 recording の options）が open の前に入っています。`quality` などを読めます。
+- 登録した書き出しがあれば、ffmpeg で変えるより先に使われます。`is_available()` が false なら使われません。
+
 ## 確かめ方
 
 自分の部品を入れたら、全部のテンプレートで画面を並べて見ます。一つの機種で大丈夫でも、別の機種で崩れることがよくあります。
