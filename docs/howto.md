@@ -237,6 +237,7 @@
 | 写真・録画を配布アプリでは使わせない | 書かなければ使えない（禁止するなら `"screenshot": {"allow": false}`） |
 | 録画を軽くする | `"options": {"source": "screen", "fps": 20}`（元の解像度の画面だけを録る） |
 | 写真を元の解像度の 2 倍で撮る | `"screenshot": {"default": true, "options": {"source": "screen", "scale": 2}}` |
+| 録画を ffmpeg なしで MP4 にする（Windows） | `addons/adv80s_mp4` を置き、プロジェクト設定のプラグインで「adv80s MP4」を入れて、`"options": {"format": "mp4"}` |
 | 録画を MP4 で残す（パソコン） | `"recording": {"default": true, "options": {"format": "mp4"}}`（ffmpeg が PATH にあるか、ゲームの実行ファイルの隣にあるとき。なければ AVI） |
 | ffmpeg の場所を決める | `"options": {"format": "mp4", "ffmpeg": "tools/ffmpeg.exe"}`（実行ファイルのフォルダから） |
 | MP4 にしたあとも AVI を残す | `"options": {"format": "mp4", "keep_avi": true}` |

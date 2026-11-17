@@ -38,6 +38,7 @@ func _initialize() -> void:
 	_test_stage36()
 	_test_stage68()
 	_test_stage69()
+	_test_stage70()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -1582,4 +1583,62 @@ func _test_stage69() -> void:
 	e.add_audio(PackedVector2Array([Vector2.ZERO]))
 	var r := e.close()
 	eq([r.get("frames"), e.extension(), AdvAviWriter.read_info(dir + "/e.avi").get("streams")], [2, "avi", 1], "s69: avi encoder writes frames")
+	_rm_files(dir)
+
+
+## 段階70：OS のエンコーダーで MP4 を書く差し込み部品（addons/adv80s_mp4。いまは Windows だけ）。
+func _test_stage70() -> void:
+	eq(AdvMp4Encoder.bitrate_of(0.85), 10500000, "s70: bitrate from quality")
+	eq([AdvMp4Encoder.bitrate_of(0.0), AdvMp4Encoder.bitrate_of(2.0)], [2000000, 12000000], "s70: bitrate range")
+	var e := AdvMp4Encoder.new()
+	eq(e.extension(), "mp4", "s70: mp4 extension")
+	if not AdvMp4Encoder.native_ready():
+		check(OS.get_name() != "Windows" or not ClassDB.class_exists("AdvMfWriter"), "s70: Media Foundation should be ready on Windows")
+		eq(e.open("user://x.mp4", 16, 16, 30, 0), ERR_UNAVAILABLE, "s70: unavailable without the extension")
+		return
+	# 登録すると、format: "mp4" は ffmpeg より先にこれを使う
+	AdvMp4Encoder.register()
+	var pl := AdvCapture.plan({"format": "mp4"})
+	eq([pl.get("format"), pl.get("encoder"), pl.get("convert")], ["mp4", "mp4", ""], "s70: plan uses the native mp4 encoder")
+	check(AdvCapture.make_encoder("mp4") is AdvMp4Encoder, "s70: registered as mp4")
+	# 書いて読み直す（上が赤、下が青。音は 440 Hz）
+	var dir := "user://s70_unit"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var path := dir + "/t.mp4"
+	e.options = {"quality": 0.5}
+	eq(e.open(path, 320, 240, 30, 48000), OK, "s70: open")
+	var img := Image.create(320, 240, false, Image.FORMAT_RGB8)
+	img.fill_rect(Rect2i(0, 0, 320, 120), Color(1, 0, 0))
+	img.fill_rect(Rect2i(0, 120, 320, 120), Color(0, 0, 1))
+	for i in 30:
+		if i % 3 == 0:
+			e.add_video(img)
+		else:
+			e.repeat_video()
+		var s := PackedVector2Array()
+		s.resize(1600)
+		for k in 1600:
+			var v := sin((i * 1600 + k) * TAU * 440.0 / 48000.0) * 0.5
+			s[k] = Vector2(v, v)
+		e.add_audio(s)
+	var r := e.close()
+	eq([r.get("ok"), r.get("frames"), r.get("seconds"), r.get("path")], [true, 30, 1.0, path], "s70: close result")
+	var info := AdvMp4Encoder.probe(path)
+	eq([info.get("video"), info.get("width"), info.get("height"), info.get("fps"), info.get("audio"), info.get("audio_rate"), info.get("channels")],
+		["h264", 320, 240, 30.0, "aac", 48000, 2], "s70: probe")
+	check(absf(float(info.get("seconds", 0.0)) - 1.0) < 0.05, "s70: about 1 second: %s" % str(info.get("seconds")))
+	var f := AdvMp4Encoder.read_first_frame(path)
+	check(f != null and f.get_size() == Vector2i(320, 240), "s70: first frame read back")
+	if f != null:
+		var top := f.get_pixel(160, 30)
+		var bottom := f.get_pixel(160, 210)
+		check(top.r > 0.9 and top.g < 0.1 and top.b < 0.1 and bottom.b > 0.9 and bottom.r < 0.1, "s70: colors and orientation: %s %s" % [top, bottom])
+	# 音の速さが AAC にできないなら音なし、大きさが奇数なら開かない
+	var e2 := AdvMp4Encoder.new()
+	eq(e2.open(dir + "/n.mp4", 64, 48, 10, 22050), OK, "s70: open with an unsupported audio rate")
+	e2.add_video(Image.create(64, 48, false, Image.FORMAT_RGBA8))
+	e2.close()
+	check(not AdvMp4Encoder.probe(dir + "/n.mp4").has("audio"), "s70: no audio stream at 22050 Hz")
+	eq(AdvMp4Encoder.new().open(dir + "/odd.mp4", 63, 48, 10, 0), ERR_INVALID_PARAMETER, "s70: odd size is refused")
+	AdvCapture.register_encoder("mp4", Callable())
 	_rm_files(dir)

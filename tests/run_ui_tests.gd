@@ -2249,6 +2249,7 @@ func _test_stage16() -> void:
 	await _settle_frames(2)
 	await _test_capture()
 	await _test_convert()
+	await _test_native_mp4()
 	_stage16_done = true   # ここまで来たしるし（途中のスクリプトのエラーで止まると false のまま）
 
 
@@ -2713,3 +2714,50 @@ func _test_convert() -> void:
 	player._notices.clear()
 	player.features.options = old_opt
 	_rmdir("user://s69_rec")
+
+
+## 段階70：OS のエンコーダーで MP4 に録る（addons/adv80s_mp4。使えない環境では飛ばす）。
+func _test_native_mp4() -> void:
+	if DisplayServer.get_name() == "headless" or not AdvMp4Encoder.native_ready():
+		print("s70: OS の MP4 の書き出しが使えないので飛ばします")
+		return
+	var old_opt: Dictionary = player.features.options.duplicate()
+	var vs: Vector2i = player.display.viewport.size
+	_rmdir("user://s70_rec")
+	AdvMp4Encoder.register()
+	player.features.options["recording"] = {"folder": "user://s70_rec", "fps": 15, "source": "screen", "format": "mp4"}
+	var before := player.capture_image("screen")
+	var p := player.start_recording()
+	check(p.ends_with(".mp4") and player.capture.last_note == "", "s70: records straight to mp4: %s" % p)
+	await create_timer(0.8).timeout
+	var cp := player.stop_recording()
+	check(cp == p and not player.capture.is_converting(), "s70: no conversion needed")
+	var info := AdvMp4Encoder.probe(p)
+	check(info.get("video") == "h264" and info.get("audio") == "aac" and info.get("width") == vs.x and info.get("height") == vs.y, "s70: mp4 from the game: %s" % str(info))
+	check(float(info.get("seconds", 0.0)) >= 0.5, "s70: length: %s" % str(info.get("seconds")))
+	var f := AdvMp4Encoder.read_first_frame(p)
+	if f != null and before != null:
+		before.convert(Image.FORMAT_RGB8)
+		# 画面全体の 16×10 の点で比べる（明るいところがあることも確かめる）
+		var diff := 0.0
+		var bright := 0.0
+		for gy in 10:
+			for gx in 16:
+				var c := Vector2i(int((gx + 0.5) * vs.x / 16.0), int((gy + 0.5) * vs.y / 10.0))
+				var a := before.get_pixelv(c)
+				var b := f.get_pixelv(c)
+				diff += (absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b)) / 3.0
+				bright = maxf(bright, a.get_luminance())
+		diff /= 160.0
+		check(bright > 0.3 and diff < 0.06, "s70: first frame looks like the screen: diff %.3f bright %.2f" % [diff, bright])
+	else:
+		check(false, "s70: first frame")
+	await _settle()
+	check(player.notices().any(func(t): return String(t) == "ろくがを ほぞんしました（%s）" % p.get_file()), "s70: saved notice: %s" % str(player.notices()))
+	AdvCapture.register_encoder("mp4", Callable())
+	player.features.options = old_opt
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+	_rmdir("user://s70_rec")

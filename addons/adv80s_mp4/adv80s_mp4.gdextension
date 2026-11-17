@@ -1,0 +1,12 @@
+; adv80s_mp4：OS のエンコーダーで録画を MP4 にする（段階70）。いまは Windows（Media Foundation）だけ。
+; エディタでも書き出したゲームでも、同じ DLL を使う。
+
+[configuration]
+
+entry_symbol = "adv80s_mp4_init"
+compatibility_minimum = "4.7"
+reloadable = false
+
+[libraries]
+
+windows.x86_64 = "res://addons/adv80s_mp4/bin/adv80s_mp4.windows.template_release.x86_64.dll"

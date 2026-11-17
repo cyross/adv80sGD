@@ -1794,7 +1794,7 @@ func is_available() -> bool                     # 鍵を用意できるか
 ```
 
 
-### 10.2 画面の写真と録画（段階68・69）
+### 10.2 画面の写真と録画（段階68〜70）
 
 デバッグのため（不具合の様子を残す）と、配信や SNS に載せるための機能。ゲームを作る人が、配布アプリに残すかどうかを決められる。
 
@@ -1816,6 +1816,12 @@ func is_available() -> bool                     # 鍵を用意できるか
 - **ffmpeg を探す場所**：`options.ffmpeg` を書けばそこだけ（相対パスはゲームの実行ファイルのフォルダから、名前だけなら PATH から）。書かなければ、実行ファイルの隣の `ffmpeg(.exe)`、次に PATH。ffmpeg は同梱しない。同梱するときは、作る人が ffmpeg のライセンスを確かめる（libx264 を含むものは GPL）。
 - **H.264 の選び方**：その ffmpeg の `-encoders` を見て、`libx264`・`h264_mf`・`h264_videotoolbox`・`libopenh264` の順で、あるものを使う（LGPL の ffmpeg でも OS のエンコーダーで書ける）。`quality` は libx264 なら crf（28〜16）、ほかはビットレート（2〜12 Mbps）にする。JPEG の色はフルレンジなので、ふつうの動画の範囲（tv）の yuv420p に直す。`ffmpeg_args` を書けば、映像の引数はそれを使う。
 - **書き出しの受け口**：`AdvVideoEncoder` の `extension`・`is_available`・`open(パス, 幅, 高さ, fps, 音のサンプル数)`・`add_video(Image)`・`repeat_video`・`add_audio(PackedVector2Array)`・`size`・`close`。open から close まで、どれも録画のスレッドから順に呼ぶ。本体の AVI も `AdvAviEncoder` としてこの形で書く。
+- **OS のエンコーダーで MP4（段階70）**：差し込み部品 `addons/adv80s_mp4`（GDExtension）。いまは Windows（Media Foundation）だけ。
+  - 入れ方：`addons/adv80s_mp4` を置いて、プロジェクト設定のプラグインで「adv80s MP4」を入れる。自動読み込み `AdvMp4` が足され、ゲームの始めに `AdvMp4Encoder` を `"mp4"` の書き出しとして登録する。あとは `options.format: "mp4"` にするだけ。
+  - 映像は、コマを自分で NV12（BT.709、16〜235）にして H.264（High、ビットレートは `quality` から 2〜12 Mbps）に渡す。機械ごとの色の変換の違いが出ないようにするためと、ハードウェアのエンコーダーにも渡せるようにするため。音は 44100・48000 Hz なら AAC（192 kbps）、ほかの速さなら音なし。幅と高さは偶数。
+  - 使えないとき（Windows 以外、Media Foundation のない Windows の N エディション、H.264 のエンコーダーがない）は `is_available()` が false になり、ffmpeg で変えるか AVI になる。Media Foundation の DLL は使うときに読むので、ない Windows でも拡張は読める。
+  - 中身の C++ は `native/adv80s_mp4`、土台は godot-cpp（`native/godot-cpp`、git のサブモジュール、10.0.0-stable）。godot-cpp は作るときだけ使い、ゲームに入るのは DLL だけ（`addons/adv80s_mp4/bin` にコミットする）。本体 `addons/adv80s` は今までどおり依存を持たない。
+  - Mac・iOS（AVFoundation）、Android（MediaCodec）はまだない。同じ受け口で、同じ部品に足す。
 
 ```json
 "features": {

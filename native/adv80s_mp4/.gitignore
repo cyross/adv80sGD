@@ -1,0 +1,5 @@
+# ビルドの途中でできるもの
+.sconsign*.dblite
+*.obj
+*.os
+src/gen/

@@ -2,7 +2,7 @@
 
 最終更新：2026-11-17
 
-adv80sGD（段階69）で使えるものの一覧です。引数や書き方の詳しい説明は「[リファレンスマニュアル](reference.md)」、設計の理由は「[仕様書](../SPEC.md)」にあります。
+adv80sGD（段階70）で使えるものの一覧です。引数や書き方の詳しい説明は「[リファレンスマニュアル](reference.md)」、設計の理由は「[仕様書](../SPEC.md)」にあります。
 
 ## 出力イベント
 
@@ -255,7 +255,7 @@ adv80sGD（段階69）で使えるものの一覧です。引数や書き方の�
 | `touch` | タッチ操作 | オン |
 | `filter_toggle` | フィルターの無効化 | オン |
 | `screenshot` | 画面の写真（PNG） | オフ |
-| `recording` | 画面の録画（AVI：MJPEG と PCM。`format: "mp4"` で、登録した書き出しか ffmpeg があれば MP4） | オフ |
+| `recording` | 画面の録画（AVI：MJPEG と PCM。`format: "mp4"` で、登録した書き出し（Windows は `addons/adv80s_mp4`）か ffmpeg があれば MP4） | オフ |
 
 **プレイヤー設定**（`user://adv80s_settings.json`）
 
@@ -380,4 +380,4 @@ adv80sGD（段階69）で使えるものの一覧です。引数や書き方の�
 | --- | --- |
 | 当時の画像形式 | MAG は読む、PI など他形式は読まない（PNG などに変換して置く）。200ライン用の MAG も縦に伸ばさない |
 | mp4 などの動画 | 読まない（`.ogv` に変換して置く） |
-| 録画の MP4 | 本体は ffmpeg（パソコンだけ）で変える。Windows・Mac・iOS・Android の OS のエンコーダーで直接書く部品はまだない（受け口 `AdvVideoEncoder` だけ） |
+| 録画の MP4 | OS のエンコーダーで直接書く部品（`addons/adv80s_mp4`）は Windows だけ。Mac・iOS・Android はまだない（そこでは ffmpeg で変えるか AVI） |

@@ -5,7 +5,7 @@
 ## これは何か
 
 - Godot 4.7（GDScript）で 80 年代風のアドベンチャーゲームを作るためのフレームワークと、シナリオエディタのプラグイン。
-- 外部の依存を持たない（アドオン・ライブラリを足さない）。
+- 外部の依存を持たない（アドオン・ライブラリを足さない）。ただし差し込み部品 `addons/adv80s_mp4`（OS のエンコーダーで MP4 を書く GDExtension）は、作るときだけ godot-cpp を使う。本体 `addons/adv80s` は依存なしのまま。
 - シナリオは JSON（`*.scenario.json`）と Ink（`.ink.json`）。
 
 ## 置き場所
@@ -21,6 +21,8 @@
 | `addons/adv80s/schemas/ja`・`en` | JSON スキーマ（両方を同じに保つ） |
 | `addons/adv80s/presets`・`templates` | 機種プリセットと同梱テンプレート（`tools/build_*.py` で作るものがある） |
 | `addons/adv80s/adv_player.gd` | プレイヤー本体 |
+| `addons/adv80s_mp4` | 差し込み部品：録画を OS のエンコーダーで MP4 に（GDExtension の DLL と GDScript。いまは Windows だけ） |
+| `native/adv80s_mp4` | その C++（`native/godot-cpp` はサブモジュール。`native/.gdignore` で Godot には見せない） |
 | `tests/` | テスト（下の「確かめ方」） |
 | `SPEC.md` | 仕様書（設計と決めごと。6.8 がシナリオエディタ） |
 | `docs/` | 利用者向けドキュメント（目次は `docs/README.md`） |
@@ -35,16 +37,17 @@ godot --path . --script res://tests/run_editor_tests.gd
 godot --path . --script res://tests/run_ui_tests.gd -- /tmp/shots
 ```
 
-- 段階69の時点で run_tests 872 件、run_editor_tests 498 件が通り、run_ui_tests は「ui failed: 0」。
+- 段階70の時点で run_tests 886 件、run_editor_tests 498 件が通り、run_ui_tests は「ui failed: 0」。
 - 画面に関わる変更では `run_ui_tests.gd -- /tmp/shots --review` も回し、`index.html` で全テンプレート（26）×画面（14）を見る。赤い枠は問題あり（`_overflowing`・`_low_contrast`）。
 - テストの中ではプレイヤーの大きさが 0 なので、レビューでは FULL_RECT にしている。
+- `native/adv80s_mp4` の C++ を直したら、そこで `scons platform=windows target=template_release` を動かして DLL を作り直し、DLL もコミットする（SCons は `pip install scons`、C++ は Visual Studio。初めてなら `git submodule update --init`）。
 - 環境変数 `ADV80S_TEST_FFMPEG` に ffmpeg.exe のパスを入れて run_ui_tests を回すと、録画を MP4 に変えるところも確かめる（なければ飛ばす）。
 
 ## 決めごと
 
 - **機種名は略称で書く**（PC-98、PC-88、FC、SFC、GB、GBC など）。商標を避けるため。コード・文書・画面のすべてで。
 - **文書は日本語で、やさしい言葉で書く。** 新しい機能は `SPEC.md`、`docs/reference.md`、`docs/howto.md`、`docs/spec-list.md` のうち関わるものに書き足す。スキーマは ja と en の両方を直す。
-- **段階で進める。** 機能のまとまりを「段階NN」と呼び、`docs/spec-list.md` の冒頭の段階番号も上げる。いまは段階69まで。
+- **段階で進める。** 機能のまとまりを「段階NN」と呼び、`docs/spec-list.md` の冒頭の段階番号も上げる。いまは段階70まで。
 - **作者の値は `ext` か `x.名前` に入れる。** フレームワークが読まない場所。勝手に新しいキーを生やさない。
 - **作者のファイルは `res://game/` に置く。** `addons/adv80s` の中は利用者が書き換えない前提。
 - **改行は CRLF**（Windows の作業フォルダ）。

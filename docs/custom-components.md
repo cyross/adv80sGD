@@ -205,7 +205,7 @@ static func parse(text: String, core: AdvCore) -> Dictionary:
 
 ## 録画の書き出しを足す
 
-録画は、本体では AVI（MJPEG）だけを書きます。MP4 などを OS のエンコーダーで直接書きたいときは、`AdvVideoEncoder` を継いだ書き出しを作って登録します。C++ の GDExtension で OS の機能を呼ぶものを、`addons/adv80s` の外（たとえば `addons/my_mp4/`）に置きます。
+録画は、本体では AVI（MJPEG）だけを書きます。MP4 などを OS のエンコーダーで直接書きたいときは、`AdvVideoEncoder` を継いだ書き出しを作って登録します。C++ の GDExtension で OS の機能を呼ぶものを、`addons/adv80s` の外（たとえば `addons/my_mp4/`）に置きます。Windows の Media Foundation を使う `addons/adv80s_mp4`（中身の C++ は `native/adv80s_mp4`）が、そのまま見本になります。
 
 ```gdscript
 # res://game/capture/my_mp4_encoder.gd
