@@ -435,6 +435,13 @@ func _fill_settings(m: AdvMenuPanel) -> void:
 		m.add_button("フィルター：%s" % _onoff(player.display.filters_enabled), func():
 			player.set_filters_enabled(not player.display.filters_enabled)
 			refill.call())
+	for ck in [["screenshot", "がめんの しゃしん"], ["recording", "ろくが"]]:
+		var kind: String = ck[0]
+		if player.capture_in_menu(kind):
+			var key_name := String(player.capture_options(kind).get("key", ""))
+			m.add_button("%s（%s）：%s" % [ck[1], key_name, _onoff(_on(kind))], func():
+				player.set_feature(kind, not _on(kind))
+				refill.call())
 	if _on("era_switch"):
 		m.add_button("がめんの じだい：%s" % String(player.template.data.get("name", player.template.id)), func():
 			await player.cycle_template()

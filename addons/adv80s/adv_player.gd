@@ -11,6 +11,7 @@ extends Control
 ##   F4・ホイール上  メッセージログ             F5  クイックセーブ   F9  クイックロード
 ##   Esc  セーブ・ロードの画面（開いている画面は閉じる）
 ##   F1・右クリック・ゲームパッドの Start  メニュー   F6  調べられる場所の表示の切り替え
+##   F7  画面の写真   F10  録画の開始・停止（モダン機能 screenshot・recording。デバッグ実行中はいつも使える）
 
 signal game_ended
 signal idle                     ## 出力イベントを実行し終えて、入力を待つ状態になった
@@ -49,6 +50,7 @@ var key_provider: AdvKeyProvider
 var progress: AdvProgress
 var modern: AdvModernUI
 var audio: AdvAudio
+var capture: AdvCapture          ## 画面の写真と録画（段階68）
 
 var busy: bool = false
 var ended: bool = false
@@ -153,6 +155,10 @@ func _ready() -> void:
 	screen = display.screen
 	screen.resolver = func(kind: String, id: String) -> String: return core.assets.resolve(kind, id)
 	_build_screen()
+	capture = AdvCapture.new()
+	capture.name = "Capture"
+	add_child(capture)
+	capture.recording_stopped.connect(_on_recording_stopped)
 	if OS.is_debug_build():
 		_setup_debug_ui()
 		_watch_snap = watch_snapshot()
@@ -681,7 +687,7 @@ func _window_layer_size() -> Vector2:
 	return get_viewport_rect().size
 
 
-const DEBUG_NOTICE_KINDS := ["run_from", "pre_set", "reload", "editor", "preset", "auto_reload"]
+const DEBUG_NOTICE_KINDS := ["run_from", "pre_set", "reload", "editor", "preset", "auto_reload", "capture"]
 var debug_notice_override: Dictionary = {}   ## コンソールの notice で切り替えたもの（種類 → bool。動かしている間だけ。設定より先）
 
 
@@ -1437,6 +1443,9 @@ func set_feature(key: String, on: bool) -> void:
 		"tts":
 			if not features.is_on("tts") and _tts_available():
 				DisplayServer.tts_stop()
+		"recording":
+			if not capture_on("recording") and is_recording():
+				stop_recording()
 	if not busy:
 		_enter_idle()
 
@@ -2696,6 +2705,15 @@ func _input(event: InputEvent) -> void:
 	if is_blocked_input(event):
 		get_viewport().set_input_as_handled()
 		return
+	# 画面の写真・録画（開いている画面の中でも使える）
+	if event is InputEventKey and event.pressed and not event.echo and capture_key(event.keycode) != "":
+		var ck := capture_key(event.keycode)
+		get_viewport().set_input_as_handled()
+		if ck == "screenshot":
+			take_screenshot()
+		else:
+			toggle_recording()
+		return
 	if _overlay != null:
 		if OS.is_debug_build() and event is InputEventKey and event.pressed and not event.echo:
 			if event.keycode == KEY_F12 and _overlay.has_method("close_and_resume"):
@@ -3249,6 +3267,138 @@ func _make_key_provider(diags: Array) -> AdvKeyProvider:
 
 
 ## 開発中だけ使う仮の鍵（製品版では使わない）。
+# ---------------------------------------------------------------- 画面の写真と録画（段階68）
+
+var _as_release := false     ## テスト用：デバッグ実行でも、配布アプリと同じに決める（モダン機能だけを見る）
+var _rec_title := ""         ## 録画中に窓の名前を変える前の名前
+
+
+## 写真（kind "screenshot"）・録画（"recording"）を使えるか。
+## デバッグ実行中はいつも使える（プロジェクト設定 debug.capture: false で止めると、配布アプリと同じ）。
+## 配布アプリでは、モダン機能 screenshot・recording が入っているときだけ。
+func capture_on(kind: String) -> bool:
+	if features == null or capture == null:
+		return false
+	if OS.is_debug_build() and not _as_release and bool(_debug_conf().get("capture", true)):
+		return true
+	return features.is_on(kind)
+
+
+## 写真・録画の細かい設定（モダン機能の options に既定値を重ねたもの）。
+func capture_options(kind: String) -> Dictionary:
+	return AdvCapture.options_for(kind, features.options.get(kind, {}) if features != null else {})
+
+
+## 押したキーが写真・録画のキーなら、その種類（"screenshot"・"recording"）。違えば ""。
+func capture_key(keycode: Key) -> String:
+	for kind in ["screenshot", "recording"]:
+		if capture_on(kind) and keycode == AdvCapture.keycode_of(kind, capture_options(kind)):
+			return kind
+	return ""
+
+
+## 設定の画面に、写真・録画の切り替えを出すか（プロジェクト設定 features に書いてあり、禁止していないとき）。
+func capture_in_menu(kind: String) -> bool:
+	var pf = project.get_value("features", {})
+	return pf is Dictionary and pf.has(kind) and bool(features.allowed.get(kind, true)) and bool(capture_options(kind).get("menu", true))
+
+
+## 写す画像。source が "screen" なら元の解像度の画面（フィルターの前）、それ以外は窓の全体（見えているとおり）。
+func capture_image(source: String) -> Image:
+	var vp: Viewport = display.viewport if source == "screen" and display != null else get_viewport()
+	var tex := vp.get_texture() if vp != null else null
+	return tex.get_image() if tex != null else null
+
+
+## 画面の写真を撮って PNG で保存する（await できる）。保存したパス（だめなら ""）。
+## デバッグのボタンは写さない。お知らせは撮ったあとに出す。
+func take_screenshot() -> String:
+	if not capture_on("screenshot"):
+		return ""
+	var opts := capture_options("screenshot")
+	var bar := _debug_layer.get_node_or_null("DebugButtonBar") if _debug_layer != null else null
+	var bar_shown: bool = bar != null and bar.visible
+	if bar_shown:
+		bar.visible = false
+	await RenderingServer.frame_post_draw
+	var img := capture_image(String(opts.get("source", "window")))
+	if bar_shown and is_instance_valid(bar) and not is_recording():
+		bar.visible = true
+	var p := capture.save_screenshot(img, opts)
+	if p == "":
+		print("[adv80s] 画面の写真を撮れません（%s）" % capture.last_error)
+		return ""
+	print("[adv80s] 画面の写真：%s" % ProjectSettings.globalize_path(p))
+	if bool(opts.get("notice", true)):
+		_capture_notice("がめんを ほぞんしました（%s）" % p.get_file())
+	return p
+
+
+## 開いている画面（デバッグコンソールなど）が閉じてから写真を撮る・録画を始める（kind "screenshot"・"recording"）。
+func capture_after_close(kind: String) -> void:
+	await get_tree().process_frame
+	if kind == "screenshot":
+		await take_screenshot()
+	else:
+		start_recording()
+
+
+func is_recording() -> bool:
+	return capture != null and capture.is_recording()
+
+
+## 録画を始める・止める。始めたら録画のパス、止めたら閉じたパス（だめなら ""）。
+func toggle_recording() -> String:
+	return stop_recording() if is_recording() else start_recording()
+
+
+## 録画を始める。始めるお知らせは出さない（動画に写らないように）。窓の名前に ● REC を付ける。
+func start_recording() -> String:
+	if is_recording() or not capture_on("recording"):
+		return ""
+	var opts := capture_options("recording")
+	var p := capture.start_recording(opts, capture_image)
+	if p == "":
+		print("[adv80s] 録画を始められません（%s）" % capture.last_error)
+		return ""
+	print("[adv80s] 録画を始めました：%s" % ProjectSettings.globalize_path(p))
+	var bar := _debug_layer.get_node_or_null("DebugButtonBar") if _debug_layer != null else null
+	if bar != null:
+		bar.visible = false
+	if String(opts.get("indicator", "title")) == "title" and get_window() != null and get_parent() == get_tree().root:
+		_rec_title = get_window().title
+		get_window().title = "● REC  " + _rec_title
+	return p
+
+
+## 録画を止めてファイルを閉じる。閉じたパス（録画していなければ ""）。
+func stop_recording() -> String:
+	return capture.stop_recording("stop") if is_recording() else ""
+
+
+func _on_recording_stopped(path: String, reason: String) -> void:
+	var bar := _debug_layer.get_node_or_null("DebugButtonBar") if _debug_layer != null else null
+	if bar != null and is_instance_valid(bar):
+		bar.visible = true
+	if _rec_title != "" and get_window() != null:
+		get_window().title = _rec_title
+	_rec_title = ""
+	if reason == "exit" or not is_inside_tree():
+		return
+	print("[adv80s] 録画を保存しました：%s（%s）" % [ProjectSettings.globalize_path(path), reason])
+	var why := {"max_seconds": "（ながさの じょうげんで とめました）", "max_size": "（おおきさの じょうげんで とめました）"}.get(reason, "")
+	if bool(capture_options("recording").get("notice", true)):
+		_capture_notice("ろくがを ほぞんしました%s（%s）" % [why, path.get_file()])
+
+
+## 写真・録画のお知らせ。デバッグ実行中はデバッグのお知らせ（種類 capture）、配布アプリではふつうのお知らせ。
+func _capture_notice(text: String) -> void:
+	if OS.is_debug_build() and not _as_release:
+		show_debug_notice(text, {}, -1.0, "", false, "capture")
+	else:
+		show_notice(text, -1.0, "", false)
+
+
 # ---------------------------------------------------------------- デバッグ専用機能（デバッグコンソール・シーングラフ）
 
 func _setup_debug_ui() -> void:

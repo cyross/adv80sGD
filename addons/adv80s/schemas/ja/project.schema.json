@@ -536,6 +536,10 @@
             "auto_reload": {
               "type": "boolean",
               "description": "「保存したら読み直す：入／切」（既定 true）"
+            },
+            "capture": {
+              "type": "boolean",
+              "description": "「画面を保存しました」「録画を保存しました」（既定 true）"
             }
           },
           "additionalProperties": false,
@@ -646,6 +650,10 @@
             "additionalProperties": false
           },
           "description": "「このシーンから実行」のひな形（名前 → {vars, items}）。シナリオエディタの「ひな形…」で書ける"
+        },
+        "capture": {
+          "type": "boolean",
+          "description": "デバッグ実行中、写真（F7）と録画（F10）をいつも使えるようにするか（既定 true。false なら配布アプリと同じく、モダン機能 screenshot・recording に従う）"
         }
       },
       "additionalProperties": false,
@@ -1394,6 +1402,139 @@
             }
           },
           "additionalProperties": false
+        },
+        "screenshot": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "押すキーの名前（既定 写真 \"F7\"、録画 \"F10\"）"
+                },
+                "source": {
+                  "type": "string",
+                  "description": "写すもの。window：窓の全体（フィルターも、見えているとおり。既定）、screen：元の解像度の画面（フィルターの前）",
+                  "enum": [
+                    "window",
+                    "screen"
+                  ]
+                },
+                "scale": {
+                  "type": "number",
+                  "description": "大きさの倍率（既定 1。1 より大きいと点のまま拡大、小さいとなめらかに縮める）",
+                  "exclusiveMinimum": 0
+                },
+                "folder": {
+                  "type": "string",
+                  "description": "保存先のフォルダ（既定 写真 \"user://screenshots\"、録画 \"user://recordings\"。パソコンの絶対パスも書ける）"
+                },
+                "prefix": {
+                  "type": "string",
+                  "description": "ファイルの名前の頭（既定 写真 \"screenshot\"、録画 \"recording\"。後ろに年月日_時分秒が付く）"
+                },
+                "notice": {
+                  "type": "boolean",
+                  "description": "保存したときにお知らせを出すか（既定 true）"
+                },
+                "menu": {
+                  "type": "boolean",
+                  "description": "設定の画面に切り替えを出すか（既定 true）"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "description": "画面の写真（スクリーンショット）。配布アプリでは、入れたときだけ使える（デバッグ実行中はいつも使える）"
+        },
+        "recording": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "押すキーの名前（既定 写真 \"F7\"、録画 \"F10\"）"
+                },
+                "source": {
+                  "type": "string",
+                  "description": "写すもの。window：窓の全体（フィルターも、見えているとおり。既定）、screen：元の解像度の画面（フィルターの前）",
+                  "enum": [
+                    "window",
+                    "screen"
+                  ]
+                },
+                "scale": {
+                  "type": "number",
+                  "description": "大きさの倍率（既定 1。1 より大きいと点のまま拡大、小さいとなめらかに縮める）",
+                  "exclusiveMinimum": 0
+                },
+                "folder": {
+                  "type": "string",
+                  "description": "保存先のフォルダ（既定 写真 \"user://screenshots\"、録画 \"user://recordings\"。パソコンの絶対パスも書ける）"
+                },
+                "prefix": {
+                  "type": "string",
+                  "description": "ファイルの名前の頭（既定 写真 \"screenshot\"、録画 \"recording\"。後ろに年月日_時分秒が付く）"
+                },
+                "notice": {
+                  "type": "boolean",
+                  "description": "保存したときにお知らせを出すか（既定 true）"
+                },
+                "menu": {
+                  "type": "boolean",
+                  "description": "設定の画面に切り替えを出すか（既定 true）"
+                },
+                "fps": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 60,
+                  "description": "1 秒あたりのコマの数（1〜60、既定 30）"
+                },
+                "quality": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "JPEG の質（0〜1、既定 0.85）"
+                },
+                "audio": {
+                  "type": "boolean",
+                  "description": "音も録るか（既定 true）"
+                },
+                "max_seconds": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "いちばん長い秒数（既定 600。0 で決めない。どちらでも 1.9 GB で止まる）"
+                },
+                "indicator": {
+                  "type": "string",
+                  "enum": [
+                    "title",
+                    "none"
+                  ],
+                  "description": "録画中のしるし。title：窓の名前に「● REC」を付ける（既定）、none：出さない"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "description": "画面の録画（AVI：映像は MJPEG、音は 16 ビット PCM）。配布アプリでは、入れたときだけ使える（デバッグ実行中はいつも使える）"
         }
       },
       "patternProperties": {

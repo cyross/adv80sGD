@@ -36,6 +36,7 @@ func _initialize() -> void:
 	_test_stage12()
 	_test_stage16()
 	_test_stage36()
+	_test_stage68()
 	print("")
 	print("passed: %d  failed: %d" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -1445,3 +1446,78 @@ func _test_text_stops() -> void:
 	eq(AdvTextMarkup.to_plain("あ[p]い[page]う", null, null), "あい\nう", "plain text drops stops")
 	var r2 := AdvTextMarkup.to_bbcode_stops("[ruby=かんじ]漢字[/ruby][p]あ", null, null)
 	eq(r2["stops"][0]["at"], 7, "ruby paren counted before stop")
+
+
+## 段階68：画面の写真と録画（AVI の書き出し、ファイルの名前、モダン機能 screenshot・recording）。
+func _test_stage68() -> void:
+	var f := AdvFeatures.resolve({}, {}, {"templates": 1})
+	check(not f.is_on("screenshot") and not f.is_on("recording") and f.allowed.get("screenshot", false), "s68: capture features are off by default")
+	f = AdvFeatures.resolve({"screenshot": {"default": true}, "recording": {"allow": false}}, {}, {"templates": 1}, {"recording": true})
+	check(f.is_on("screenshot") and not f.is_on("recording"), "s68: project can turn on / forbid")
+	var o := AdvCapture.options_for("recording", {"fps": 12})
+	eq([o["fps"], o["key"], o["folder"], o["audio"]], [12, "F10", "user://recordings", true], "s68: options over the defaults")
+	eq(AdvCapture.keycode_of("screenshot", {"key": "F7"}), KEY_F7, "s68: key name")
+	eq(AdvCapture.keycode_of("recording", {"key": "nope"}), KEY_F10, "s68: unknown key name falls back")
+	eq(AdvCapture.keycode_of("screenshot", AdvCapture.options_for("screenshot", {"key": "Home"})), KEY_HOME, "s68: other key")
+	# ファイルの名前
+	var dir := "user://s68_unit"
+	_rm_files(dir)
+	var now := {"year": 2026, "month": 1, "day": 2, "hour": 3, "minute": 4, "second": 5}
+	var p1 := AdvCapture.make_path(dir, "a:b", "png", now)
+	eq(p1, dir + "/a_b_20260102_030405.png", "s68: file name with the date, unsafe chars replaced")
+	FileAccess.open(p1, FileAccess.WRITE).close()
+	eq(AdvCapture.make_path(dir, "a:b", "png", now), dir + "/a_b_20260102_030405_2.png", "s68: same name gets _2")
+	# 倍率
+	var im := Image.create(5, 3, false, Image.FORMAT_RGBA8)
+	var s2 := AdvCapture.scaled(im.duplicate(), 2.0)
+	eq([s2.get_width(), s2.get_height()], [10, 6], "s68: scale x2")
+	var se := AdvCapture.scaled(im.duplicate(), 1.0, true)
+	eq([se.get_width(), se.get_height()], [4, 2], "s68: even size for video")
+	# PCM
+	var pcm := AdvAviWriter.pcm16(PackedVector2Array([Vector2(1, -1), Vector2(0, 2)]))
+	eq([pcm.size(), pcm.decode_s16(0), pcm.decode_s16(2), pcm.decode_s16(4), pcm.decode_s16(6)], [8, 32767, -32767, 0, 32767], "s68: pcm16")
+	# AVI を書いて読み直す
+	var w := AdvAviWriter.new()
+	var ap := dir + "/t.avi"
+	eq(w.open(ap, 16, 8, 15, 8000), OK, "s68: avi open")
+	var red := Image.create(16, 8, false, Image.FORMAT_RGB8)
+	red.fill(Color.RED)
+	w.add_video(red.save_jpg_to_buffer(0.9))
+	w.repeat_video()
+	w.add_audio(AdvAviWriter.pcm16(PackedVector2Array([Vector2.ZERO, Vector2(0.5, 0.5), Vector2.ZERO])))
+	var green := Image.create(16, 8, false, Image.FORMAT_RGB8)
+	green.fill(Color.GREEN)
+	w.add_video(green.save_jpg_to_buffer(0.9))
+	var res := w.close()
+	eq([res.get("frames"), res.get("seconds")], [3, 0.2], "s68: avi close result")
+	var info := AdvAviWriter.read_info(ap)
+	check(bool(info.get("riff_ok", false)), "s68: riff size patched: %s" % str(info))
+	eq([info.get("width"), info.get("height"), info.get("fps"), info.get("frames"), info.get("streams"), info.get("audio_rate"), info.get("channels")],
+		[16, 8, 15, 3, 2, 8000, 2], "s68: avi header")
+	eq([info.get("video_chunks"), info.get("audio_chunks"), info.get("index_entries")], [3, 1, 4], "s68: avi chunks and index")
+	var back := Image.new()
+	check(back.load_jpg_from_buffer(info.get("first_jpeg", PackedByteArray())) == OK and back.get_width() == 16 and back.get_pixel(8, 4).r > 0.8, "s68: first frame is the red jpeg")
+	var w2 := AdvAviWriter.new()
+	w2.open(dir + "/n.avi", 4, 4, 30)
+	w2.add_video(Image.create(4, 4, false, Image.FORMAT_RGB8).save_jpg_to_buffer())
+	w2.add_audio(PackedByteArray([1, 2, 3, 4]))
+	w2.close()
+	var i2 := AdvAviWriter.read_info(dir + "/n.avi")
+	eq([i2.get("streams"), i2.get("audio_chunks"), i2.get("riff_ok")], [1, 0, true], "s68: video only avi")
+	# 写真の保存
+	var cap := AdvCapture.new()
+	var sp := cap.save_screenshot(Image.create(8, 4, false, Image.FORMAT_RGBA8), AdvCapture.options_for("screenshot", {"folder": dir, "scale": 3}))
+	var loaded := Image.load_from_file(sp) if sp != "" else null
+	check(loaded != null and loaded.get_width() == 24 and loaded.get_height() == 12 and sp.get_file().begins_with("screenshot_"), "s68: screenshot png: %s" % sp)
+	check(cap.save_screenshot(null, {}) == "" and cap.last_error == "NO_IMAGE", "s68: no image")
+	cap.free()
+	_rm_files(dir)
+
+
+func _rm_files(path: String) -> void:
+	var d := DirAccess.open(path)
+	if d == null:
+		return
+	for file in d.get_files():
+		d.remove(file)
+	DirAccess.remove_absolute(path)

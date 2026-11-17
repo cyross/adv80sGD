@@ -232,6 +232,12 @@
 | 調べられる場所を光らせる | 機能 `hotspot`（F6） |
 | 試したコマンドに印を付ける | 機能 `tried_marks` |
 | 読みやすいフォントを選べるようにする | 機能 `readable_font` とテンプレートの `fonts.readable` |
+| 遊ぶ人が画面の写真を撮れるようにする | `"features": {"screenshot": {"allow": true, "default": true}}`（F7。設定の画面に切り替えも出る） |
+| 遊ぶ人が録画できるようにする（配信・SNS 向け） | `"features": {"recording": {"allow": true, "default": true}}`（F10 で始める・止める。保存先は `user://recordings`） |
+| 写真・録画を配布アプリでは使わせない | 書かなければ使えない（禁止するなら `"screenshot": {"allow": false}`） |
+| 録画を軽くする | `"options": {"source": "screen", "fps": 20}`（元の解像度の画面だけを録る） |
+| 写真を元の解像度の 2 倍で撮る | `"screenshot": {"default": true, "options": {"source": "screen", "scale": 2}}` |
+| 録画を mp4 にする | `ffmpeg -i 録画.avi -c:v libx264 -pix_fmt yuv420p -c:a aac 録画.mp4` |
 | 動詞の一覧を入れ替える | `{"verbs.update": {"verbs": ["THINK"], "mode": "add"}}` |
 | 物を一覧から隠す | `{"hotspots.update": {"objects": ["plant"], "mode": "remove"}}` |
 
@@ -279,6 +285,8 @@
 | ゲームを止めずにシナリオ・素材を読み直す | デバッグ実行中に F8（デバッグの「読み直す」ボタン、コンソールの `reload` でも） |
 | 読み直したあと、いまのシーンに入り直す | Shift+F8（コンソールなら `reload enter`。いつもなら `"debug": {"reload_reenter": true}`） |
 | 保存したら自動で読み直す | シナリオエディタの右上の「保存で読み直す」（`"debug": {"auto_reload": true}` と同じ。実行中のゲームにも伝わる。コンソールの `autoreload on` / `off` でも） |
+| 不具合の様子を写真・動画で残す | デバッグ実行中に F7（写真）、F10（録画）。コンソールなら `shot`・`rec`、保存先は `capture`、フォルダを開くなら `capture open shot` |
+| デバッグ実行中も写真・録画を配布アプリと同じにする | プロジェクト設定の debug に `"capture": false` |
 | 遊んでいるシーンをエディタで開く | デバッグ実行中にデバッグの「エディタで開く」（コンソールなら `edit`）。エディタから実行したときだけ |
 | いま書いているシーンから試す | シナリオエディタの「▶ このシーンから実行」（タイトル・オープニングを飛ばす。デバッグビルドだけ） |
 | フラグや持ち物をそろえてからシーンを試す | 「ひな形…」で `名前 = 値`・`ID = 個数` を書いて保存し、「実行：」で選んでから実行 |

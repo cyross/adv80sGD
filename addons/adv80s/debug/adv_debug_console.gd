@@ -1219,6 +1219,8 @@ func execute_command(line: String) -> void:
 				_cmd_ids()
 			else:
 				_append_log("[color=#f87171]読み直せません（%s）[/color]" % why)
+		"shot", "rec", "capture":
+			_cmd_capture(cmd, tokens[1] if tokens.size() >= 2 else "", tokens[2] if tokens.size() >= 3 else "")
 		"read", "flow", "chapters", "openings", "progress":
 			_cmd_progress(cmd, tokens[1] if tokens.size() >= 2 else "")
 		"endings":
@@ -1237,6 +1239,48 @@ func execute_command(line: String) -> void:
 			close_and_resume()
 		_:
 			_append_log("[color=#f87171]不明: '%s' (help参照)[/color]" % cmd)
+
+
+## 画面の写真と録画（段階68）。shot：閉じてから撮る。rec [start|stop]：録画。capture [open shot|rec]：保存先と様子。
+func _cmd_capture(cmd: String, sub: String, arg: String) -> void:
+	if player == null:
+		_append_log("[color=#f87171]AdvPlayer 未接続[/color]")
+		return
+	match cmd:
+		"shot":
+			if not player.capture_on("screenshot"):
+				_append_log("[color=#f87171]写真は使えません（debug.capture か、モダン機能 screenshot）[/color]")
+				return
+			player.capture_after_close("screenshot")
+			close_and_resume()
+		"rec":
+			if not player.capture_on("recording"):
+				_append_log("[color=#f87171]録画は使えません（debug.capture か、モダン機能 recording）[/color]")
+				return
+			var want_start: bool = sub == "start" or (sub == "" and not player.is_recording())
+			if want_start:
+				if player.is_recording():
+					_append_log("もう録画しています：%s" % player.capture.recording_path())
+					return
+				player.capture_after_close("recording")
+				close_and_resume()
+			else:
+				var p: String = player.stop_recording()
+				_append_log("[color=#34d399]録画を保存しました：%s[/color]" % ProjectSettings.globalize_path(p) if p != "" else "録画していません")
+		"capture":
+			var so: Dictionary = player.capture_options("screenshot")
+			var ro: Dictionary = player.capture_options("recording")
+			if sub == "open":
+				var folder := String((ro if arg == "rec" else so).get("folder", ""))
+				DirAccess.make_dir_recursive_absolute(folder)
+				OS.shell_open(ProjectSettings.globalize_path(folder))
+				return
+			_append_log("写真：%s（%s キー、%s）保存先 %s" % ["使える" if player.capture_on("screenshot") else "使えない", so.get("key"), so.get("source"), ProjectSettings.globalize_path(String(so.get("folder")))])
+			_append_log("録画：%s（%s キー、%s、%s fps、音 %s、最長 %s 秒）保存先 %s" % ["使える" if player.capture_on("recording") else "使えない", ro.get("key"), ro.get("source"), ro.get("fps"),
+				"あり" if bool(ro.get("audio")) else "なし", ro.get("max_seconds"), ProjectSettings.globalize_path(String(ro.get("folder")))])
+			if player.is_recording():
+				_append_log("[color=#f87171]● 録画中[/color]：%s（%.1f 秒）" % [player.capture.recording_path(), player.capture.recording_seconds()])
+			_append_log("フォルダを開く：capture open shot / capture open rec")
 
 
 ## 起動時の確認で見つからなかった ID を一覧にする。
@@ -1329,6 +1373,7 @@ func _print_help() -> void:
 		" [b]noticestyle キー 値[/b] : デバッグのお知らせの見た目を試す（fg・bg・border・se・icon・position・seconds） | [b]noticestyle test・reset [キー]・save[/b]",
 		" [b]noticestyle game キー 値[/b] : ふつうのお知らせ（遊ぶ人が見るもの）の見た目を試す（position・fg・bg・border・se・seconds・margin・icon_size・max・overflow・click_close・log） | [b]noticestyle game test・reset・save[/b]",
 		" [b]noticestyle [game] keep 名前[/b] : いまの見た目を取っておく | [b]use 名前[/b]・[b]next[/b] : 取っておいたものを試す（next は順に） | [b]list[/b]・[b]drop 名前[/b]",
+		" [b]shot[/b] : コンソールを閉じて画面の写真を撮る（F7） | [b]rec [start|stop][/b] : 録画（F10。start はコンソールを閉じてから） | [b]capture [open shot|rec][/b] : 保存先・録画の様子・フォルダを開く",
 		" [b]read clear[/b] : 既読 | [b]flow clear[/b] : 到達点（チャプター選択） | [b]openings clear[/b] : 見たオープニング | [b]progress [clear][/b] : 記録の数・すべて消す",
 		" [b]resume[/b] / [b]ESC[/b] : コンソールを閉じて変更データで再開"
 	]

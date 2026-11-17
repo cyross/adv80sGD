@@ -24,6 +24,8 @@ const TABLE := {
 	"gamepad": [true, "", ""],
 	"touch": [true, "", "touch"],
 	"filter_toggle": [true, "", ""],
+	"screenshot": [false, "", ""],
+	"recording": [false, "", ""],
 }
 
 var allowed: Dictionary = {}    ## キー → 許可されているか

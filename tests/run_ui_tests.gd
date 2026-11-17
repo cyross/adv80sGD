@@ -1874,7 +1874,7 @@ func _test_stage16() -> void:
 		con47.call("execute_command", "notice reset reload")
 		check(not player.debug_notice_override.has("reload") and player.debug_notice_on("reload"), "s47: reset one kind")
 		con47.call("execute_command", "notice bogus on")
-		check(player.debug_notice_override.size() == 5, "s47: unknown kind changes nothing")
+		check(player.debug_notice_override.size() == player.DEBUG_NOTICE_KINDS.size() - 1, "s47: unknown kind changes nothing")
 		player.send_preset_to_editor("s47")
 		check(not player.notices().any(func(t): return String(t) == "ひな形にしました：s47"), "s47: console off hides the notice")
 		# 段階48：切り替えを設定に書く（エディタへ渡す）
@@ -1882,7 +1882,7 @@ func _test_stage16() -> void:
 			DirAccess.remove_absolute(AdvPlayer.GAME_SETTINGS_FILE)
 		con47.call("execute_command", "notice save")
 		var gs48 = AdvJson.load_file(AdvPlayer.GAME_SETTINGS_FILE, [])
-		check(gs48 is Dictionary and gs48["notices"].size() == 5 and gs48["notices"]["preset"] == false and not gs48["notices"].has("reload"), "s48: notice save writes the switched kinds: %s" % str(gs48))
+		check(gs48 is Dictionary and gs48["notices"].size() == player.DEBUG_NOTICE_KINDS.size() - 1 and gs48["notices"]["preset"] == false and not gs48["notices"].has("reload"), "s48: notice save writes the switched kinds: %s" % str(gs48))
 		DirAccess.remove_absolute(AdvPlayer.GAME_SETTINGS_FILE)
 		con47.call("execute_command", "notice reset")
 		check(player.debug_notice_override.is_empty(), "s47: reset all")
@@ -2247,6 +2247,7 @@ func _test_stage16() -> void:
 	await _shot("review_63_console")
 	con61.queue_free()
 	await _settle_frames(2)
+	await _test_capture()
 	_stage16_done = true   # ここまで来たしるし（途中のスクリプトのエラーで止まると false のまま）
 
 
@@ -2543,3 +2544,70 @@ func _write_json(path: String, data: Variant) -> void:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_string(JSON.stringify(data, "  "))
 	f.close()
+
+
+## 段階68：画面の写真と録画。デバッグ実行中はいつも使える。配布アプリではモダン機能 screenshot・recording。
+func _test_capture() -> void:
+	var headless := DisplayServer.get_name() == "headless"
+	check(player.capture_on("screenshot") and player.capture_on("recording"), "s68: capture is always on while debugging")
+	check(player.capture_key(KEY_F7) == "screenshot" and player.capture_key(KEY_F10) == "recording" and player.capture_key(KEY_F2) == "", "s68: F7 and F10")
+	player._as_release = true
+	check(not player.capture_on("screenshot") and not player.capture_on("recording") and player.capture_key(KEY_F7) == "", "s68: off in a release build unless the features are on")
+	check(await player.take_screenshot() == "" and player.start_recording() == "", "s68: nothing happens when off")
+	var old_en: Dictionary = player.features.enabled.duplicate()
+	var old_opt: Dictionary = player.features.options.duplicate()
+	player.features.enabled["screenshot"] = true
+	player.features.options["screenshot"] = {"folder": "user://s68_shots", "prefix": "s68", "source": "screen", "scale": 2, "key": "F8"}
+	check(player.capture_on("screenshot") and player.capture_key(KEY_F8) == "screenshot" and player.capture_key(KEY_F7) == "", "s68: feature on, key from options")
+	_rmdir("user://s68_shots")
+	_rmdir("user://s68_rec")
+	var vs: Vector2i = player.display.viewport.size
+	if not headless:
+		var p: String = await player.take_screenshot()
+		var im := Image.load_from_file(p) if p != "" else null
+		check(im != null and im.get_width() == vs.x * 2 and im.get_height() == vs.y * 2, "s68: screenshot of the screen x2: %s %s" % [p, str(vs)])
+		await _settle()
+		check(player.notices().any(func(t): return String(t).begins_with("がめんを ほぞんしました")), "s68: notice after the screenshot: %s" % str(player.notices()))
+		player.features.enabled["recording"] = true
+		player.features.options["recording"] = {"folder": "user://s68_rec", "fps": 10, "source": "screen"}
+		var rp := player.start_recording()
+		check(rp != "" and player.is_recording() and player.start_recording() == "", "s68: recording started: %s" % player.capture.last_error)
+		await create_timer(0.7).timeout
+		var cp := player.stop_recording()
+		check(cp == rp and not player.is_recording(), "s68: recording stopped")
+		var info := AdvAviWriter.read_info(rp)
+		check(bool(info.get("riff_ok", false)) and int(info.get("frames", 0)) >= 5 and int(info.get("frames", 0)) == int(info.get("video_chunks", -1)), "s68: avi frames: %s" % str(info.get("frames")))
+		check(info.get("width") == vs.x and info.get("height") == vs.y and info.get("fps") == 10, "s68: avi size: %s %s" % [str(info.get("width")), str(info.get("height"))])
+		check(info.get("streams") == 2 and info.get("audio_rate") == int(AudioServer.get_mix_rate()), "s68: avi has sound")
+		var j := Image.new()
+		check(j.load_jpg_from_buffer(info.get("first_jpeg", PackedByteArray())) == OK, "s68: first frame is a jpeg")
+		check(AudioServer.get_bus_effect_count(0) == 0, "s68: the capture effect is removed")
+		# いちばん長い秒数で止まる
+		player.features.options["recording"] = {"folder": "user://s68_rec", "fps": 10, "source": "screen", "audio": false, "max_seconds": 0.3}
+		var mp := player.start_recording()
+		await create_timer(0.8).timeout
+		check(mp != "" and not player.is_recording() and int(player.capture.last_info.get("frames", 0)) >= 3, "s68: stops at max_seconds")
+		await _settle()
+		check(player.notices().any(func(t): return String(t).contains("じょうげん")), "s68: notice tells why it stopped: %s" % str(player.notices()))
+		check(AdvAviWriter.read_info(mp).get("streams") == 1, "s68: no sound stream with audio: false")
+	# 設定の画面の切り替え
+	check(not player.capture_in_menu("screenshot"), "s68: no menu toggle unless the project lists the feature")
+	var old_pf = player.project.data.get("features")
+	player.project.data["features"] = {"screenshot": {"allow": true}}
+	check(player.capture_in_menu("screenshot") and not player.capture_in_menu("recording"), "s68: menu toggle when the project lists it")
+	player.project.data["features"] = {"screenshot": {"allow": true, "options": {"menu": false}}}
+	player.features.options["screenshot"] = {"menu": false}
+	check(not player.capture_in_menu("screenshot"), "s68: menu: false hides the toggle")
+	if old_pf == null:
+		player.project.data.erase("features")
+	else:
+		player.project.data["features"] = old_pf
+	player.features.enabled = old_en
+	player.features.options = old_opt
+	player._as_release = false
+	for n in player._notices:
+		if is_instance_valid(n):
+			n.queue_free()
+	player._notices.clear()
+	_rmdir("user://s68_shots")
+	_rmdir("user://s68_rec")

@@ -536,6 +536,10 @@
             "auto_reload": {
               "type": "boolean",
               "description": "Auto-reload on/off notice (default true)"
+            },
+            "capture": {
+              "type": "boolean",
+              "description": "\"Screenshot saved\" / \"Recording saved\" (default true)"
             }
           },
           "additionalProperties": false,
@@ -646,6 +650,10 @@
             "additionalProperties": false
           },
           "description": "Presets for \"run from this scene\" (name -> {vars, items}); editable with the scenario editor's Presets... button"
+        },
+        "capture": {
+          "type": "boolean",
+          "description": "While debugging, always allow screenshot (F7) and recording (F10) (default true; false follows the screenshot and recording features as in a release build)"
         }
       },
       "additionalProperties": false,
@@ -1394,6 +1402,139 @@
             }
           },
           "additionalProperties": false
+        },
+        "screenshot": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "Key name (default: screenshot \"F7\", recording \"F10\")"
+                },
+                "source": {
+                  "type": "string",
+                  "description": "What to capture. window: the whole window as seen, with filters (default); screen: the original-resolution screen (before filters)",
+                  "enum": [
+                    "window",
+                    "screen"
+                  ]
+                },
+                "scale": {
+                  "type": "number",
+                  "description": "Scale factor (default 1; above 1 enlarges with nearest pixels, below 1 shrinks smoothly)",
+                  "exclusiveMinimum": 0
+                },
+                "folder": {
+                  "type": "string",
+                  "description": "Output folder (default: screenshot \"user://screenshots\", recording \"user://recordings\"; an absolute path also works)"
+                },
+                "prefix": {
+                  "type": "string",
+                  "description": "File name prefix (default: screenshot \"screenshot\", recording \"recording\"; date and time are appended)"
+                },
+                "notice": {
+                  "type": "boolean",
+                  "description": "Show a notice when saved (default true)"
+                },
+                "menu": {
+                  "type": "boolean",
+                  "description": "Show a toggle in the settings screen (default true)"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "description": "Screenshot. In a release build it works only when enabled (always available while debugging)"
+        },
+        "recording": {
+          "type": "object",
+          "properties": {
+            "allow": {
+              "type": "boolean"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "Key name (default: screenshot \"F7\", recording \"F10\")"
+                },
+                "source": {
+                  "type": "string",
+                  "description": "What to capture. window: the whole window as seen, with filters (default); screen: the original-resolution screen (before filters)",
+                  "enum": [
+                    "window",
+                    "screen"
+                  ]
+                },
+                "scale": {
+                  "type": "number",
+                  "description": "Scale factor (default 1; above 1 enlarges with nearest pixels, below 1 shrinks smoothly)",
+                  "exclusiveMinimum": 0
+                },
+                "folder": {
+                  "type": "string",
+                  "description": "Output folder (default: screenshot \"user://screenshots\", recording \"user://recordings\"; an absolute path also works)"
+                },
+                "prefix": {
+                  "type": "string",
+                  "description": "File name prefix (default: screenshot \"screenshot\", recording \"recording\"; date and time are appended)"
+                },
+                "notice": {
+                  "type": "boolean",
+                  "description": "Show a notice when saved (default true)"
+                },
+                "menu": {
+                  "type": "boolean",
+                  "description": "Show a toggle in the settings screen (default true)"
+                },
+                "fps": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 60,
+                  "description": "Frames per second (1-60, default 30)"
+                },
+                "quality": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "JPEG quality (0-1, default 0.85)"
+                },
+                "audio": {
+                  "type": "boolean",
+                  "description": "Record sound too (default true)"
+                },
+                "max_seconds": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Maximum length in seconds (default 600; 0 for no limit; recording always stops at 1.9 GB)"
+                },
+                "indicator": {
+                  "type": "string",
+                  "enum": [
+                    "title",
+                    "none"
+                  ],
+                  "description": "Recording indicator. title: add \"● REC\" to the window title (default); none: no indicator"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "description": "Screen recording (AVI: MJPEG video, 16-bit PCM audio). In a release build it works only when enabled (always available while debugging)"
         }
       },
       "patternProperties": {
